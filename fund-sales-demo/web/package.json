@@ -1,0 +1,22 @@
+{
+  "name": "@fund-demo/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0"
+  },
+  "dependencies": {
+    "@fund-demo/protocol": "*",
+    "@vitejs/plugin-react": "^5.0.2",
+    "cmdk": "^1.1.1",
+    "fuse.js": "^7.5.0",
+    "lucide-react": "^0.544.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.5"
+  }
+}

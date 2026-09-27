@@ -1,0 +1,16 @@
+{
+  "name": "fund-sales-demo",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "packages/*",
+    "services/*",
+    "web"
+  ],
+  "scripts": {
+    "test": "npm run test -w @fund-demo/protocol && npm run test -w @fund-demo/storage",
+    "test:smoke": "node scripts/smoke.mjs",
+    "dev:web": "npm run dev -w @fund-demo/web",
+    "build:web": "npm run build -w @fund-demo/web"
+  }
+}
