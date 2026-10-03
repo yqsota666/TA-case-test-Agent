@@ -81,8 +81,8 @@ export const EXCHANGE_STREAMS = {
 };
 
 export function exchangeStream(streamId) {
+  if (!Object.hasOwn(EXCHANGE_STREAMS, streamId)) throw new Error(`Unsupported exchange stream ${streamId}`);
   const stream = EXCHANGE_STREAMS[streamId];
-  if (!stream) throw new Error(`Unsupported exchange stream ${streamId}`);
   return stream;
 }
 
@@ -95,5 +95,12 @@ export function defaultExchangeStreamForFile(fileType) {
 }
 
 export function indexKindFor({ streamId, fileType }) {
-  return streamId ? exchangeStream(streamId).indexKind : defaultExchangeStreamForFile(fileType).indexKind;
+  if (streamId !== undefined && streamId !== null) {
+    const stream = exchangeStream(streamId);
+    if (fileType !== undefined && fileType !== null && !stream.fileTypes.includes(fileType)) {
+      throw new Error(`File type ${fileType} is not supported by exchange stream ${streamId}`);
+    }
+    return stream.indexKind;
+  }
+  return defaultExchangeStreamForFile(fileType).indexKind;
 }

@@ -261,10 +261,6 @@ export const FILE_DEFINITIONS = {
   ]
 };
 
-export const INDEX_KIND_BY_TYPES = {
-  '01': 'OFI', '02': 'OFI', '03': 'OFI', '04': 'OFI', '05': 'OFI', '07': 'OFJ'
-};
-
 // “必填/条件必填/选填”是发送前编辑器使用的协议元数据。条件必填字段的
 // condition 文案用于教学说明；具体业务校验仍由发送端完成。
 export const FIELD_REQUIREMENTS = {
