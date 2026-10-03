@@ -1,0 +1,9 @@
+# Review pull requests targeting main and block unresolved actionable findings.
+reviews:
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - main
+  request_changes_workflow: true
+  allow_author_approval: false
