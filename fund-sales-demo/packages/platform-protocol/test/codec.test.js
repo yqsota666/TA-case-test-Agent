@@ -68,6 +68,30 @@ test('selects the official V2.1 header widths and maps 02/05 to stable business 
   assert.equal(parseIndexFile(index).version, '21');
 });
 
+test('pads multibyte header values to their GB18030 byte width', () => {
+  for (const version of ['21', '22']) {
+    const data = buildDataFile({
+      creator: '27', receiver: '960', date: '20210112', version,
+      fileType: '01', sender: '广发', records: []
+    });
+    assert.equal(parseDataFile(data).sender, '广发');
+  }
+});
+
+test('keeps V2.1 data and index files intact during normalization', () => {
+  const header = { creator: '27', receiver: '960', date: '20210112', version: '21', fileType: '01' };
+  const original = buildDataFile({
+    ...header,
+    records: [{ InstReprManageRange: '01', ControlHolder: '控股方', ActualController: '控制人' }]
+  });
+  const normalized = normalizeExchangeFile(original);
+  assert.deepEqual(normalized, original);
+  assert.equal(parseDataFile(normalized).records[0].ControlHolder, '控股方');
+  const index = buildIndexFile({ ...header, fileNames: [dataFileName(header)] });
+  assert.deepEqual(normalizeExchangeFile(index), index);
+  assert.equal(parseIndexFile(normalizeExchangeFile(index)).version, '21');
+});
+
 test('supports the V2.2 AML, settlement, and summary structures from the local protocol', () => {
   const counts = { '06': 41, '09': 10, '10': 58, '11': 7, '12': 11, '24': 40, '25': 23,
     X1: 48, X2: 9, X3: 51, X4: 9 };

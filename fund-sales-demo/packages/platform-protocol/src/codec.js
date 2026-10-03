@@ -84,8 +84,11 @@ function decodeRecordWithFields(fields, line) {
 
 const line = (value, length, numeric = false) => {
   const text = String(value ?? '');
-  if (iconv.encode(text, ENCODING).length > length) throw new Error(`Header value exceeds ${length}: ${text}`);
-  return iconv.encode(numeric ? text.padStart(length, '0') : text.padEnd(length, ' '), ENCODING);
+  const encoded = iconv.encode(text, ENCODING);
+  if (encoded.length > length) throw new Error(`Header value exceeds ${length}: ${text}`);
+  const padded = Buffer.alloc(length, numeric ? 0x30 : 0x20);
+  encoded.copy(padded, numeric ? length - encoded.length : 0);
+  return padded;
 };
 
 export function dataFileName({ creator, receiver, date, fileType, sequence }) {
@@ -259,6 +262,7 @@ export function normalizeExchangeFile(buffer) {
   const marker = buffer.subarray(0, 8).toString('ascii');
   if (marker === 'OFDCFDAT') {
     const parsed = parseDataFile(buffer);
+    if (parsed.version === '21') return buffer;
     const isCurrent = parsed.version === '22' && parsed.fields === fieldsForFile('22', parsed.fileType)
       && splitCrlf(buffer)[1].toString('ascii') === '22      ';
     if (isCurrent) return buffer;
@@ -276,6 +280,7 @@ export function normalizeExchangeFile(buffer) {
   }
   if (marker === 'OFDCFIDX') {
     const parsed = parseIndexFile(buffer);
+    if (parsed.version === '21') return buffer;
     if (parsed.version === '22' && splitCrlf(buffer)[1].toString('ascii') === '22      ') return buffer;
     return buildIndexFile({ ...parsed, version: '22' });
   }
