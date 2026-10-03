@@ -138,6 +138,7 @@ CREATE TABLE return_records (
   match_status VARCHAR(16) NOT NULL DEFAULT 'UNMATCHED',
   created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   UNIQUE KEY uq_return_position (workspace_id,file_id,record_index),
+  UNIQUE KEY uq_return_channel (workspace_id,channel_id,id,file_type),
   KEY ix_return_case (workspace_id,chat_id,case_id,id),
   KEY ix_return_application (workspace_id,chat_id,case_id,application_id),
   CONSTRAINT fk_return_file FOREIGN KEY (workspace_id,channel_id,file_id,file_type)
@@ -148,4 +149,25 @@ CREATE TABLE return_records (
   CONSTRAINT ck_return_match CHECK (
     (match_status='MATCHED' AND chat_id IS NOT NULL AND application_id IS NOT NULL AND case_id IS NOT NULL) OR
     (match_status IN ('UNMATCHED','CONFLICT') AND chat_id IS NULL AND application_id IS NULL AND case_id IS NULL))
+) ENGINE=InnoDB;
+
+-- A TA account becomes usable only from a matched, successful 02 confirmation.
+-- The binding is reusable by later Chats in the same Workspace and channel.
+CREATE TABLE ta_account_bindings (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  workspace_id BIGINT UNSIGNED NOT NULL,
+  channel_id BIGINT UNSIGNED NOT NULL,
+  transaction_account_id VARCHAR(17) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  ta_account_id VARCHAR(12) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  source_return_record_id BIGINT UNSIGNED NOT NULL,
+  source_file_type CHAR(2) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT '02',
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  UNIQUE KEY uq_ta_binding_transaction (workspace_id,channel_id,transaction_account_id),
+  UNIQUE KEY uq_ta_binding_source (workspace_id,channel_id,source_return_record_id),
+  CONSTRAINT fk_ta_binding_channel FOREIGN KEY (workspace_id,channel_id)
+    REFERENCES exchange_channels(workspace_id,id),
+  CONSTRAINT fk_ta_binding_source FOREIGN KEY (workspace_id,channel_id,source_return_record_id,source_file_type)
+    REFERENCES return_records(workspace_id,channel_id,id,file_type),
+  CONSTRAINT ck_ta_binding_source_type CHECK (source_file_type='02'),
+  CONSTRAINT ck_ta_binding_values CHECK (CHAR_LENGTH(transaction_account_id)>0 AND CHAR_LENGTH(ta_account_id)>0)
 ) ENGINE=InnoDB;

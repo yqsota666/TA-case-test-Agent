@@ -11,10 +11,10 @@ const applicationPublicId = '9b039fda-601d-4f3c-b065-0f7bf0837cce';
 const record = { AppSheetSerialNo: '202610030001', BusinessCode: '001', DistributorCode: '306',
   CertificateType: '0', CertificateNo: 'TEST123', InvestorName: 'Alice', TransactionDate: '20261003',
   TransactionTime: '120000', IndividualOrInstitution: '0', TransactionAccountID: '123456', BranchCode: '306' };
-const returned = { ...record, BusinessCode: '101' };
+const returned = { ...record, BusinessCode: '101', ReturnCode: '0000', TAAccountID: 'TA123' };
 const raw = buildDataFile({ creator: '27', receiver: '306', date: '20261003', fileType: '02', records: [returned] });
 
-function fixture({ existing, sameBytes, returnItem, application, batchApplications, pendingCount = 0 } = {}) {
+function fixture({ existing, sameBytes, returnItem, application, batchApplications, binding, pendingCount = 0 } = {}) {
   const calls = [];
   const db = { async execute(sql, values) {
     calls.push({ sql, values });
@@ -30,6 +30,7 @@ function fixture({ existing, sameBytes, returnItem, application, batchApplicatio
       id: 71, ta_code: '27', distributor_code: '306', protocol_version: '22'
     }]];
     if (sql.includes('FROM exchange_files')) return [[sql.includes('content_sha256=?') ? sameBytes : existing]];
+    if (sql.includes('FROM ta_account_bindings')) return [[binding]];
     if (sql.includes('FROM return_records')) return [[returnItem]];
     if (sql.includes('FROM applications')) return [[application]];
     if (sql.includes('INSERT INTO exchange_files')) return [{ insertId: 81 }];
@@ -105,12 +106,41 @@ test('matching uses the application number, mapped code, key fields and delivery
   assert.deepEqual(await repository.matchReturnRecord(token, { returnRecordId: '91', applicationPublicId }), { matched: true });
   assert.deepEqual(calls.find(call => call.sql.includes('UPDATE return_records')).values,
     [41, 51, 101, 31, 91]);
+  assert.deepEqual(calls.find(call => call.sql.includes('INSERT INTO ta_account_bindings')).values,
+    [31, 71, '123456', 'TA123', 91]);
   const wrong = fixture({ returnItem, application: { ...application, status: 'READY' } });
   await assert.rejects(wrong.repository.matchReturnRecord(token, { returnRecordId: '91', applicationPublicId }),
     { code: 'RETURN_MISMATCH' });
   const foreign = fixture({ returnItem: { ...returnItem, record_json: { ...returned, DistributorCode: '999' } }, application });
   await assert.rejects(foreign.repository.matchReturnRecord(token, { returnRecordId: '91', applicationPublicId }),
     { code: 'RETURN_MISMATCH' });
+});
+
+test('02 matching rejects a changed TA account for an existing account application', async () => {
+  const source = { ...record, BusinessCode: '002', TAAccountID: 'TA123' };
+  const application = { id: 101, chat_id: 41, case_id: 51, app_no: source.AppSheetSerialNo,
+    business_code: '002', file_type: '01', record_json: source, status: 'DELIVERED' };
+  const returnItem = { id: 91, channel_id: 71, file_type: '02', match_status: 'UNMATCHED',
+    record_json: { ...returned, BusinessCode: '102', TAAccountID: 'TA999' } };
+  const { repository, calls } = fixture({ returnItem, application });
+  await assert.rejects(repository.matchReturnRecord(token, { returnRecordId: '91', applicationPublicId }),
+    { code: 'RETURN_MISMATCH' });
+  assert.equal(calls.some(call => call.sql.includes('UPDATE return_records')), false);
+});
+
+test('03 staging requires a TA account confirmed by a matched successful 02', async () => {
+  const trade = { AppSheetSerialNo: '202610030022', BusinessCode: '022', DistributorCode: '306',
+    TransactionDate: '20261003', TransactionTime: '120000', TransactionAccountID: '123456',
+    TAAccountID: 'TA123', BranchCode: '306', FundCode: '000001', CurrencyType: '156',
+    ApplicationAmount: '100.00', ShareClass: 'A', ChargeType: '0' };
+  const input = { chatPublicId, casePublicId, sopVersionId: '61', channelId: '71',
+    businessDate: '20261003', fileType: '03', record: trade };
+  const missing = fixture();
+  await assert.rejects(missing.repository.stageApplication(token, input), { code: 'TA_ACCOUNT_UNVERIFIED' });
+  assert.equal(missing.calls.some(call => call.sql.includes('INSERT INTO applications')), false);
+  const confirmed = fixture({ binding: { id: 101 } });
+  await confirmed.repository.stageApplication(token, input);
+  assert.equal(confirmed.calls.some(call => call.sql.includes('INSERT INTO applications')), true);
 });
 
 test('04 matching uses the mapped confirmation code', async () => {

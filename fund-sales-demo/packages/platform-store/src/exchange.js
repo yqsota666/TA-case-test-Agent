@@ -72,6 +72,12 @@ export function createExchangeRepository({ transaction }) {
       [auth.workspace_id, chatPublicId, casePublicId, sopVersionId, channelId]);
       if (!scope) throw storeError('APPLICATION_SCOPE', 409, 'Case、SOP 或通道不可用于申请');
       const { snapshot, hash } = validSnapshot(fileType, record, scope.protocol_version, scope, businessDate);
+      if (fileType === '03' || record.BusinessCode !== '001') {
+        const [[binding]] = await db.execute(`SELECT id FROM ta_account_bindings
+          WHERE workspace_id=? AND channel_id=? AND transaction_account_id=? AND ta_account_id=?`,
+        [auth.workspace_id, scope.channel_id, record.TransactionAccountID, record.TAAccountID]);
+        if (!binding) throw storeError('TA_ACCOUNT_UNVERIFIED', 409, 'TA 账号尚无已确认来源');
+      }
       const publicId = crypto.randomUUID();
       await db.execute(`INSERT INTO applications
         (public_id,workspace_id,chat_id,case_id,sop_version_id,channel_id,business_date,
@@ -203,7 +209,7 @@ export function createExchangeRepository({ transaction }) {
       const expectedCode = app && (item.file_type === '02'
         ? String(Number(app.business_code) + 100).padStart(3, '0') : confirmationCodeFor(app.business_code));
       const commonFields = item.file_type === '02'
-        ? ['DistributorCode','TransactionDate','TransactionAccountID','CertificateType','CertificateNo']
+        ? ['DistributorCode','TransactionDate','TransactionAccountID','TAAccountID','CertificateType','CertificateNo']
         : ['DistributorCode','TransactionDate','TransactionAccountID','TAAccountID','FundCode','ShareClass'];
       const keyMismatch = !source || commonFields.some(name => {
         const original = source[name];
@@ -216,9 +222,28 @@ export function createExchangeRepository({ transaction }) {
         || !['DELIVERED', 'WAITING_RETURN'].includes(app.status)) {
         throw storeError('RETURN_MISMATCH', 409, '回传与已交付申请不一致');
       }
+      let createBinding = false;
+      if (item.file_type === '02' && record.ReturnCode === '0000') {
+        if (!record.TAAccountID || !record.TransactionAccountID) {
+          throw storeError('RETURN_MISMATCH', 409, '成功的 02 回传缺少真实 TA 账号');
+        }
+        const [[binding]] = await db.execute(`SELECT ta_account_id FROM ta_account_bindings
+          WHERE workspace_id=? AND channel_id=? AND transaction_account_id=? FOR UPDATE`,
+        [auth.workspace_id, item.channel_id, record.TransactionAccountID]);
+        if (binding && binding.ta_account_id !== record.TAAccountID) {
+          throw storeError('RETURN_MISMATCH', 409, '02 回传的 TA 账号与已确认账号冲突');
+        }
+        createBinding = !binding;
+      }
       await db.execute(`UPDATE return_records SET chat_id=?,case_id=?,application_id=?,match_status='MATCHED'
         WHERE workspace_id=? AND id=? AND match_status='UNMATCHED'`,
       [app.chat_id, app.case_id, app.id, auth.workspace_id, item.id]);
+      if (createBinding) {
+        await db.execute(`INSERT INTO ta_account_bindings
+          (workspace_id,channel_id,transaction_account_id,ta_account_id,source_return_record_id)
+          VALUES (?,?,?,?,?)`,
+        [auth.workspace_id, item.channel_id, record.TransactionAccountID, record.TAAccountID, item.id]);
+      }
       return { matched: true };
     });
   }
