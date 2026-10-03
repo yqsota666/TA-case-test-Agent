@@ -160,13 +160,13 @@ export function createExchangeRepository({ transaction }) {
       [auth.workspace_id, chat.id]);
       if (Number(pending.count) !== 0) throw storeError('SOP_NOT_LOCKED', 409, '仍有 Case 未锁定 SOP');
       const placeholders = applicationPublicIds.map(() => '?').join(',');
-      const [applications] = await db.execute(`SELECT id,public_id,status,business_date,channel_id,file_type
+      const [applications] = await db.execute(`SELECT id,public_id,status,
+        DATE_FORMAT(business_date, '%Y-%m-%d') AS business_date,channel_id,file_type
         FROM applications WHERE workspace_id=? AND chat_id=? AND public_id IN (${placeholders}) FOR UPDATE`,
       [auth.workspace_id, chat.id, ...applicationPublicIds]);
       if (applications.length !== applicationPublicIds.length || applications.some(app => app.status !== 'READY'
         || String(app.channel_id) !== String(channelId)
-        || (app.business_date instanceof Date ? app.business_date.toISOString().slice(0, 10)
-          : String(app.business_date).slice(0, 10)) !== date)) {
+        || String(app.business_date) !== date)) {
         throw storeError('BATCH_APPLICATION_MISMATCH', 409, '申请归属、日期或状态不一致');
       }
       const [[last]] = await db.execute(`SELECT COALESCE(MAX(batch_number),0) AS number FROM exchange_batches

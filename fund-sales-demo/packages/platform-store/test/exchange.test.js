@@ -24,7 +24,9 @@ function fixture({ existing, sameBytes, returnItem, application, batchApplicatio
       chat_id: 41, case_id: 51, sop_id: 61, channel_id: 71, distributor_code: '306', protocol_version: '22'
     }]];
     if (sql.includes('COUNT(*) AS count FROM cases')) return [[{ count: pendingCount }]];
-    if (sql.includes('FROM applications') && sql.includes('public_id IN')) return [batchApplications ?? []];
+    if (sql.includes('FROM applications') && sql.includes('public_id IN')) {
+      return [typeof batchApplications === 'function' ? batchApplications(sql) : batchApplications ?? []];
+    }
     if (sql.includes('MAX(batch_number)')) return [[{ number: 0 }]];
     if (sql.includes('FROM exchange_channels')) return [[{
       id: 71, ta_code: '27', distributor_code: '306', protocol_version: '22'
@@ -180,4 +182,16 @@ test('a batch groups ready applications only after all Chat Case SOPs are locked
     chatPublicId, channelId: '71', businessDate: '20261003', applicationPublicIds: [applicationPublicId]
   }), { code: 'SOP_NOT_LOCKED' });
   assert.equal(pending.calls.some(call => call.sql.includes('INSERT INTO exchange_batches')), false);
+});
+
+test('batch date remains the database calendar date across a UTC+8 midnight', async () => {
+  const base = { id: 101, public_id: applicationPublicId, status: 'READY',
+    channel_id: 71, file_type: '01' };
+  const { repository } = fixture({ batchApplications: sql => [{ ...base,
+    business_date: sql.includes('DATE_FORMAT(business_date')
+      ? '2026-10-03' : new Date('2026-10-02T16:00:00.000Z') }] });
+  const result = await repository.createOutboundBatch(token, {
+    chatPublicId, channelId: '71', businessDate: '20261003', applicationPublicIds: [applicationPublicId]
+  });
+  assert.equal(result.batchNumber, 1);
 });
