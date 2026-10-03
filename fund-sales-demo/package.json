@@ -1,0 +1,9 @@
+{
+  "name": "fund-sales-demo",
+  "private": true,
+  "type": "module",
+  "workspaces": ["packages/*"],
+  "scripts": {
+    "test:protocol-contract": "node --test packages/platform-protocol/test/*.test.js"
+  }
+}
