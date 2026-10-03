@@ -5,6 +5,7 @@
   "workspaces": ["packages/*"],
   "scripts": {
     "test:protocol-contract": "node --test packages/platform-protocol/test/definitions.test.js",
-    "test:protocol": "node --test packages/platform-protocol/test/*.test.js"
+    "test:protocol": "node --test packages/platform-protocol/test/*.test.js",
+    "test:store": "node --test packages/platform-store/test/*.test.js"
   }
 }
