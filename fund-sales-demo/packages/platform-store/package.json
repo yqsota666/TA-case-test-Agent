@@ -1,0 +1,14 @@
+{
+  "name": "@fund-demo/platform-store",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.js",
+  "dependencies": {
+    "mysql2": "^3.24.4"
+  },
+  "scripts": {
+    "migrate": "node src/migrate.js",
+    "test": "node --test test/*.test.js"
+  }
+}
