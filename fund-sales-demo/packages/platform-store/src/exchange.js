@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { encodeRecord, parseDataFile } from '../../platform-protocol/src/index.js';
+import { confirmationCodeFor, encodeRecord, FIELD_REQUIREMENTS, parseDataFile } from '../../platform-protocol/src/index.js';
 import { authenticateSession, storeError } from './index.js';
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -24,7 +24,7 @@ function validDate(value) {
   return `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6)}`;
 }
 
-function validSnapshot(fileType, record, version, channel) {
+function validSnapshot(fileType, record, version, channel, businessDate) {
   if (!['01', '03'].includes(fileType) || !record || typeof record !== 'object' || Array.isArray(record)) {
     throw storeError('INVALID_APPLICATION', 400, '申请格式无效');
   }
@@ -32,6 +32,17 @@ function validSnapshot(fileType, record, version, channel) {
     || !/^\d{3}$/.test(record.BusinessCode || '')
     || String(record.DistributorCode || '') !== String(channel.distributor_code)) {
     throw storeError('INVALID_APPLICATION', 400, '申请号、业务代码或销售机构不一致');
+  }
+  const requirements = FIELD_REQUIREMENTS[fileType];
+  const byBusiness = requirements.requiredByBusiness[record.BusinessCode];
+  if (fileType === '01' ? !/^00[1-9]$/.test(record.BusinessCode) : !byBusiness) {
+    throw storeError('INVALID_APPLICATION', 400, '不支持的申请业务代码');
+  }
+  const missing = [...requirements.required, ...(byBusiness || [])].filter(name =>
+    record[name] === null || record[name] === undefined || String(record[name]).trim() === '');
+  if (missing.length) throw storeError('MISSING_APPLICATION_FIELD', 400, `申请缺少必填字段：${missing.join(', ')}`);
+  if (record.TransactionDate !== businessDate) {
+    throw storeError('APPLICATION_DATE_MISMATCH', 400, '申请交易日期与业务日不一致');
   }
   const snapshot = JSON.stringify(record);
   if (Buffer.byteLength(snapshot) > 65536) throw storeError('INVALID_APPLICATION', 400, '申请快照过大');
@@ -60,7 +71,7 @@ export function createExchangeRepository({ transaction }) {
           AND s.id=? AND h.id=?`,
       [auth.workspace_id, chatPublicId, casePublicId, sopVersionId, channelId]);
       if (!scope) throw storeError('APPLICATION_SCOPE', 409, 'Case、SOP 或通道不可用于申请');
-      const { snapshot, hash } = validSnapshot(fileType, record, scope.protocol_version, scope);
+      const { snapshot, hash } = validSnapshot(fileType, record, scope.protocol_version, scope, businessDate);
       const publicId = crypto.randomUUID();
       await db.execute(`INSERT INTO applications
         (public_id,workspace_id,chat_id,case_id,sop_version_id,channel_id,business_date,
@@ -81,7 +92,7 @@ export function createExchangeRepository({ transaction }) {
     return transaction(async db => {
       const auth = await authenticateSession(db, token);
       const [[channel]] = await db.execute(`SELECT id,ta_code,distributor_code,protocol_version
-        FROM exchange_channels WHERE workspace_id=? AND id=?`, [auth.workspace_id, channelId]);
+        FROM exchange_channels WHERE workspace_id=? AND id=? FOR UPDATE`, [auth.workspace_id, channelId]);
       if (!channel) throw storeError('CHANNEL_NOT_FOUND', 404, '通道不存在');
       let parsed;
       try { parsed = parseDataFile(rawBytes); }
@@ -97,11 +108,15 @@ export function createExchangeRepository({ transaction }) {
       }
       const digest = crypto.createHash('sha256').update(rawBytes).digest('hex');
       const [[existing]] = await db.execute(`SELECT id,content_sha256 FROM exchange_files
-        WHERE workspace_id=? AND channel_id=? AND file_name=?`, [auth.workspace_id, channelId, fileName]);
+        WHERE workspace_id=? AND channel_id=? AND file_name=? FOR UPDATE`, [auth.workspace_id, channelId, fileName]);
       if (existing) {
         if (existing.content_sha256 !== digest) throw storeError('FILE_NAME_CONFLICT', 409, '同名文件内容不同');
         return { fileId: String(existing.id), duplicate: true };
       }
+      const [[sameBytes]] = await db.execute(`SELECT id FROM exchange_files
+        WHERE workspace_id=? AND channel_id=? AND direction='INBOUND' AND content_sha256=? FOR UPDATE`,
+      [auth.workspace_id, channelId, digest]);
+      if (sameBytes) return { fileId: String(sameBytes.id), duplicate: true };
       const [file] = await db.execute(`INSERT INTO exchange_files
         (workspace_id,channel_id,direction,file_type,file_name,content_sha256,raw_bytes,record_count)
         VALUES (?,?,'INBOUND',?,?,?,?,?)`,
@@ -161,6 +176,10 @@ export function createExchangeRepository({ transaction }) {
           (workspace_id,chat_id,channel_id,batch_id,application_id,file_type)
           VALUES (?,?,?,?,?,?)`,
         [auth.workspace_id, chat.id, channelId, batch.insertId, app.id, app.file_type]);
+        const [updated] = await db.execute(`UPDATE applications SET status='BATCHED'
+          WHERE workspace_id=? AND chat_id=? AND id=? AND status='READY'`,
+        [auth.workspace_id, chat.id, app.id]);
+        if (updated.affectedRows !== 1) throw storeError('BATCH_APPLICATION_MISMATCH', 409, '申请已归入其他批次');
       }
       return { publicId, batchNumber: number };
     });
@@ -176,11 +195,23 @@ export function createExchangeRepository({ transaction }) {
       if (!item) throw storeError('RETURN_NOT_FOUND', 404, '回传记录不存在');
       if (item.match_status !== 'UNMATCHED') throw storeError('RETURN_ALREADY_MATCHED', 409, '回传记录已处理');
       if (!['02', '04'].includes(item.file_type)) throw storeError('RETURN_NOT_APPLICATION', 409, '该回传需单独对账');
-      const [[app]] = await db.execute(`SELECT id,chat_id,case_id,app_no,file_type,business_code,status
+      const [[app]] = await db.execute(`SELECT id,chat_id,case_id,app_no,file_type,business_code,record_json,status
         FROM applications WHERE workspace_id=? AND channel_id=? AND public_id=?`,
       [auth.workspace_id, item.channel_id, applicationPublicId]);
       const record = typeof item.record_json === 'string' ? JSON.parse(item.record_json) : item.record_json;
-      if (!app || app.app_no !== record.AppSheetSerialNo || app.business_code !== record.BusinessCode
+      const source = app && (typeof app.record_json === 'string' ? JSON.parse(app.record_json) : app.record_json);
+      const expectedCode = app && (item.file_type === '02'
+        ? String(Number(app.business_code) + 100).padStart(3, '0') : confirmationCodeFor(app.business_code));
+      const commonFields = item.file_type === '02'
+        ? ['DistributorCode','TransactionDate','TransactionAccountID','CertificateType','CertificateNo']
+        : ['DistributorCode','TransactionDate','TransactionAccountID','TAAccountID','FundCode','ShareClass'];
+      const keyMismatch = !source || commonFields.some(name => {
+        const original = source[name];
+        return original !== null && original !== undefined && String(original).trim() !== ''
+          && String(record[name] ?? '').trim() !== String(original).trim();
+      });
+      if (!app || app.app_no !== record.AppSheetSerialNo || expectedCode !== record.BusinessCode
+        || keyMismatch
         || (item.file_type === '02' ? app.file_type !== '01' : app.file_type !== '03')
         || !['DELIVERED', 'WAITING_RETURN'].includes(app.status)) {
         throw storeError('RETURN_MISMATCH', 409, '回传与已交付申请不一致');

@@ -8,10 +8,13 @@ const token = 'a'.repeat(43);
 const chatPublicId = '9b039fda-601d-4f3c-b065-0f7bf0837ccc';
 const casePublicId = '9b039fda-601d-4f3c-b065-0f7bf0837ccd';
 const applicationPublicId = '9b039fda-601d-4f3c-b065-0f7bf0837cce';
-const record = { AppSheetSerialNo: '202610030001', BusinessCode: '001', DistributorCode: '306' };
-const raw = buildDataFile({ creator: '27', receiver: '306', date: '20261003', fileType: '02', records: [record] });
+const record = { AppSheetSerialNo: '202610030001', BusinessCode: '001', DistributorCode: '306',
+  CertificateType: '0', CertificateNo: 'TEST123', InvestorName: 'Alice', TransactionDate: '20261003',
+  TransactionTime: '120000', IndividualOrInstitution: '0', TransactionAccountID: '123456', BranchCode: '306' };
+const returned = { ...record, BusinessCode: '101' };
+const raw = buildDataFile({ creator: '27', receiver: '306', date: '20261003', fileType: '02', records: [returned] });
 
-function fixture({ existing, returnItem, application, batchApplications, pendingCount = 0 } = {}) {
+function fixture({ existing, sameBytes, returnItem, application, batchApplications, pendingCount = 0 } = {}) {
   const calls = [];
   const db = { async execute(sql, values) {
     calls.push({ sql, values });
@@ -26,11 +29,12 @@ function fixture({ existing, returnItem, application, batchApplications, pending
     if (sql.includes('FROM exchange_channels')) return [[{
       id: 71, ta_code: '27', distributor_code: '306', protocol_version: '22'
     }]];
-    if (sql.includes('FROM exchange_files')) return [[existing]];
+    if (sql.includes('FROM exchange_files')) return [[sql.includes('content_sha256=?') ? sameBytes : existing]];
     if (sql.includes('FROM return_records')) return [[returnItem]];
     if (sql.includes('FROM applications')) return [[application]];
     if (sql.includes('INSERT INTO exchange_files')) return [{ insertId: 81 }];
     if (sql.includes('INSERT INTO exchange_batches')) return [{ insertId: 111 }];
+    if (sql.includes('UPDATE applications')) return [{ affectedRows: 1 }];
     return [{ insertId: 91 }];
   } };
   return { calls, repository: createExchangeRepository({ transaction: action => action(db) }) };
@@ -62,7 +66,7 @@ test('an incoming file is checked against its channel and kept whole before matc
   assert.equal(Buffer.compare(saved.values[5], raw), 0);
   const row = calls.find(call => call.sql.includes('INSERT INTO return_records'));
   assert.deepEqual(row.values.slice(0, 5), [31, '71', 81, '02', 1]);
-  assert.equal(JSON.parse(row.values[5]).AppSheetSerialNo, record.AppSheetSerialNo);
+  assert.equal(JSON.parse(row.values[5]).AppSheetSerialNo, returned.AppSheetSerialNo);
 });
 
 test('a duplicate file with identical bytes does not duplicate records', async () => {
@@ -78,6 +82,11 @@ test('a duplicate file with identical bytes does not duplicate records', async (
   await assert.rejects(repository.saveInboundFile(token, {
     channelId: '71', fileName: 'OFD_27_306_20261003_02.TXT', rawBytes: raw
   }), { code: 'FILE_NAME_CONFLICT' });
+  const otherName = fixture({ sameBytes: { id: 81 } });
+  assert.deepEqual(await otherName.repository.saveInboundFile(token, {
+    channelId: '71', fileName: 'OFD_27_306_20261003_02_001.TXT', rawBytes: raw
+  }), { fileId: '81', duplicate: true });
+  assert.equal(otherName.calls.some(call => call.sql.includes('INSERT INTO return_records')), false);
 });
 
 test('foreign headers are rejected before storing any file bytes', async () => {
@@ -88,10 +97,10 @@ test('foreign headers are rejected before storing any file bytes', async () => {
   assert.equal(calls.some(call => call.sql.includes('INSERT INTO exchange_files')), false);
 });
 
-test('matching uses the application number, business code, type and delivery state', async () => {
-  const returnItem = { id: 91, channel_id: 71, file_type: '02', record_json: record, match_status: 'UNMATCHED' };
+test('matching uses the application number, mapped code, key fields and delivery state', async () => {
+  const returnItem = { id: 91, channel_id: 71, file_type: '02', record_json: returned, match_status: 'UNMATCHED' };
   const application = { id: 101, chat_id: 41, case_id: 51, app_no: record.AppSheetSerialNo,
-    business_code: '001', file_type: '01', status: 'DELIVERED' };
+    business_code: '001', file_type: '01', record_json: record, status: 'DELIVERED' };
   const { repository, calls } = fixture({ returnItem, application });
   assert.deepEqual(await repository.matchReturnRecord(token, { returnRecordId: '91', applicationPublicId }), { matched: true });
   assert.deepEqual(calls.find(call => call.sql.includes('UPDATE return_records')).values,
@@ -99,6 +108,30 @@ test('matching uses the application number, business code, type and delivery sta
   const wrong = fixture({ returnItem, application: { ...application, status: 'READY' } });
   await assert.rejects(wrong.repository.matchReturnRecord(token, { returnRecordId: '91', applicationPublicId }),
     { code: 'RETURN_MISMATCH' });
+  const foreign = fixture({ returnItem: { ...returnItem, record_json: { ...returned, DistributorCode: '999' } }, application });
+  await assert.rejects(foreign.repository.matchReturnRecord(token, { returnRecordId: '91', applicationPublicId }),
+    { code: 'RETURN_MISMATCH' });
+});
+
+test('04 matching uses the mapped confirmation code', async () => {
+  const source = { AppSheetSerialNo: '202610030022', BusinessCode: '022', DistributorCode: '306',
+    TransactionDate: '20261003', TransactionAccountID: '123456', TAAccountID: 'TA123',
+    FundCode: '000001', ShareClass: 'A' };
+  const returnItem = { id: 91, channel_id: 71, file_type: '04',
+    record_json: { ...source, BusinessCode: '122' }, match_status: 'UNMATCHED' };
+  const application = { id: 101, chat_id: 41, case_id: 51, app_no: source.AppSheetSerialNo,
+    business_code: '022', file_type: '03', record_json: source, status: 'WAITING_RETURN' };
+  const { repository } = fixture({ returnItem, application });
+  assert.deepEqual(await repository.matchReturnRecord(token, { returnRecordId: '91', applicationPublicId }), { matched: true });
+});
+
+test('incomplete 01 application never becomes READY', async () => {
+  const { repository, calls } = fixture();
+  await assert.rejects(repository.stageApplication(token, {
+    chatPublicId, casePublicId, sopVersionId: '61', channelId: '71', businessDate: '20261003',
+    fileType: '01', record: { AppSheetSerialNo: 'X', BusinessCode: '001', DistributorCode: '306' }
+  }), { code: 'MISSING_APPLICATION_FIELD' });
+  assert.equal(calls.some(call => call.sql.includes('INSERT INTO applications')), false);
 });
 
 test('a batch groups ready applications only after all Chat Case SOPs are locked', async () => {
@@ -111,6 +144,7 @@ test('a batch groups ready applications only after all Chat Case SOPs are locked
   assert.equal(result.batchNumber, 1);
   assert.deepEqual(calls.find(call => call.sql.includes('INSERT INTO batch_applications')).values,
     [31, 41, '71', 111, 101, '01']);
+  assert.deepEqual(calls.find(call => call.sql.includes('UPDATE applications')).values, [31, 41, 101]);
   const pending = fixture({ batchApplications, pendingCount: 1 });
   await assert.rejects(pending.repository.createOutboundBatch(token, {
     chatPublicId, channelId: '71', businessDate: '20261003', applicationPublicIds: [applicationPublicId]

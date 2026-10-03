@@ -50,7 +50,7 @@ CREATE TABLE applications (
   CONSTRAINT ck_application_business CHECK (business_code REGEXP '^[0-9]{3}$'),
   CONSTRAINT ck_application_number CHECK (app_no REGEXP '^[0-9A-Za-z]{1,24}$'),
   CONSTRAINT ck_application_status CHECK (status IN
-    ('READY','GENERATED','DELIVERED','WAITING_RETURN','CONFIRMED','FAILED','CANCELED'))
+    ('READY','BATCHED','GENERATED','DELIVERED','WAITING_RETURN','CONFIRMED','FAILED','CANCELED'))
 ) ENGINE=InnoDB;
 
 CREATE TABLE exchange_batches (
@@ -109,6 +109,7 @@ CREATE TABLE exchange_files (
   UNIQUE KEY uq_file_scope (workspace_id,id),
   UNIQUE KEY uq_file_type (workspace_id,channel_id,id,file_type),
   UNIQUE KEY uq_file_name (workspace_id,channel_id,file_name),
+  UNIQUE KEY uq_file_digest (workspace_id,channel_id,direction,content_sha256),
   KEY ix_file_batch (workspace_id,chat_id,channel_id,batch_id),
   CONSTRAINT fk_file_channel FOREIGN KEY (workspace_id,channel_id)
     REFERENCES exchange_channels(workspace_id,id),
