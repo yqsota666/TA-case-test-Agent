@@ -49,6 +49,7 @@ test('outbound and return files have explicit exchange directions', () => {
 
 test('explicit exchange streams reject unsupported file types and inherited names', () => {
   assert.equal(indexKindFor({ streamId: 'taEarlyConfirmation', fileType: '04' }), 'OFF');
+  assert.equal(indexKindFor({ streamId: 'taConfirmation', fileType: '04' }), 'OFI');
   assert.throws(() => indexKindFor({ streamId: 'taEarlyConfirmation', fileType: '01' }), /not supported/);
   assert.throws(() => indexKindFor({ streamId: 'salesApplication', fileType: '04' }), /not supported/);
   assert.throws(() => exchangeStream('toString'), /Unsupported exchange stream/);
