@@ -11,7 +11,7 @@ function requiredUuid(value, name) {
   if (typeof value !== 'string' || !uuid.test(value)) {
     throw storeError('INVALID_ID', 400, `${name} 无效`);
   }
-  return value;
+  return value.toLowerCase();
 }
 
 function titleText(value) {
@@ -58,7 +58,7 @@ export function createCaseRepository({ transaction }) {
   }
 
   async function createCase(token, chatPublicId, title) {
-    requiredUuid(chatPublicId, 'Chat');
+    chatPublicId = requiredUuid(chatPublicId, 'Chat');
     const cleanTitle = titleText(title);
     return transaction(async db => {
       const auth = await authenticateSession(db, token);
@@ -79,7 +79,7 @@ export function createCaseRepository({ transaction }) {
   }
 
   async function listCases(token, chatPublicId) {
-    requiredUuid(chatPublicId, 'Chat');
+    chatPublicId = requiredUuid(chatPublicId, 'Chat');
     return transaction(async db => {
       const auth = await authenticateSession(db, token);
       const [[chat]] = await db.execute(`SELECT id,status,title FROM case_chats
