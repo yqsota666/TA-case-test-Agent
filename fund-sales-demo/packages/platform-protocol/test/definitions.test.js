@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   FILE_DEFINITIONS, FIELD_REQUIREMENTS, TRANSACTION_BUSINESSES,
-  EXCHANGE_STREAMS, defaultExchangeStreamForFile
+  EXCHANGE_STREAMS, defaultExchangeStreamForFile, exchangeStream, indexKindFor
 } from '../src/index.js';
 
 test('the current TA file contract has complete, unambiguous field layouts', () => {
@@ -45,4 +45,11 @@ test('outbound and return files have explicit exchange directions', () => {
   }
   assert.equal(EXCHANGE_STREAMS.taEarlyConfirmation.indexKind, 'OFF');
   assert.equal(defaultExchangeStreamForFile('04').id, 'taConfirmation');
+});
+
+test('explicit exchange streams reject unsupported file types and inherited names', () => {
+  assert.equal(indexKindFor({ streamId: 'taEarlyConfirmation', fileType: '04' }), 'OFF');
+  assert.throws(() => indexKindFor({ streamId: 'taEarlyConfirmation', fileType: '01' }), /not supported/);
+  assert.throws(() => indexKindFor({ streamId: 'salesApplication', fileType: '04' }), /not supported/);
+  assert.throws(() => exchangeStream('toString'), /Unsupported exchange stream/);
 });
