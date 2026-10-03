@@ -277,6 +277,11 @@ export function normalizeExchangeFile(buffer) {
     const isCurrent = parsed.version === '22' && parsed.fields === fieldsForFile('22', parsed.fileType)
       && splitCrlf(buffer)[1].toString('ascii') === '22      ';
     if (isCurrent) return buffer;
+    if (parsed.fields === fieldsForFile('22', parsed.fileType)) {
+      const normalized = Buffer.from(buffer);
+      Buffer.from('22      ', 'ascii').copy(normalized, 10);
+      return normalized;
+    }
     return buildDataFile({
       creator: parsed.creator,
       receiver: parsed.receiver,

@@ -138,11 +138,12 @@ test('normalizes files with the legacy zero-padded version for FFReader', () => 
   const legacyIndex = Buffer.from(index);
   Buffer.from('00000022').copy(legacyIndex, 10);
   assert.equal(parseIndexFile(normalizeExchangeFile(legacyIndex)).version, '22');
-  const extraType = buildDataFile({ creator: '305', receiver: '27', date: '20260917', fileType: 'X1', records: [{}] });
+  const extraType = buildDataFile({ creator: '305', receiver: '27', date: '20260917', fileType: 'X1', records: [{ AppSheetSerialNo: '  ID001' }] });
   const legacyExtraType = Buffer.from(extraType);
   Buffer.from('00000022').copy(legacyExtraType, 10);
   const normalizedExtraType = normalizeExchangeFile(legacyExtraType);
   assert.equal(normalizedExtraType.subarray(10, 18).toString('ascii'), '22      ');
+  assert.deepEqual(normalizedExtraType.subarray(18), legacyExtraType.subarray(18));
   assert.equal(parseDataFile(normalizedExtraType).records.length, 1);
 });
 
