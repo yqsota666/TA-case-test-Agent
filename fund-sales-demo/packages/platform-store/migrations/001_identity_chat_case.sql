@@ -22,6 +22,7 @@ CREATE TABLE workspaces (
   created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   UNIQUE KEY uq_workspace_public (public_id),
   UNIQUE KEY uq_workspace_owner (owner_user_id),
+  UNIQUE KEY uq_workspace_actor (id,owner_user_id),
   CONSTRAINT fk_workspace_owner FOREIGN KEY (owner_user_id) REFERENCES platform_users(id)
 ) ENGINE=InnoDB;
 
@@ -109,7 +110,8 @@ CREATE TABLE chat_state_events (
   KEY ix_chat_event_order (workspace_id,chat_id,id),
   CONSTRAINT fk_chat_event_chat FOREIGN KEY (workspace_id,chat_id)
     REFERENCES case_chats(workspace_id,id),
-  CONSTRAINT fk_chat_event_actor FOREIGN KEY (actor_user_id) REFERENCES platform_users(id),
+  CONSTRAINT fk_chat_event_actor FOREIGN KEY (workspace_id,actor_user_id)
+    REFERENCES workspaces(id,owner_user_id),
   CONSTRAINT ck_chat_event_to CHECK (to_status IN ('ACTIVE','CLOSED','FORCE_CLOSED'))
 ) ENGINE=InnoDB;
 
@@ -126,7 +128,8 @@ CREATE TABLE case_state_events (
   KEY ix_case_event_order (workspace_id,chat_id,case_id,id),
   CONSTRAINT fk_case_event_case FOREIGN KEY (workspace_id,chat_id,case_id)
     REFERENCES cases(workspace_id,chat_id,id),
-  CONSTRAINT fk_case_event_actor FOREIGN KEY (actor_user_id) REFERENCES platform_users(id),
+  CONSTRAINT fk_case_event_actor FOREIGN KEY (workspace_id,actor_user_id)
+    REFERENCES workspaces(id,owner_user_id),
   CONSTRAINT ck_case_event_to CHECK (to_status IN
     ('DISCUSSING','SOP_PENDING','SOP_LOCKED','EXECUTING','WAITING_EVIDENCE','REVIEW','PASS','FAIL'))
 ) ENGINE=InnoDB;
