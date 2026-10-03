@@ -6,4 +6,5 @@ reviews:
     base_branches:
       - main
   request_changes_workflow: true
+  fail_commit_status: true
   allow_author_approval: false
