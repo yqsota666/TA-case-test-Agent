@@ -52,6 +52,8 @@ flowchart TB
 
 访问入口通过会话解析服务端 Workspace，再限定 Chat 和 Case 查询；客户端不能传入 Workspace ID。这里没有用户可见或业务归属上的 `Run`。本 PR 不创建申请、发文批次或回传，也不提供 HTTP 登录页面；后者在 API 层接入此访问入口。
 
+数据库迁移只面向独立的 `ta_case_agent` 库。每张表建表前先写入步骤记录，MySQL DDL 中断后可按步骤继续；已完成迁移保存源文件 SHA-256，修改旧迁移会被拒绝。运行时须提供 `CASE_DB_NAME`、`CASE_DB_USER`、`CASE_DB_PASSWORD`，并执行 `npm run db:migrate`。该数据库账号需要在部署迁移时拥有建表权限；普通请求使用单独的受限账号由后续服务层接入。
+
 ## 目标流程与状态门槛
 
 一个父 Chat 包含多个 Case；每个 Case 与使用者讨论测试目标和可观察标准，形成 SOP 草案。用户确认并锁定 SOP 后，服务按当前父 Chat 的所有 Case 汇总本批 01/03。新账户先发送 01，成功收到 02 和真实 TA 账户后，依赖它的 03 才进入后续批次。系统接收完整 02/04/05 文件，按记录关联到原申请和 Case，依据锁定 SOP 判定 PASS、FAIL、WAITING 或 REVIEW。系统／AI 给出建议，人逐 Case 确认最终结论。

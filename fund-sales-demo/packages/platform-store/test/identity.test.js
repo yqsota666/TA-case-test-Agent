@@ -62,4 +62,6 @@ test('case listing is limited to authenticated Workspace and requested Chat', as
   assert.equal((await repository.listCases(token, chatId)).cases.length, 1);
   assert.deepEqual(calls.find(call => call.sql.includes('FROM cases')).values, [31, 41]);
   await assert.rejects(repository.listCases(token, 'not-a-uuid'), { code: 'INVALID_ID' });
+  await repository.listCases(token, chatId.toUpperCase());
+  assert.deepEqual(calls.filter(call => call.sql.includes('FROM case_chats')).at(-1).values, [31, chatId]);
 });
