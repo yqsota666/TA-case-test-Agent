@@ -51,7 +51,9 @@ export function encodeField(field, value) {
 export function decodeField(field, source) {
   const raw = iconv.decode(source, ENCODING).trim();
   if (!raw) return null;
+  if (field.type === 'A' && !/^\d+$/.test(raw)) throw new Error(`${field.name} must contain digits only`);
   if (field.type !== 'N') return raw;
+  if (!/^-?\d+$/.test(raw)) throw new Error(`${field.name} is not numeric: ${raw}`);
   const negative = raw.startsWith('-');
   const digits = (negative ? raw.slice(1) : raw).replace(/^0+(?=\d)/, '') || '0';
   const scale = field.scale || 0;
@@ -84,6 +86,7 @@ function decodeRecordWithFields(fields, line) {
 
 const line = (value, length, numeric = false) => {
   const text = String(value ?? '');
+  if (numeric && !/^\d+$/.test(text)) throw new Error(`Header value is not numeric: ${text}`);
   const encoded = iconv.encode(text, ENCODING);
   if (encoded.length > length) throw new Error(`Header value exceeds ${length}: ${text}`);
   const padded = Buffer.alloc(length, numeric ? 0x30 : 0x20);
@@ -157,6 +160,14 @@ function readWireProfile(lines, kind) {
   return { profile, recordCountWidth: legacyV21Header ? 16 : profile.recordCountWidth };
 }
 
+function readUnsignedHeader(buffer, name) {
+  const raw = buffer?.toString('ascii') ?? '';
+  if (!/^\d+$/.test(raw)) throw new Error(`${name} is not numeric: ${raw}`);
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value)) throw new Error(`${name} exceeds the safe integer range: ${raw}`);
+  return value;
+}
+
 const PROTOCOL_LEGACY_HEADER_WIDTHS = {
   data: [8, 8, 20, 20, 8, 8, 8, 8, 8, 8],
   index: [8, 8, 20, 20, 8, 8]
@@ -170,7 +181,7 @@ export function parseDataFile(buffer) {
   const fileType = iconv.decode(lines[6], ENCODING).trim();
   const version = profile.version;
   const primaryFields = fieldsForFile(version, fileType);
-  const fieldCount = Number(lines[9].toString('ascii'));
+  const fieldCount = readUnsignedHeader(lines[9], 'Field count');
   const names = lines.slice(10, 10 + fieldCount).map((v) => iconv.decode(v, ENCODING));
   const legacyFields = version === '22' ? LEGACY_FILE_DEFINITIONS[fileType] : null;
   const legacy01Fields = fileType === '01' && legacyFields ? legacyFields.filter((field) => field.name !== 'TAAccountID') : null;
@@ -183,7 +194,7 @@ export function parseDataFile(buffer) {
   }
   const countIndex = 10 + fieldCount;
   if (lines[countIndex]?.length !== recordCountWidth) throw new Error(`Record count line has ${lines[countIndex]?.length ?? 0} bytes; expected ${recordCountWidth}`);
-  const recordCount = Number(lines[countIndex].toString('ascii'));
+  const recordCount = readUnsignedHeader(lines[countIndex], 'Record count');
   const recordLines = lines.slice(countIndex + 1, -1);
   if (recordCount !== recordLines.length) throw new Error(`Record count ${recordCount}, actual ${recordLines.length}`);
   const creator = iconv.decode(lines[2], ENCODING).trim();
@@ -192,7 +203,7 @@ export function parseDataFile(buffer) {
   const records = recordLines.map((value) => decodeRecordWithFields(fields, value));
   return {
     fileType, version, creator, receiver, date,
-    summaryNo: Number(lines[5].toString('ascii')),
+    summaryNo: readUnsignedHeader(lines[5], 'Summary number'),
     sender: iconv.decode(lines[7], ENCODING).trim(), recipient: iconv.decode(lines[8], ENCODING).trim(),
     fields, records,
     businessRecords: records.map((record, index) => mapBusinessRecord(record, { version, fileType, creator, receiver, date, index: index + 1 }))
@@ -205,7 +216,7 @@ export function parseIndexFile(buffer) {
     throw new Error('Invalid index file');
   }
   const { profile } = readWireProfile(lines, 'index');
-  const fileCount = Number(lines[5].toString('ascii'));
+  const fileCount = readUnsignedHeader(lines[5], 'Index file count');
   const fileNames = lines.slice(6, -1).map((v) => iconv.decode(v, ENCODING));
   if (fileCount !== fileNames.length) throw new Error(`Index file count ${fileCount}, actual ${fileNames.length}`);
   return {

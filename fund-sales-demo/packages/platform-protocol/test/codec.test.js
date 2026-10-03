@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import iconv from 'iconv-lite';
-import { buildDataFile, buildIndexFile, dataFileName, encodeField, EXCHANGE_STREAMS, FIELD_REQUIREMENTS, FILE_DEFINITIONS, fieldsForFile, indexFileName, inspectDataFile, inspectIndexFile, normalizeExchangeFile, parseDataFile, parseIndexFile, TRANSACTION_BUSINESSES } from '../src/index.js';
+import { buildDataFile, buildIndexFile, dataFileName, decodeField, encodeField, EXCHANGE_STREAMS, FIELD_REQUIREMENTS, FILE_DEFINITIONS, fieldsForFile, indexFileName, inspectDataFile, inspectIndexFile, normalizeExchangeFile, parseDataFile, parseIndexFile, TRANSACTION_BUSINESSES } from '../src/index.js';
 
 test('encodes Chinese character fields by GB18030 byte length', () => {
   const encoded = encodeField({ name: 'name', type: 'C', length: 8, scale: 0 }, '广发');
@@ -148,6 +148,32 @@ test('rejects wrong record count', () => {
   marker.copy(broken, offset);
   broken[offset + 15] = 0x31;
   assert.throws(() => parseDataFile(broken), /Record count/);
+});
+
+test('rejects malformed numeric and digit-only fields in incoming files', () => {
+  const fields = fieldsForFile('22', '05');
+  const data = buildDataFile({
+    creator: '27', receiver: '960', date: '20260917', fileType: '05',
+    records: [{ AvailableVol: '12.50' }]
+  });
+  const recordLine = data.toString('binary').split('\r\n').at(-2);
+  const recordOffset = data.indexOf(Buffer.from(recordLine, 'binary'));
+  const fieldIndex = fields.findIndex(field => field.name === 'AvailableVol');
+  const fieldOffset = fields.slice(0, fieldIndex).reduce((sum, field) => sum + field.length, 0);
+  const corrupted = Buffer.from(data);
+  corrupted[recordOffset + fieldOffset + fields[fieldIndex].length - 2] = 0x58;
+  assert.throws(() => parseDataFile(corrupted), /AvailableVol is not numeric/);
+  assert.throws(() => decodeField({ name: 'TransactionDate', type: 'A', length: 8 }, Buffer.from('20260X17')), /digits only/);
+});
+
+test('rejects nonnumeric header values when building or parsing', () => {
+  const header = { creator: '27', receiver: '960', date: '20260917', fileType: '05', records: [] };
+  assert.throws(() => buildDataFile({ ...header, summaryNo: 'ABC' }), /Header value is not numeric/);
+  const corrupted = Buffer.from(buildDataFile(header));
+  const summaryOffset = corrupted.toString('binary').split('\r\n').slice(0, 5)
+    .reduce((sum, value) => sum + Buffer.byteLength(value, 'binary') + 2, 0);
+  corrupted[summaryOffset] = 0x58;
+  assert.throws(() => parseDataFile(corrupted), /Summary number is not numeric/);
 });
 
 test('publishes required and conditional metadata for editable sales files', () => {
