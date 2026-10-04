@@ -73,6 +73,14 @@ test('follow-up rejects inline Markdown in its plain-text reply', async () => {
   }
 });
 
+test('plain identifier underscores remain valid in follow-up replies', async () => {
+  const priorTurns = [{ role: 'user', content: requirement }, { role: 'assistant', content: firstReply }];
+  const reply = '当前理解：confirm_record_id 是需要核对的标识。\n建议先测：对比重复上传前后的记录。\n请你确认：该字段由谁生成？';
+  const result = await discussTurn(createDiscussionGraph({ complete: async () => reply }),
+    { priorTurns, userInput: '请继续。' });
+  assert.equal(result.reply, reply);
+});
+
 test('Sophnet adapter sends previous user and assistant turns in order', async () => {
   const calls = [];
   const complete = createSophnetCompletion({ client: { chat: { completions: {
