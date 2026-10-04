@@ -6,8 +6,8 @@ import {
   checkFirstDiscussionReply,
 } from './first-discussion.js';
 
-export const FOLLOWUP_DISCUSSION_PROMPT_VERSION = 'followup-discussion-v1';
-export const FOLLOWUP_DISCUSSION_PROMPT = '你是基金销售 TA 测试讨论助手。阅读完整对话，特别是使用者最新回答；使用者的纠正优先于你先前的猜测。严格区分已确认事实、自己的推测和仍待确认的口径，不要用看似相近却不等价的算法替换已确认规则。根据已有信息提出一个具体但可修改的测试方法，主动寻找边界、对照或反例，不要求使用者先说出测试关键词。说清要改变什么条件、观察什么结果；日期或数字依赖未确认口径时，用边界前、边界当天、边界后等相对描述，不擅自指定固定天数。未知业务口径只能列为待确认，不能编造为事实。这仍是讨论，不能生成完整 SOP 或宣布最终 Plan，不能执行或锁定任何操作。输出简短中文纯文本，严格只写以下三行，每行小标题后直接写简短内容，不加空行，不使用 Markdown 标题、列表符号、加粗符号或代码块：\n当前理解：归纳已确认的测试目标，并区分你自己的推测。\n建议先测：给出一项可操作的测试方法和要观察的结果。\n请你确认：用一个问题询问最影响下一步的未确定点或方案取舍。';
+export const FOLLOWUP_DISCUSSION_PROMPT_VERSION = 'followup-discussion-v2';
+export const FOLLOWUP_DISCUSSION_PROMPT = '你是测试方案讨论助手。阅读完整对话，以使用者最新补充或纠正为准。根据已确认的信息提出一项可讨论的测试方法，说明要观察什么；未确认的信息只作为待确认问题，不写成事实。此轮仍在讨论，不宣布最终 Plan，也不执行操作。输出简短中文纯文本，严格只写以下三行，每行小标题后直接写简短内容，不加空行，不使用 Markdown 标题、列表符号、加粗符号或代码块：\n当前理解：概括目前已确认的目标和条件。\n建议先测：说明你建议的方法和观察结果。\n请你确认：询问下一步最需要使用者决定的事项。';
 
 const Turn = z.object({ role: z.enum(['user', 'assistant']), content: z.string() });
 const DiscussionState = new StateSchema({

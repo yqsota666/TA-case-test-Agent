@@ -11,19 +11,19 @@ test('the second node uses the full conversation and can repeat after another us
   const complete = async args => { calls.push(args); return calls.length === 1 ? firstReply : followupReply; };
   const graph = createDiscussionGraph({ complete });
   const first = await discussTurn(graph, { userInput: requirement });
-  assert.equal(first.promptVersion, 'first-node-format-v2');
+  assert.equal(first.promptVersion, 'first-node-format-v3');
   assert.equal(first.phase, 'AWAITING_USER');
   const answer = '我想验证不同持有时间下的归属判断，边界由你来建议。';
   const second = await discussTurn(graph, { priorTurns: first.turns, userInput: answer });
   assert.equal(second.reply, followupReply);
-  assert.equal(second.promptVersion, 'followup-discussion-v1');
+  assert.equal(second.promptVersion, 'followup-discussion-v2');
   assert.deepEqual(calls[1].messages, [
     { role: 'user', content: requirement },
     { role: 'assistant', content: firstReply },
     { role: 'user', content: answer },
   ]);
   const third = await discussTurn(graph, { priorTurns: second.turns, userInput: '按确认日算，请继续。' });
-  assert.equal(third.promptVersion, 'followup-discussion-v1');
+  assert.equal(third.promptVersion, 'followup-discussion-v2');
   assert.equal(calls[2].messages.length, 5);
   assert.equal(third.turns.length, 6);
   assert.equal('plan' in third, false);
