@@ -60,6 +60,15 @@ test('invalid transcript or malformed model output cannot advance the discussion
   }), { code: 'MODEL_OUTPUT_FORMAT' });
 });
 
+test('follow-up rejects inline Markdown in its plain-text reply', async () => {
+  const priorTurns = [{ role: 'user', content: requirement }, { role: 'assistant', content: firstReply }];
+  for (const detail of ['*一年边界*', '_一年边界_', '[一年边界](https://example.com)']) {
+    const reply = `当前理解：${detail}可能影响费用归属。\n建议先测：比较边界前后的结果。\n请你确认：具体口径是什么？`;
+    await assert.rejects(discussTurn(createDiscussionGraph({ complete: async () => reply }),
+      { priorTurns, userInput: '请继续。' }), { code: 'MODEL_OUTPUT_FORMAT' });
+  }
+});
+
 test('Sophnet adapter sends previous user and assistant turns in order', async () => {
   const calls = [];
   const complete = createSophnetCompletion({ client: { chat: { completions: {
