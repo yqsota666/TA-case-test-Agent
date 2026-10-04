@@ -22,3 +22,10 @@ test('the discussion history migration creates one scoped table with pending and
   assert.match(steps[0].sql, /fk_discussion_case/);
   assert.match(steps[0].sql, /status='PENDING'/);
 });
+
+test('the proposal linkage migration adds a turn kind and a scoped SOP source', () => {
+  const sql = fs.readFileSync(new URL('../migrations/005_discussion_turn_kind.sql', import.meta.url), 'utf8');
+  const steps = migrationStatements(sql);
+  assert.deepEqual(steps.map(step => step.kind), ['ADD_TURN_KIND', 'ADD_SOP_SOURCE']);
+  assert.match(steps[1].sql, /FOREIGN KEY \(workspace_id,chat_id,case_id,source_turn_number\)/);
+});

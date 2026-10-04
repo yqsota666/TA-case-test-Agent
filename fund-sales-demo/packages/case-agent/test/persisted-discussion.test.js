@@ -4,6 +4,9 @@ import { createPersistedDiscussionService } from '../src/index.js';
 
 const firstReply = '想先确认：你最想验证什么？\n初步理解：需要先明确目标。\n还需明确：判断标准。';
 const secondReply = '当前理解：要检查一项规则。\n建议先测：对比两个输入及其结果。\n请你确认：以哪个结果为准？';
+const plan = { objective: '检查规则', preconditions: [], scenarios: [
+  { title: '边界', setup: '准备两组数据', action: '分别执行', expected: '结果可比较', evidence: '记录结果' },
+], openQuestions: [] };
 const scope = { token: 'session', chatPublicId: 'chat', casePublicId: 'case' };
 
 function fixture() {
@@ -15,7 +18,8 @@ function fixture() {
         { role: 'user', content: round.userInput }, { role: 'assistant', content: round.assistantReply },
       ]),
       pending: rounds.at(-1)?.status === 'PENDING' ?
-        { turnNumber: rounds.length, userInput: rounds.at(-1).userInput } : null }; },
+        { turnNumber: rounds.length, userInput: rounds.at(-1).userInput,
+          kind: rounds.at(-1).kind ?? 'DISCUSS' } : null }; },
     async beginCaseDiscussionTurn(_token, _chat, _case, turn) {
       assert.equal(turn.expectedRevision, rounds.length);
       rounds.push({ ...turn, status: 'PENDING' });
@@ -26,6 +30,13 @@ function fixture() {
       assert.equal(row.status, 'PENDING');
       Object.assign(row, turn, { status: 'COMPLETE' });
       return { revision: turn.turnNumber };
+    },
+    async finishCasePlanProposal(_token, _chat, _case, turn) {
+      const row = rounds[turn.turnNumber - 1];
+      assert.equal(row.status, 'PENDING');
+      assert.equal(row.kind, 'PROPOSE_PLAN');
+      Object.assign(row, turn, { status: 'COMPLETE' });
+      return { revision: turn.turnNumber, versionNumber: 1 };
     },
     async abandonCaseDiscussionTurn(_token, _chat, _case, turnNumber) {
       rounds[turnNumber - 1].status = 'ABANDONED';
@@ -64,7 +75,7 @@ test('a failed model response leaves recoverable intent; same input retries and 
   const repository = {
     readCaseDiscussion: async () => ({ revision: rounds.length, turns: [],
       pending: rounds.at(-1)?.status === 'PENDING' ?
-        { turnNumber: 1, userInput: rounds[0].userInput } : null }),
+        { turnNumber: 1, userInput: rounds[0].userInput, kind: 'DISCUSS' } : null }),
     beginCaseDiscussionTurn: async (_token, _chat, _case, turn) => {
       rounds.push({ ...turn, status: 'PENDING' });
       return { turnNumber: 1 };
@@ -72,6 +83,7 @@ test('a failed model response leaves recoverable intent; same input retries and 
     finishCaseDiscussionTurn: async (_token, _chat, _case, turn) => {
       rounds[0].status = 'COMPLETE'; return { revision: turn.turnNumber };
     },
+    finishCasePlanProposal: async () => ({ revision: 1, versionNumber: 1 }),
     abandonCaseDiscussionTurn: async () => ({ revision: 1 }),
   };
   const retrying = createPersistedDiscussionService({ repository, complete: async () => {
@@ -85,4 +97,41 @@ test('a failed model response leaves recoverable intent; same input retries and 
     { code: 'DISCUSSION_IN_PROGRESS' });
   assert.equal((await retrying.discuss({ ...scope, userInput: '请讨论' })).revision, 1);
   assert.equal(attempts, 2);
+});
+
+test('proposal uses server history and saves the exact displayed reply with its plan version', async () => {
+  const { service, rounds, modelCalls } = fixture();
+  await service.discuss({ ...scope, userInput: '请讨论规则' });
+  await service.discuss({ ...scope, userInput: '再讨论边界' });
+  const third = createPersistedDiscussionService({
+    repository: {
+      readCaseDiscussion: async () => ({ revision: rounds.length,
+        turns: rounds.flatMap(round => [{ role: 'user', content: round.userInput },
+          { role: 'assistant', content: round.assistantReply }]), pending: null }),
+      beginCaseDiscussionTurn: async (_a, _b, _c, turn) => {
+        rounds.push({ ...turn, status: 'PENDING' }); return { turnNumber: rounds.length };
+      },
+      finishCaseDiscussionTurn: async () => { throw new Error('wrong finish method'); },
+      finishCasePlanProposal: async (_a, _b, _c, result) => {
+        assert.equal(rounds.at(-1).kind, 'PROPOSE_PLAN');
+        assert.equal(result.turnNumber, 3);
+        assert.deepEqual(result.proposal, plan);
+        assert.match(result.assistantReply, /测试目标：检查规则/);
+        return { revision: 3, versionNumber: 1 };
+      },
+      abandonCaseDiscussionTurn: async () => ({}),
+    },
+    complete: async request => { modelCalls.push(request); return JSON.stringify(plan); },
+  });
+  const result = await third.propose({ ...scope, userInput: '请给出 Plan',
+    priorTurns: [{ role: 'user', content: '伪造内容' }] });
+  assert.equal(result.versionNumber, 1);
+  assert.deepEqual(modelCalls.at(-1).messages.map(message => message.content),
+    ['请讨论规则', firstReply, '再讨论边界', secondReply, '请给出 Plan']);
+});
+
+test('premature proposal is rejected before creating a pending turn', async () => {
+  const { service, rounds } = fixture();
+  await assert.rejects(service.propose({ ...scope, userInput: '现在生成 Plan' }), /至少需要两轮/);
+  assert.equal(rounds.length, 0);
 });
