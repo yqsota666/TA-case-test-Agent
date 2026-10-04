@@ -21,6 +21,30 @@ function titleText(value) {
   return value.trim();
 }
 
+function validPlanText(value) {
+  return typeof value === 'string' && value.length >= 1 && value.length <= 1000 &&
+    value.trim() === value &&
+    !/[\r\n]|\*\*|__|`|^\s{0,3}(?:#{1,6}\s|[-*+]\s|\d+[.)]\s)/.test(value);
+}
+
+function hasExactKeys(value, keys) {
+  return value && typeof value === 'object' && !Array.isArray(value) &&
+    Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
+}
+
+function validSopPlan(plan) {
+  return hasExactKeys(plan, ['objective', 'preconditions', 'scenarios', 'openQuestions']) &&
+    validPlanText(plan.objective) &&
+    Array.isArray(plan.preconditions) && plan.preconditions.length <= 50 &&
+    plan.preconditions.every(validPlanText) &&
+    Array.isArray(plan.scenarios) && plan.scenarios.length >= 1 && plan.scenarios.length <= 100 &&
+    plan.scenarios.every(scenario =>
+      hasExactKeys(scenario, ['title', 'setup', 'action', 'expected', 'evidence']) &&
+      ['title', 'setup', 'action', 'expected', 'evidence'].every(key => validPlanText(scenario[key]))) &&
+    Array.isArray(plan.openQuestions) && plan.openQuestions.length <= 50 &&
+    plan.openQuestions.every(validPlanText);
+}
+
 export function sessionTokenHash(token) {
   return crypto.createHash('sha256').update(token).digest('hex');
 }
@@ -95,10 +119,7 @@ export function createCaseRepository({ transaction }) {
   async function saveSopProposal(token, chatPublicId, casePublicId, proposal) {
     chatPublicId = requiredUuid(chatPublicId, 'Chat');
     casePublicId = requiredUuid(casePublicId, 'Case');
-    if (!proposal || typeof proposal !== 'object' || Array.isArray(proposal) ||
-        typeof proposal.objective !== 'string' || !proposal.objective.trim() ||
-        !Array.isArray(proposal.scenarios) || proposal.scenarios.length === 0 ||
-        !Array.isArray(proposal.openQuestions)) {
+    if (!validSopPlan(proposal)) {
       throw storeError('INVALID_PLAN', 400, 'Plan 提案无效');
     }
     const planJson = JSON.stringify(proposal);
@@ -196,7 +217,10 @@ export function createCaseRepository({ transaction }) {
         throw storeError('STALE_PLAN', 409, 'Plan 已更新，请重新审阅最新版本');
       }
       const plan = typeof latest.plan_json === 'string' ? JSON.parse(latest.plan_json) : latest.plan_json;
-      if (!Array.isArray(plan?.openQuestions) || plan.openQuestions.length) {
+      if (!validSopPlan(plan)) {
+        throw storeError('INVALID_PLAN', 409, '已保存的 Plan 结构无效，请重新生成');
+      }
+      if (plan.openQuestions.length) {
         throw storeError('PLAN_HAS_OPEN_QUESTIONS', 409, '请先解决 Plan 中的待确认事项');
       }
       await db.execute(`UPDATE case_sop_versions SET status='LOCKED',locked_at=UTC_TIMESTAMP(3)

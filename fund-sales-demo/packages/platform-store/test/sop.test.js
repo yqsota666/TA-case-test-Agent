@@ -5,7 +5,9 @@ import { createCaseRepository } from '../src/index.js';
 const token = 'a'.repeat(43);
 const chatPublicId = '9b039fda-601d-4f3c-b065-0f7bf0837ccc';
 const casePublicId = '15d68e0b-6ae6-4ced-9ad8-9b705c4744ef';
-const plan = { objective: '检查规则', scenarios: [{ title: '边界场景' }], openQuestions: [] };
+const plan = { objective: '检查规则', preconditions: [],
+  scenarios: [{ title: '边界场景', setup: '准备边界数据', action: '执行操作',
+    expected: '观察结果符合规则', evidence: '记录输入输出' }], openQuestions: [] };
 
 function fixture({ chat = { id: 41, status: 'ACTIVE' }, caseRow = { id: 51, status: 'DISCUSSING' } } = {}) {
   const calls = [];
@@ -60,4 +62,11 @@ test('confirmation rejects unresolved questions, closed chats, and cases outside
   const foreign = fixture({ caseRow: null });
   await assert.rejects(foreign.repository.saveSopProposal(...args, plan), { code: 'CASE_NOT_FOUND' });
   assert.equal(foreign.calls.some(call => call.sql.includes('INSERT INTO case_sop_versions')), false);
+});
+
+test('repository refuses to save an incomplete Plan, including when called without the Agent wrapper', async () => {
+  const { repository, calls } = fixture();
+  await assert.rejects(repository.saveSopProposal(token, chatPublicId, casePublicId,
+    { ...plan, scenarios: [{ title: '缺少执行细节' }] }), { code: 'INVALID_PLAN' });
+  assert.equal(calls.length, 0);
 });
