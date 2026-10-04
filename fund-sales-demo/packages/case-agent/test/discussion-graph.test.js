@@ -31,11 +31,15 @@ test('the second node uses the full conversation and can repeat after another us
 
 test('discussion rejects a claim that a plan was already generated or executed', async () => {
   const priorTurns = [{ role: 'user', content: requirement }, { role: 'assistant', content: firstReply }];
-  for (const claim of ['我已生成最终 Plan 并执行。', '我已制定最终方案。', '我已把 SOP 锁好。']) {
+  for (const claim of ['我已生成最终 Plan 并执行。', '我已制定最终方案。', '我已把 SOP 锁好。',
+    '本助手已将最终 Plan 定稿。']) {
     const reply = `当前理解：已确认目标。\n建议先测：检查结果。\n请你确认：现在继续吗？${claim}`;
     await assert.rejects(discussTurn(createDiscussionGraph({ complete: async () => reply }),
       { priorTurns, userInput: '继续讨论。' }), { code: 'MODEL_OUTPUT_FORMAT' });
   }
+  await assert.rejects(discussTurn(createDiscussionGraph({ complete: async () =>
+    '当前理解：本助手已将最终 Plan 定稿。\n建议先测：检查结果。\n请你确认：继续吗？' }),
+  { priorTurns, userInput: '继续讨论。' }), { code: 'MODEL_OUTPUT_FORMAT' });
 });
 
 test('discussion keeps a user history of prior execution and accepts an English question mark', async () => {
