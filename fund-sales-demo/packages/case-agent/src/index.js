@@ -21,3 +21,4 @@ export {
   parsePlanProposal,
   displayPlanProposal,
 } from './plan-proposal.js';
+export { createPlanConfirmationGraph, stagePlanProposal, decidePlan } from './plan-confirmation.js';
