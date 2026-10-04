@@ -40,6 +40,12 @@ test('inline Markdown emphasis and links are rejected in a complete reply', asyn
   }
 });
 
+test('plain identifier underscores remain valid in the first reply', async () => {
+  const answer = '想先确认：你要验证哪个字段？\n初步理解：confirm_record_id 是需要核对的标识。\n还需明确：请说明它的生成口径。';
+  const result = await discussFirstTurn(createFirstDiscussionGraph({ complete: async () => answer }), input);
+  assert.equal(result.reply, answer);
+});
+
 test('first turn rejects an explicit step or SOP section inside the three-line format', async () => {
   const withSteps = '想先确认：你要验证什么？\n初步理解：测试步骤：先准备，再执行。\n还需明确：预期结果是什么。';
   await assert.rejects(discussFirstTurn(createFirstDiscussionGraph({ complete: async () => withSteps }), input),

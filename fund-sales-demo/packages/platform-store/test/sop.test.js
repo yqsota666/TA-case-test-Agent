@@ -80,3 +80,10 @@ test('repository rejects inline Markdown even when the Agent wrapper is bypassed
   }
   assert.equal(calls.length, 0);
 });
+
+test('repository accepts plain identifier underscores without the Agent wrapper', async () => {
+  const { repository } = fixture();
+  assert.deepEqual(await repository.saveSopProposal(token, chatPublicId, casePublicId,
+    { ...plan, objective: 'confirm_record_id' }),
+  { versionNumber: 1, status: 'PENDING_CONFIRMATION' });
+});

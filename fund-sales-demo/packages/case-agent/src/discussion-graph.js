@@ -29,7 +29,7 @@ const DiscussionState = new StateSchema({
 export function checkFollowupDiscussionReply(reply) {
   const lines = typeof reply === 'string' ? reply.split('\n') : [];
   if (typeof reply !== 'string' || reply.length < 30 || reply.length > 360 ||
-      reply !== reply.trim() || /\r|(?:\*\*|__|`|\*[^*\n]+\*|_[^_\n]+_|\[[^\]\n]+\]\([^)\n]+\)|^\s{0,3}(?:#{1,6}\s|[-*+]\s|\d+[.)]\s))/m.test(reply) ||
+      reply !== reply.trim() || /\r|(?:\*\*|__|`|\*[^*\n]+\*|(?<![A-Za-z0-9_])_[^_\n]+_(?![A-Za-z0-9_])|\[[^\]\n]+\]\([^)\n]+\)|^\s{0,3}(?:#{1,6}\s|[-*+]\s|\d+[.)]\s))/m.test(reply) ||
       /(?:我|我们|本助手|本系统|系统|AI)\s*(?:已|已经|现已)[^。！？\n]{0,20}(?:生成|制定|锁定|执行|提交|启动|完成|定稿|锁好|生成好|执行完)/i.test(reply) ||
       /(?:Plan|SOP|方案|测试)[^。！？\n]{0,6}(?:已|已经|现已)(?:生成|锁定|执行|完成|定稿)/i.test(reply) ||
       lines.length !== 3 ||
