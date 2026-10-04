@@ -12,4 +12,12 @@ export {
   checkFollowupDiscussionReply,
   createDiscussionGraph,
   discussTurn,
+  proposeDiscussionPlan,
 } from './discussion-graph.js';
+export {
+  PLAN_PROPOSAL_PROMPT,
+  PLAN_PROPOSAL_PROMPT_VERSION,
+  PlanProposalSchema,
+  parsePlanProposal,
+  displayPlanProposal,
+} from './plan-proposal.js';

@@ -5,17 +5,25 @@ import {
   FIRST_DISCUSSION_PROMPT_VERSION,
   checkFirstDiscussionReply,
 } from './first-discussion.js';
+import {
+  PLAN_PROPOSAL_PROMPT,
+  PLAN_PROPOSAL_PROMPT_VERSION,
+  displayPlanProposal,
+  parsePlanProposal,
+} from './plan-proposal.js';
 
 export const FOLLOWUP_DISCUSSION_PROMPT_VERSION = 'followup-discussion-v2';
 export const FOLLOWUP_DISCUSSION_PROMPT = '你是测试方案讨论助手。阅读完整对话，以使用者最新补充或纠正为准。根据已确认的信息提出一项可讨论的测试方法，说明要观察什么；未确认的信息只作为待确认问题，不写成事实。此轮仍在讨论，不宣布最终 Plan，也不执行操作。输出简短中文纯文本，严格只写以下三行，每行小标题后直接写简短内容，不加空行，不使用 Markdown 标题、列表符号、加粗符号或代码块：\n当前理解：概括目前已确认的目标和条件。\n建议先测：说明你建议的方法和观察结果。\n请你确认：询问下一步最需要使用者决定的事项。';
 
 const Turn = z.object({ role: z.enum(['user', 'assistant']), content: z.string() });
 const DiscussionState = new StateSchema({
+  mode: z.enum(['DISCUSS', 'PROPOSE_PLAN']).default('DISCUSS'),
   userInput: z.string(),
   priorTurns: z.array(Turn).default([]),
   reply: z.string().nullable().default(null),
-  phase: z.enum(['DISCUSSING', 'AWAITING_USER']).default('DISCUSSING'),
+  phase: z.enum(['DISCUSSING', 'AWAITING_USER', 'PROPOSAL_PENDING']).default('DISCUSSING'),
   promptVersion: z.string().nullable().default(null),
+  proposal: z.unknown().nullable().default(null),
 });
 
 export function checkFollowupDiscussionReply(reply) {
@@ -61,10 +69,24 @@ export function createDiscussionGraph({ complete }) {
     phase: 'AWAITING_USER',
     promptVersion: FOLLOWUP_DISCUSSION_PROMPT_VERSION,
   }));
+  graph.addNode('propose_plan', async ({ userInput, priorTurns }) => {
+    if (priorTurns.length < 4) throw new Error('Plan 提案前至少需要两轮完整讨论');
+    const proposal = parsePlanProposal(await complete({
+      system: PLAN_PROPOSAL_PROMPT,
+      messages: [...priorTurns, { role: 'user', content: userInput }],
+    }));
+    return {
+      proposal,
+      reply: displayPlanProposal(proposal),
+      phase: 'PROPOSAL_PENDING',
+      promptVersion: PLAN_PROPOSAL_PROMPT_VERSION,
+    };
+  });
   graph.addConditionalEdges(START,
-    ({ priorTurns }) => priorTurns.length ? 'refine_test_approach' : 'ask_testing_intent',
-    ['ask_testing_intent', 'refine_test_approach']);
-  graph.addEdge('ask_testing_intent', END).addEdge('refine_test_approach', END);
+    ({ mode, priorTurns }) => mode === 'PROPOSE_PLAN' ? 'propose_plan' :
+      priorTurns.length ? 'refine_test_approach' : 'ask_testing_intent',
+    ['ask_testing_intent', 'refine_test_approach', 'propose_plan']);
+  graph.addEdge('ask_testing_intent', END).addEdge('refine_test_approach', END).addEdge('propose_plan', END);
   return graph.compile();
 }
 
@@ -75,8 +97,26 @@ export async function discussTurn(graph, { priorTurns = [], userInput }) {
   }
   const input = userInput.trim();
   const safeTurns = priorTurns.map(({ role, content }) => ({ role, content }));
-  const state = await graph.invoke({ priorTurns: safeTurns, userInput: input });
+  const state = await graph.invoke({ mode: 'DISCUSS', priorTurns: safeTurns, userInput: input, proposal: null });
   return {
+    reply: state.reply,
+    phase: state.phase,
+    promptVersion: state.promptVersion,
+    turns: [...safeTurns, { role: 'user', content: input }, { role: 'assistant', content: state.reply }],
+  };
+}
+
+export async function proposeDiscussionPlan(graph, { priorTurns = [], userInput }) {
+  validatePriorTurns(priorTurns);
+  if (priorTurns.length < 4) throw new Error('Plan 提案前至少需要两轮完整讨论');
+  if (typeof userInput !== 'string' || !userInput.trim()) {
+    throw new TypeError('userInput must be non-empty text');
+  }
+  const input = userInput.trim();
+  const safeTurns = priorTurns.map(({ role, content }) => ({ role, content }));
+  const state = await graph.invoke({ mode: 'PROPOSE_PLAN', priorTurns: safeTurns, userInput: input, proposal: null });
+  return {
+    proposal: state.proposal,
     reply: state.reply,
     phase: state.phase,
     promptVersion: state.promptVersion,
