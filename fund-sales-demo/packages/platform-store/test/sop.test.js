@@ -17,6 +17,7 @@ function fixture({ chat = { id: 41, status: 'ACTIVE' }, caseRow = { id: 51, stat
     if (sql.includes('FROM platform_sessions')) return [[{ user_id: 7, workspace_id: 31 }]];
     if (sql.includes('FROM case_chats')) return [[chat]];
     if (sql.includes('FROM cases')) return [[caseRow]];
+    if (sql.includes('FROM case_discussion_turns')) return [[undefined]];
     if (sql.includes('FROM case_sop_versions')) return [[versions.at(-1)]];
     if (sql.includes('INSERT INTO case_sop_versions')) {
       versions.push({ id: versions.length + 1, version_number: values[3],

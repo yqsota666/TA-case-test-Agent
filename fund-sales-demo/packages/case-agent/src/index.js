@@ -22,3 +22,4 @@ export {
   displayPlanProposal,
 } from './plan-proposal.js';
 export { createPlanConfirmationGraph, stagePlanProposal, decidePlan } from './plan-confirmation.js';
+export { createPersistedDiscussionService } from './persisted-discussion.js';

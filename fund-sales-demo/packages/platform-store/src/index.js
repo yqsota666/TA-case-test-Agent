@@ -139,6 +139,13 @@ export function createCaseRepository({ transaction }) {
       if (!['DISCUSSING', 'SOP_PENDING'].includes(caseRow.status)) {
         throw storeError('INVALID_CASE_STATE', 409, '当前 Case 不能提交 Plan 提案');
       }
+      const [[latestTurn]] = await db.execute(`SELECT status FROM case_discussion_turns
+        WHERE workspace_id=? AND chat_id=? AND case_id=?
+        ORDER BY turn_number DESC LIMIT 1 FOR UPDATE`,
+      [auth.workspace_id, chat.id, caseRow.id]);
+      if (latestTurn?.status === 'PENDING') {
+        throw storeError('DISCUSSION_IN_PROGRESS', 409, '请先完成当前讨论');
+      }
       const [[latest]] = await db.execute(`SELECT id,version_number,status FROM case_sop_versions
         WHERE workspace_id=? AND chat_id=? AND case_id=?
         ORDER BY version_number DESC LIMIT 1 FOR UPDATE`,
@@ -237,6 +244,173 @@ export function createCaseRepository({ transaction }) {
     });
   }
 
+  async function readCaseDiscussion(token, chatPublicId, casePublicId) {
+    chatPublicId = requiredUuid(chatPublicId, 'Chat');
+    casePublicId = requiredUuid(casePublicId, 'Case');
+    return transaction(async db => {
+      const auth = await authenticateSession(db, token);
+      const [[chat]] = await db.execute(`SELECT id,status FROM case_chats
+        WHERE workspace_id=? AND public_id=?`, [auth.workspace_id, chatPublicId]);
+      if (!chat) throw storeError('CHAT_NOT_FOUND', 404, 'Chat 不存在');
+      if (chat.status !== 'ACTIVE') throw storeError('CHAT_CLOSED', 409, 'Chat 已结束');
+      const [[caseRow]] = await db.execute(`SELECT id,status FROM cases
+        WHERE workspace_id=? AND chat_id=? AND public_id=?`,
+      [auth.workspace_id, chat.id, casePublicId]);
+      if (!caseRow) throw storeError('CASE_NOT_FOUND', 404, 'Case 不存在');
+      if (!['DISCUSSING', 'SOP_PENDING'].includes(caseRow.status)) {
+        throw storeError('INVALID_CASE_STATE', 409, '当前 Case 不能继续讨论');
+      }
+      const [rows] = await db.execute(`SELECT turn_number,user_text,assistant_text,status
+        FROM case_discussion_turns WHERE workspace_id=? AND chat_id=? AND case_id=?
+        ORDER BY turn_number`, [auth.workspace_id, chat.id, caseRow.id]);
+      const turns = [];
+      let pending = null;
+      for (const [index, row] of rows.entries()) {
+        if (Number(row.turn_number) !== index + 1) {
+          throw storeError('CORRUPT_HISTORY', 500, 'Case 讨论记录不连续');
+        }
+        if (row.status === 'COMPLETE') {
+          turns.push({ role: 'user', content: row.user_text },
+            { role: 'assistant', content: row.assistant_text });
+        } else if (row.status === 'PENDING' && index === rows.length - 1) {
+          pending = { turnNumber: Number(row.turn_number), userInput: row.user_text };
+        } else if (row.status !== 'ABANDONED') {
+          throw storeError('CORRUPT_HISTORY', 500, 'Case 讨论记录状态无效');
+        }
+      }
+      return { revision: rows.length, turns, pending };
+    });
+  }
+
+  async function beginCaseDiscussionTurn(token, chatPublicId, casePublicId,
+    { expectedRevision, userInput }) {
+    chatPublicId = requiredUuid(chatPublicId, 'Chat');
+    casePublicId = requiredUuid(casePublicId, 'Case');
+    if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0 || expectedRevision >= 0xffffffff ||
+        typeof userInput !== 'string' || !userInput.trim() || userInput.length > 4000) {
+      throw storeError('INVALID_DISCUSSION_TURN', 400, '讨论输入或版本无效');
+    }
+    return transaction(async db => {
+      const auth = await authenticateSession(db, token);
+      const [[chat]] = await db.execute(`SELECT id,status FROM case_chats
+        WHERE workspace_id=? AND public_id=? FOR UPDATE`, [auth.workspace_id, chatPublicId]);
+      if (!chat) throw storeError('CHAT_NOT_FOUND', 404, 'Chat 不存在');
+      if (chat.status !== 'ACTIVE') throw storeError('CHAT_CLOSED', 409, 'Chat 已结束');
+      const [[caseRow]] = await db.execute(`SELECT id,status FROM cases
+        WHERE workspace_id=? AND chat_id=? AND public_id=? FOR UPDATE`,
+      [auth.workspace_id, chat.id, casePublicId]);
+      if (!caseRow) throw storeError('CASE_NOT_FOUND', 404, 'Case 不存在');
+      if (!['DISCUSSING', 'SOP_PENDING'].includes(caseRow.status)) {
+        throw storeError('INVALID_CASE_STATE', 409, '当前 Case 不能继续讨论');
+      }
+      const [[latestTurn]] = await db.execute(`SELECT turn_number,status FROM case_discussion_turns
+        WHERE workspace_id=? AND chat_id=? AND case_id=?
+        ORDER BY turn_number DESC LIMIT 1 FOR UPDATE`,
+      [auth.workspace_id, chat.id, caseRow.id]);
+      if (Number(latestTurn?.turn_number ?? 0) !== expectedRevision) {
+        throw storeError('STALE_DISCUSSION', 409, '讨论已有新回复，请重新读取');
+      }
+      if (latestTurn?.status === 'PENDING') {
+        throw storeError('DISCUSSION_IN_PROGRESS', 409, '上一轮讨论尚未完成');
+      }
+      if (caseRow.status === 'SOP_PENDING') {
+        const [[latestSop]] = await db.execute(`SELECT id,status FROM case_sop_versions
+          WHERE workspace_id=? AND chat_id=? AND case_id=?
+          ORDER BY version_number DESC LIMIT 1 FOR UPDATE`,
+        [auth.workspace_id, chat.id, caseRow.id]);
+        if (latestSop?.status !== 'PENDING_CONFIRMATION') {
+          throw storeError('INVALID_CASE_STATE', 409, '待确认 Plan 状态不一致');
+        }
+        await db.execute(`UPDATE case_sop_versions SET status='DRAFT'
+          WHERE workspace_id=? AND chat_id=? AND case_id=? AND id=?`,
+        [auth.workspace_id, chat.id, caseRow.id, latestSop.id]);
+        await db.execute(`UPDATE cases SET status='DISCUSSING'
+          WHERE workspace_id=? AND chat_id=? AND id=?`,
+        [auth.workspace_id, chat.id, caseRow.id]);
+        await db.execute(`INSERT INTO case_state_events
+          (workspace_id,chat_id,case_id,from_status,to_status,actor_user_id,reason)
+          VALUES (?,?,?,'SOP_PENDING','DISCUSSING',?,'USER_REVISED_PLAN')`,
+        [auth.workspace_id, chat.id, caseRow.id, auth.user_id]);
+      }
+      const revision = expectedRevision + 1;
+      await db.execute(`INSERT INTO case_discussion_turns
+        (workspace_id,chat_id,case_id,turn_number,user_text,actor_user_id)
+        VALUES (?,?,?,?,?,?)`,
+      [auth.workspace_id, chat.id, caseRow.id, revision, userInput.trim(), auth.user_id]);
+      return { revision, turnNumber: revision };
+    });
+  }
+
+  async function finishCaseDiscussionTurn(token, chatPublicId, casePublicId,
+    { turnNumber, assistantReply, promptVersion }) {
+    chatPublicId = requiredUuid(chatPublicId, 'Chat');
+    casePublicId = requiredUuid(casePublicId, 'Case');
+    if (!Number.isSafeInteger(turnNumber) || turnNumber < 1 ||
+        typeof assistantReply !== 'string' || !assistantReply.trim() || assistantReply.length > 4000 ||
+        typeof promptVersion !== 'string' || !/^[a-z0-9][a-z0-9-]{0,79}$/.test(promptVersion)) {
+      throw storeError('INVALID_DISCUSSION_TURN', 400, '讨论回复或版本无效');
+    }
+    return transaction(async db => {
+      const auth = await authenticateSession(db, token);
+      const [[chat]] = await db.execute(`SELECT id,status FROM case_chats
+        WHERE workspace_id=? AND public_id=? FOR UPDATE`, [auth.workspace_id, chatPublicId]);
+      if (!chat) throw storeError('CHAT_NOT_FOUND', 404, 'Chat 不存在');
+      if (chat.status !== 'ACTIVE') throw storeError('CHAT_CLOSED', 409, 'Chat 已结束');
+      const [[caseRow]] = await db.execute(`SELECT id,status FROM cases
+        WHERE workspace_id=? AND chat_id=? AND public_id=? FOR UPDATE`,
+      [auth.workspace_id, chat.id, casePublicId]);
+      if (!caseRow) throw storeError('CASE_NOT_FOUND', 404, 'Case 不存在');
+      if (caseRow.status !== 'DISCUSSING') {
+        throw storeError('INVALID_CASE_STATE', 409, '当前 Case 不能完成讨论');
+      }
+      const [[turn]] = await db.execute(`SELECT status FROM case_discussion_turns
+        WHERE workspace_id=? AND chat_id=? AND case_id=? AND turn_number=? FOR UPDATE`,
+      [auth.workspace_id, chat.id, caseRow.id, turnNumber]);
+      if (turn?.status !== 'PENDING') {
+        throw storeError('STALE_DISCUSSION', 409, '讨论回合已完成或已取消');
+      }
+      await db.execute(`UPDATE case_discussion_turns
+        SET assistant_text=?,prompt_version=?,status='COMPLETE',finished_at=UTC_TIMESTAMP(3)
+        WHERE workspace_id=? AND chat_id=? AND case_id=? AND turn_number=?`,
+      [assistantReply, promptVersion, auth.workspace_id, chat.id, caseRow.id, turnNumber]);
+      return { revision: turnNumber };
+    });
+  }
+
+  async function abandonCaseDiscussionTurn(token, chatPublicId, casePublicId, turnNumber) {
+    chatPublicId = requiredUuid(chatPublicId, 'Chat');
+    casePublicId = requiredUuid(casePublicId, 'Case');
+    if (!Number.isSafeInteger(turnNumber) || turnNumber < 1) {
+      throw storeError('INVALID_DISCUSSION_TURN', 400, '讨论轮次无效');
+    }
+    return transaction(async db => {
+      const auth = await authenticateSession(db, token);
+      const [[chat]] = await db.execute(`SELECT id,status FROM case_chats
+        WHERE workspace_id=? AND public_id=? FOR UPDATE`, [auth.workspace_id, chatPublicId]);
+      if (!chat) throw storeError('CHAT_NOT_FOUND', 404, 'Chat 不存在');
+      if (chat.status !== 'ACTIVE') throw storeError('CHAT_CLOSED', 409, 'Chat 已结束');
+      const [[caseRow]] = await db.execute(`SELECT id,status FROM cases
+        WHERE workspace_id=? AND chat_id=? AND public_id=? FOR UPDATE`,
+      [auth.workspace_id, chat.id, casePublicId]);
+      if (!caseRow) throw storeError('CASE_NOT_FOUND', 404, 'Case 不存在');
+      if (caseRow.status !== 'DISCUSSING') {
+        throw storeError('INVALID_CASE_STATE', 409, '当前 Case 不能取消讨论');
+      }
+      const [[turn]] = await db.execute(`SELECT status FROM case_discussion_turns
+        WHERE workspace_id=? AND chat_id=? AND case_id=? AND turn_number=? FOR UPDATE`,
+      [auth.workspace_id, chat.id, caseRow.id, turnNumber]);
+      if (turn?.status !== 'PENDING') {
+        throw storeError('STALE_DISCUSSION', 409, '讨论回合已完成或已取消');
+      }
+      await db.execute(`UPDATE case_discussion_turns
+        SET status='ABANDONED',finished_at=UTC_TIMESTAMP(3)
+        WHERE workspace_id=? AND chat_id=? AND case_id=? AND turn_number=?`,
+      [auth.workspace_id, chat.id, caseRow.id, turnNumber]);
+      return { revision: turnNumber };
+    });
+  }
+
   return Object.freeze({ createChat, createCase, listCases, saveSopProposal,
-    getLatestSopProposal, confirmSopProposal });
+    getLatestSopProposal, confirmSopProposal, readCaseDiscussion, beginCaseDiscussionTurn,
+    finishCaseDiscussionTurn, abandonCaseDiscussionTurn });
 }
