@@ -6,12 +6,16 @@ import mysql from 'mysql2/promise';
 
 const migrationDirectory = fileURLToPath(new URL('../migrations/', import.meta.url));
 
-function statements(sql) {
+export function migrationStatements(sql) {
   const withoutComments = sql.split('\n').filter(line => !/^\s*--/.test(line)).join('\n');
   return withoutComments.split(';').map(part => part.trim()).filter(Boolean).map(statement => {
-    const match = /^CREATE TABLE ([a-z][a-z0-9_]*)\s*\(/i.exec(statement);
-    if (!match) throw new Error('迁移只允许独立的 CREATE TABLE 语句');
-    return { sql: statement, table: match[1], checksum: crypto.createHash('sha256').update(statement).digest('hex') };
+    const create = /^CREATE TABLE ([a-z][a-z0-9_]*)\s*\(/i.exec(statement);
+    const compact = statement.replace(/\s+/g, ' ');
+    const widenSopStatus = /^ALTER TABLE case_sop_versions DROP CHECK ck_sop_status, DROP CHECK ck_sop_lock, MODIFY COLUMN status VARCHAR\(24\) NOT NULL DEFAULT 'DRAFT', ADD CONSTRAINT ck_sop_status CHECK \(status IN \('DRAFT','PENDING_CONFIRMATION','LOCKED'\)\), ADD CONSTRAINT ck_sop_lock CHECK \(\(status='LOCKED'\)=\(locked_at IS NOT NULL\)\)$/i.test(compact);
+    if (!create && !widenSopStatus) throw new Error('迁移语句不在允许的范围内');
+    return { sql: statement, table: create?.[1] ?? 'case_sop_versions',
+      kind: create ? 'CREATE' : 'WIDEN_SOP_STATUS',
+      checksum: crypto.createHash('sha256').update(statement).digest('hex') };
   });
 }
 
@@ -21,7 +25,16 @@ async function tableExists(db, name) {
   return Number(row.count) === 1;
 }
 
-// MySQL commits DDL implicitly. A step is journaled before each CREATE TABLE,
+async function stepApplied(db, step) {
+  if (step.kind === 'CREATE') return tableExists(db, step.table);
+  const [[row]] = await db.execute(`SELECT character_maximum_length AS width
+    FROM information_schema.columns WHERE table_schema=DATABASE()
+      AND table_name='case_sop_versions' AND column_name='status'`);
+  if (!row) throw new Error('case_sop_versions.status 不存在，无法扩展');
+  return Number(row.width) >= 24;
+}
+
+// MySQL commits DDL implicitly. A step is journaled before each DDL operation,
 // so an interruption after creation can resume without rerunning completed DDL.
 export async function applyMigrations(db, { directory = migrationDirectory, afterCreate } = {}) {
   const [[lock]] = await db.execute("SELECT GET_LOCK(CONCAT(DATABASE(),':case_schema'),10) AS acquired");
@@ -45,7 +58,7 @@ export async function applyMigrations(db, { directory = migrationDirectory, afte
     for (const name of names) {
       const source = fs.readFileSync(path.join(directory, name), 'utf8');
       const checksum = crypto.createHash('sha256').update(source).digest('hex');
-      const steps = statements(source);
+      const steps = migrationStatements(source);
       const [[applied]] = await db.execute('SELECT checksum FROM schema_migrations WHERE version=?', [name]);
       if (applied) {
         if (applied.checksum !== checksum) throw new Error(`${name} 已应用但内容被修改`);
@@ -58,14 +71,16 @@ export async function applyMigrations(db, { directory = migrationDirectory, afte
         if (prior && (prior.table_name !== step.table || prior.statement_hash !== step.checksum)) {
           throw new Error(`${name} 第 ${number} 步与已有迁移记录不一致`);
         }
-        const exists = await tableExists(db, step.table);
-        if (!prior && exists) throw new Error(`${step.table} 已存在且不属于本迁移，停止执行`);
+        const applied = await stepApplied(db, step);
+        if (step.kind === 'CREATE' && !prior && applied) {
+          throw new Error(`${step.table} 已存在且不属于本迁移，停止执行`);
+        }
         if (!prior) {
           await db.execute(`INSERT INTO schema_migration_steps
             (version,step_number,table_name,statement_hash,status) VALUES (?,?,?,?,'STARTED')`,
           [name, number, step.table, step.checksum]);
         }
-        if (!exists) {
+        if (!applied) {
           if (prior?.status === 'APPLIED') throw new Error(`${step.table} 已被删除，无法继续迁移`);
           await db.query(step.sql);
           if (afterCreate) await afterCreate({ version: name, stepNumber: number, table: step.table });
