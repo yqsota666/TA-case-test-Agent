@@ -70,3 +70,8 @@ test('proposal fields reject inline Markdown', () => {
       { code: 'MODEL_OUTPUT_FORMAT' });
   }
 });
+
+test('proposal parser accepts plain identifier underscores', () => {
+  const identifierProposal = { ...proposal, objective: 'confirm_record_id' };
+  assert.deepEqual(parsePlanProposal(JSON.stringify(identifierProposal)), identifierProposal);
+});
