@@ -13,9 +13,9 @@ test('first graph node asks and waits without creating a plan', async () => {
   } });
   const result = await discussFirstTurn(graph, input);
   assert.equal(calls.length, 1);
-  assert.match(calls[0].system, /先询问使用者想验证什么/);
+  assert.match(calls[0].system, /询问使用者最想验证什么/);
   assert.equal(calls[0].user, input);
-  assert.deepEqual(result, { reply, phase: 'AWAITING_USER', promptVersion: 'first-node-format-v2' });
+  assert.deepEqual(result, { reply, phase: 'AWAITING_USER', promptVersion: 'first-node-format-v3' });
   assert.equal('plan' in result, false);
 });
 

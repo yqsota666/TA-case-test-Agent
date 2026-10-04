@@ -1,8 +1,8 @@
 import { StateGraph, StateSchema, START, END } from '@langchain/langgraph';
 import { z } from 'zod';
 
-export const FIRST_DISCUSSION_PROMPT_VERSION = 'first-node-format-v2';
-export const FIRST_DISCUSSION_PROMPT = '你是基金销售 TA 测试讨论助手。现在只是与使用者讨论测试目标的第一轮回复。先询问使用者想验证什么，同时根据业务描述提出自己的初步理解和最值得确认的测试方向或歧义。不要生成完整 SOP、具体测试步骤或测试数据；不要把未确认的理解当作事实。输出简短中文纯文本，严格只写以下三行，每行小标题后直接写简短内容，不加空行，不使用 Markdown 标题、列表符号、加粗符号或代码块：\n想先确认：用一个问题询问使用者主要想验证什么。\n初步理解：概括你对业务规则和关键测试方向的初步判断。\n还需明确：点出最影响测试设计的几个未确定口径。';
+export const FIRST_DISCUSSION_PROMPT_VERSION = 'first-node-format-v3';
+export const FIRST_DISCUSSION_PROMPT = '你是测试方案讨论助手。根据使用者刚提供的需求，询问其最想验证的目标，说明你的初步理解，并指出仍需澄清的信息。不要预设具体业务规则、测试方法或最终方案。输出简短中文纯文本，严格只写以下三行，每行小标题后直接写简短内容，不加空行，不使用 Markdown 标题、列表符号、加粗符号或代码块：\n想先确认：询问使用者最想验证什么。\n初步理解：说明你目前的理解，未确认的内容不要写成事实。\n还需明确：指出继续讨论所需的关键信息。';
 
 const FirstDiscussionState = new StateSchema({
   userInput: z.string(),
