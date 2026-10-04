@@ -62,3 +62,16 @@ test('proposal guard and structural format reject premature or unsafe output', a
   assert.throws(() => parsePlanProposal(JSON.stringify({ ...proposal, scenarios: [] })), { code: 'MODEL_OUTPUT_FORMAT' });
   assert.throws(() => parsePlanProposal(JSON.stringify({ ...proposal, objective: '## 标题' })), { code: 'MODEL_OUTPUT_FORMAT' });
 });
+
+test('proposal fields reject inline Markdown', () => {
+  for (const objective of ['验证*重复确认*不会重复入账', '验证_重复确认_不会重复入账',
+    '验证[重复确认](https://example.com)不会重复入账']) {
+    assert.throws(() => parsePlanProposal(JSON.stringify({ ...proposal, objective })),
+      { code: 'MODEL_OUTPUT_FORMAT' });
+  }
+});
+
+test('proposal parser accepts plain identifier underscores', () => {
+  const identifierProposal = { ...proposal, objective: 'confirm_record_id' };
+  assert.deepEqual(parsePlanProposal(JSON.stringify(identifierProposal)), identifierProposal);
+});

@@ -71,3 +71,19 @@ test('repository refuses to save an incomplete Plan, including when called witho
     { ...plan, scenarios: [{ title: '缺少执行细节' }] }), { code: 'INVALID_PLAN' });
   assert.equal(calls.length, 0);
 });
+
+test('repository rejects inline Markdown even when the Agent wrapper is bypassed', async () => {
+  const { repository, calls } = fixture();
+  for (const objective of ['检查*边界*规则', '检查_边界_规则', '检查[边界](https://example.com)规则']) {
+    await assert.rejects(repository.saveSopProposal(token, chatPublicId, casePublicId,
+      { ...plan, objective }), { code: 'INVALID_PLAN' });
+  }
+  assert.equal(calls.length, 0);
+});
+
+test('repository accepts plain identifier underscores without the Agent wrapper', async () => {
+  const { repository } = fixture();
+  assert.deepEqual(await repository.saveSopProposal(token, chatPublicId, casePublicId,
+    { ...plan, objective: 'confirm_record_id' }),
+  { versionNumber: 1, status: 'PENDING_CONFIRMATION' });
+});

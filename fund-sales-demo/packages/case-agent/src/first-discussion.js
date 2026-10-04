@@ -13,7 +13,7 @@ const FirstDiscussionState = new StateSchema({
 export function checkFirstDiscussionReply(reply) {
   const lines = typeof reply === 'string' ? reply.split('\n') : [];
   if (typeof reply !== 'string' || reply.length < 30 || reply.length > 300 ||
-      reply !== reply.trim() || /\r|(?:\*\*|__|`|^\s{0,3}(?:#{1,6}\s|[-*+]\s|\d+[.)]\s))|(?:测试步骤|测试数据|执行步骤|SOP)[：:]/mi.test(reply) ||
+      reply !== reply.trim() || /\r|(?:\*\*|__|`|\*[^*\n]+\*|(?<![A-Za-z0-9_])_[^_\n]+_(?![A-Za-z0-9_])|\[[^\]\n]+\]\([^)\n]+\)|^\s{0,3}(?:#{1,6}\s|[-*+]\s|\d+[.)]\s))|(?:测试步骤|测试数据|执行步骤|SOP)[：:]/mi.test(reply) ||
       lines.length !== 3 ||
       !/^想先确认：\S.+[？?]$/.test(lines[0]) ||
       !/^初步理解：\S.+$/.test(lines[1]) ||

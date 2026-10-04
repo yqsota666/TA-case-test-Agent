@@ -121,6 +121,21 @@ test('a proposal turn and SOP version share one scoped transaction', async () =>
   assert.ok(calls.some(call => call.sql.includes('AI_PLAN_PROPOSAL')));
 });
 
+test('a valid Plan display longer than 4000 characters can be saved', async () => {
+  const previous = [1, 2].map(turn_number => ({ turn_number, user_text: `问题${turn_number}`,
+    assistant_text: `回答${turn_number}`, status: 'COMPLETE', turn_kind: 'DISCUSS' }));
+  const { repository } = fixture({ initialTurns: previous, sop: null });
+  const plan = { objective: '检查规则', preconditions: [], scenarios: [
+    { title: '边界', setup: '准备数据', action: '执行', expected: '可观察结果', evidence: '记录' },
+  ], openQuestions: [] };
+  await repository.beginCaseDiscussionTurn(...scope,
+    { expectedRevision: 2, userInput: '请生成方案', kind: 'PROPOSE_PLAN' });
+  const saved = await repository.finishCasePlanProposal(...scope,
+    { turnNumber: 3, assistantReply: '测试目标：' + '边界'.repeat(2000),
+      promptVersion: 'plan-proposal-v1', proposal: plan });
+  assert.equal(saved.versionNumber, 1);
+});
+
 test('proposal completion rejects too little discussion before writing a SOP', async () => {
   const { repository, calls } = fixture({ initialTurns: [
     { turn_number: 1, user_text: '问题', assistant_text: '回答', status: 'COMPLETE', turn_kind: 'DISCUSS' },

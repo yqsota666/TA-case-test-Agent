@@ -4,7 +4,7 @@ export const PLAN_PROPOSAL_PROMPT_VERSION = 'plan-proposal-v1';
 export const PLAN_PROPOSAL_PROMPT = '你是测试方案讨论助手。根据完整对话生成一份供使用者审阅的 Plan 提案。已确认的信息按原意使用；preconditions 是提案需要准备的条件，尚未确认的条件还要列入 openQuestions，不要编造现有事实。提案要有可观察的预期和证据，但不能宣称已获用户确认、锁定 SOP 或执行任何操作。只输出一个 JSON 对象，不加 Markdown 或解释，字段固定为：{"objective":"测试目标","preconditions":["需要准备的条件"],"scenarios":[{"title":"场景名称","setup":"准备条件","action":"测试动作","expected":"预期观察","evidence":"需要的证据"}],"openQuestions":["待用户确认的问题"]}。preconditions 和 openQuestions 可以为空数组；scenarios 至少一项。每个字符串字段都用单行纯文本，不含换行或 Markdown 标记。字段内容根据当前对话生成，不照抄上述示例文字。';
 
 const Nonempty = z.string().min(1).max(1000).refine(value =>
-  value.trim() === value && !/[\r\n]|\*\*|__|`|^\s{0,3}(?:#{1,6}\s|[-*+]\s|\d+[.)]\s)/.test(value));
+  value.trim() === value && !/[\r\n]|\*\*|__|`|\*[^*\n]+\*|(?<![A-Za-z0-9_])_[^_\n]+_(?![A-Za-z0-9_])|\[[^\]\n]+\]\([^)\n]+\)|^\s{0,3}(?:#{1,6}\s|[-*+]\s|\d+[.)]\s)/.test(value));
 export const PlanProposalSchema = z.object({
   objective: Nonempty,
   preconditions: z.array(Nonempty).max(50),

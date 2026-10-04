@@ -31,11 +31,15 @@ test('the second node uses the full conversation and can repeat after another us
 
 test('discussion rejects a claim that a plan was already generated or executed', async () => {
   const priorTurns = [{ role: 'user', content: requirement }, { role: 'assistant', content: firstReply }];
-  for (const claim of ['我已生成最终 Plan 并执行。', '我已制定最终方案。', '我已把 SOP 锁好。']) {
+  for (const claim of ['我已生成最终 Plan 并执行。', '我已制定最终方案。', '我已把 SOP 锁好。',
+    '本助手已将最终 Plan 定稿。']) {
     const reply = `当前理解：已确认目标。\n建议先测：检查结果。\n请你确认：现在继续吗？${claim}`;
     await assert.rejects(discussTurn(createDiscussionGraph({ complete: async () => reply }),
       { priorTurns, userInput: '继续讨论。' }), { code: 'MODEL_OUTPUT_FORMAT' });
   }
+  await assert.rejects(discussTurn(createDiscussionGraph({ complete: async () =>
+    '当前理解：本助手已将最终 Plan 定稿。\n建议先测：检查结果。\n请你确认：继续吗？' }),
+  { priorTurns, userInput: '继续讨论。' }), { code: 'MODEL_OUTPUT_FORMAT' });
 });
 
 test('discussion keeps a user history of prior execution and accepts an English question mark', async () => {
@@ -58,6 +62,23 @@ test('invalid transcript or malformed model output cannot advance the discussion
     priorTurns: [{ role: 'user', content: requirement }, { role: 'assistant', content: firstReply }],
     userInput: '继续',
   }), { code: 'MODEL_OUTPUT_FORMAT' });
+});
+
+test('follow-up rejects inline Markdown in its plain-text reply', async () => {
+  const priorTurns = [{ role: 'user', content: requirement }, { role: 'assistant', content: firstReply }];
+  for (const detail of ['*一年边界*', '_一年边界_', '[一年边界](https://example.com)']) {
+    const reply = `当前理解：${detail}可能影响费用归属。\n建议先测：比较边界前后的结果。\n请你确认：具体口径是什么？`;
+    await assert.rejects(discussTurn(createDiscussionGraph({ complete: async () => reply }),
+      { priorTurns, userInput: '请继续。' }), { code: 'MODEL_OUTPUT_FORMAT' });
+  }
+});
+
+test('plain identifier underscores remain valid in follow-up replies', async () => {
+  const priorTurns = [{ role: 'user', content: requirement }, { role: 'assistant', content: firstReply }];
+  const reply = '当前理解：confirm_record_id 是需要核对的标识。\n建议先测：对比重复上传前后的记录。\n请你确认：该字段由谁生成？';
+  const result = await discussTurn(createDiscussionGraph({ complete: async () => reply }),
+    { priorTurns, userInput: '请继续。' });
+  assert.equal(result.reply, reply);
 });
 
 test('Sophnet adapter sends previous user and assistant turns in order', async () => {

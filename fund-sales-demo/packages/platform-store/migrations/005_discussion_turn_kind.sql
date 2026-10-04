@@ -9,3 +9,6 @@ ALTER TABLE case_sop_versions
   ADD CONSTRAINT fk_sop_source_turn
     FOREIGN KEY (workspace_id,chat_id,case_id,source_turn_number)
     REFERENCES case_discussion_turns(workspace_id,chat_id,case_id,turn_number);
+
+ALTER TABLE case_discussion_turns
+  MODIFY COLUMN assistant_text MEDIUMTEXT NULL;
