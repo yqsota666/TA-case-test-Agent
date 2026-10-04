@@ -6,3 +6,10 @@ export {
   discussFirstTurn,
 } from './first-discussion.js';
 export { createSophnetCompletion } from './sophnet.js';
+export {
+  FOLLOWUP_DISCUSSION_PROMPT,
+  FOLLOWUP_DISCUSSION_PROMPT_VERSION,
+  checkFollowupDiscussionReply,
+  createDiscussionGraph,
+  discussTurn,
+} from './discussion-graph.js';
