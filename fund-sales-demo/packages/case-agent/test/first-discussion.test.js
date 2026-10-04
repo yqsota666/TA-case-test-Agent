@@ -25,6 +25,12 @@ test('generic three-line reply accepts an English question mark and no terminal 
   assert.equal(result.reply, answer);
 });
 
+test('first reply removes trailing spaces and tabs from each model line', async () => {
+  const raw = reply.split('\n').join('  \n') + '\t  ';
+  const result = await discussFirstTurn(createFirstDiscussionGraph({ complete: async () => raw }), input);
+  assert.equal(result.reply, reply);
+});
+
 test('markdown and missing headings are rejected before reaching the user', async () => {
   const graph = createFirstDiscussionGraph({ complete: async () => '## 测试方案\n**先测试边界**' });
   await assert.rejects(discussFirstTurn(graph, input), { code: 'MODEL_OUTPUT_FORMAT' });

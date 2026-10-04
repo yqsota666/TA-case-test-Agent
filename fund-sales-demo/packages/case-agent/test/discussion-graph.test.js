@@ -50,6 +50,15 @@ test('discussion keeps a user history of prior execution and accepts an English 
   assert.equal(result.reply, reply);
 });
 
+test('follow-up reply removes trailing spaces and tabs before storing the turn', async () => {
+  const priorTurns = [{ role: 'user', content: requirement }, { role: 'assistant', content: firstReply }];
+  const raw = followupReply.split('\n').join('  \n') + '\t  ';
+  const result = await discussTurn(createDiscussionGraph({ complete: async () => raw }),
+    { priorTurns, userInput: '请继续分析。' });
+  assert.equal(result.reply, followupReply);
+  assert.equal(result.turns.at(-1).content, followupReply);
+});
+
 test('invalid transcript or malformed model output cannot advance the discussion', async () => {
   let called = false;
   const graph = createDiscussionGraph({ complete: async () => {
