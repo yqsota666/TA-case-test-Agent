@@ -32,6 +32,14 @@ test('markdown and missing headings are rejected before reaching the user', asyn
   await assert.rejects(discussFirstTurn(noQuestion, input), { code: 'MODEL_OUTPUT_FORMAT' });
 });
 
+test('inline Markdown emphasis and links are rejected in a complete reply', async () => {
+  for (const detail of ['*一年边界*', '_一年边界_', '[一年边界](https://example.com)']) {
+    const answer = `想先确认：你最想验证什么？\n初步理解：${detail}会改变费用归属。\n还需明确：请说明持有期口径。`;
+    await assert.rejects(discussFirstTurn(createFirstDiscussionGraph({ complete: async () => answer }), input),
+      { code: 'MODEL_OUTPUT_FORMAT' });
+  }
+});
+
 test('first turn rejects an explicit step or SOP section inside the three-line format', async () => {
   const withSteps = '想先确认：你要验证什么？\n初步理解：测试步骤：先准备，再执行。\n还需明确：预期结果是什么。';
   await assert.rejects(discussFirstTurn(createFirstDiscussionGraph({ complete: async () => withSteps }), input),
