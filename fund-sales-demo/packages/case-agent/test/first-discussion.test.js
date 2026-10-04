@@ -15,8 +15,14 @@ test('first graph node asks and waits without creating a plan', async () => {
   assert.equal(calls.length, 1);
   assert.match(calls[0].system, /询问使用者最想验证什么/);
   assert.equal(calls[0].user, input);
-  assert.deepEqual(result, { reply, phase: 'AWAITING_USER', promptVersion: 'first-node-format-v3' });
+  assert.deepEqual(result, { reply, phase: 'AWAITING_USER', promptVersion: 'first-node-format-v4' });
   assert.equal('plan' in result, false);
+});
+
+test('generic three-line reply accepts an English question mark and no terminal punctuation on other lines', async () => {
+  const answer = '想先确认：你最想验证什么?\n初步理解：需要先明确判断目标\n还需明确：请说明预期的观察结果';
+  const result = await discussFirstTurn(createFirstDiscussionGraph({ complete: async () => answer }), input);
+  assert.equal(result.reply, answer);
 });
 
 test('markdown and missing headings are rejected before reaching the user', async () => {
@@ -24,6 +30,12 @@ test('markdown and missing headings are rejected before reaching the user', asyn
   await assert.rejects(discussFirstTurn(graph, input), { code: 'MODEL_OUTPUT_FORMAT' });
   const noQuestion = createFirstDiscussionGraph({ complete: async () => '想先确认：我理解要测试一年边界。\n初步理解：满一年时的费用归属需要核对。\n还需明确：持有期和收益率的计算口径。' });
   await assert.rejects(discussFirstTurn(noQuestion, input), { code: 'MODEL_OUTPUT_FORMAT' });
+});
+
+test('first turn rejects an explicit step or SOP section inside the three-line format', async () => {
+  const withSteps = '想先确认：你要验证什么？\n初步理解：测试步骤：先准备，再执行。\n还需明确：预期结果是什么。';
+  await assert.rejects(discussFirstTurn(createFirstDiscussionGraph({ complete: async () => withSteps }), input),
+    { code: 'MODEL_OUTPUT_FORMAT' });
 });
 
 test('Sophnet adapter uses the selected model and keeps model text unchanged', async () => {
