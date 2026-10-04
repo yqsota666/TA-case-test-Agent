@@ -24,7 +24,7 @@ function titleText(value) {
 function validPlanText(value) {
   return typeof value === 'string' && value.length >= 1 && value.length <= 1000 &&
     value.trim() === value &&
-    !/[\r\n]|\*\*|__|`|^\s{0,3}(?:#{1,6}\s|[-*+]\s|\d+[.)]\s)/.test(value);
+    !/[\r\n]|\*\*|__|`|\*[^*\n]+\*|_[^_\n]+_|\[[^\]\n]+\]\([^)\n]+\)|^\s{0,3}(?:#{1,6}\s|[-*+]\s|\d+[.)]\s)/.test(value);
 }
 
 function hasExactKeys(value, keys) {
