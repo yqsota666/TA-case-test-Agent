@@ -8,10 +8,14 @@ export function createSophnetCompletion({
 } = {}) {
   if (!client && !apiKey) throw new Error('SOPHNET_API_KEY is required');
   const sdk = client ?? new OpenAI({ apiKey, baseURL, maxRetries: 0, timeout: 90000 });
-  return async ({ system, user }) => {
+  return async ({ system, user, messages }) => {
+    if ((user === undefined) === (messages === undefined)) {
+      throw new TypeError('provide either user or messages');
+    }
     const response = await sdk.chat.completions.create({
       model,
-      messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
+      messages: [{ role: 'system', content: system },
+        ...(messages ?? [{ role: 'user', content: user }])],
     });
     const content = response.choices?.[0]?.message?.content;
     if (typeof content !== 'string') {
