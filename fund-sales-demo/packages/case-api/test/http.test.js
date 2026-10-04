@@ -74,3 +74,13 @@ test('discussion rejects missing session, foreign origin, and extra input fields
     body: JSON.stringify({ userInput: 'x', workspaceId: 'other' }) })).status, 400);
   assert.equal(calls.length, 0);
 });
+
+test('the Case conversation page serves its own script and styles', async t => {
+  const { base } = await fixture(t);
+  const page = await fetch(base + '/case');
+  assert.equal(page.status, 200);
+  assert.match(await page.text(), /讨论测试方案/);
+  assert.match(page.headers.get('content-security-policy'), /script-src 'self'/);
+  assert.match((await fetch(base + '/case.js')).headers.get('content-type'), /text\/javascript/);
+  assert.match((await fetch(base + '/case.css')).headers.get('content-type'), /text\/css/);
+});

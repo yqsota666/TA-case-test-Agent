@@ -257,7 +257,7 @@ export function createCaseRepository({ transaction }) {
         WHERE workspace_id=? AND chat_id=? AND public_id=?`,
       [auth.workspace_id, chat.id, casePublicId]);
       if (!caseRow) throw storeError('CASE_NOT_FOUND', 404, 'Case 不存在');
-      if (!['DISCUSSING', 'SOP_PENDING'].includes(caseRow.status)) {
+      if (!['DISCUSSING', 'SOP_PENDING', 'SOP_LOCKED'].includes(caseRow.status)) {
         throw storeError('INVALID_CASE_STATE', 409, '当前 Case 不能继续讨论');
       }
       const [rows] = await db.execute(`SELECT turn_number,user_text,assistant_text,status,turn_kind

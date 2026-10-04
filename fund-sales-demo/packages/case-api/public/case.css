@@ -1,0 +1,14 @@
+:root{font-family:system-ui,-apple-system,"PingFang SC",sans-serif;color:#17212d;background:#f5f6f8}
+*{box-sizing:border-box}body{margin:0}main{max-width:850px;margin:0 auto;padding:3rem 1.25rem 5rem}
+header{border-bottom:1px solid #bdc7d3;padding-bottom:1.5rem}h1{font-size:2rem;letter-spacing:-.03em;margin:.2rem 0 .5rem}h2{font-size:1.15rem;margin:0}
+header p:last-child{color:#344559;margin:.5rem 0 0}.eyebrow{font-size:.8rem;font-weight:700;color:#164f81;margin:0}
+.case-picker{display:grid;grid-template-columns:1fr 1fr auto;align-items:end;gap:.75rem;margin:1.5rem 0}
+label{display:grid;gap:.45rem;font-weight:600;font-size:.9rem}input,textarea{width:100%;font:inherit;color:inherit;background:white;border:1px solid #8392a3;border-radius:6px;padding:.7rem;min-width:0}
+textarea{resize:vertical;min-height:7rem}button{font:inherit;font-weight:650;border:1px solid #174a76;background:#174a76;color:white;border-radius:6px;padding:.7rem 1rem;cursor:pointer;min-height:44px}
+button:hover{background:#103b61}button:disabled{cursor:not-allowed;opacity:.55}button:focus-visible,input:focus-visible,textarea:focus-visible{outline:3px solid #bf621a;outline-offset:2px}
+#status{min-height:1.5rem;color:#344559}section{margin-top:2rem}.section-heading{display:flex;justify-content:space-between;align-items:baseline;border-bottom:1px solid #bdc7d3;padding-bottom:.65rem}
+#revision{color:#344559;font-size:.85rem}#turns{list-style:none;margin:0;padding:0}#turns:empty::after{content:"暂无对话。写下测试需求，开始第一轮讨论。";display:block;padding:1.5rem 0;color:#344559}
+#turns li{padding:1rem 0;border-bottom:1px solid #d5dce4;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.6}#turns li strong{display:block;font-size:.8rem;margin-bottom:.3rem;color:#164f81}
+#compose{margin-top:2rem}.actions{display:flex;gap:.75rem;flex-wrap:wrap;margin-top:.75rem}.actions button+button{background:white;color:#174a76}
+#plan-panel{border-top:2px solid #174a76;padding-top:1rem}#plan-state{color:#344559}pre{font:inherit;line-height:1.65;white-space:pre-wrap;overflow-wrap:anywhere;background:#e9eef3;padding:1rem;border-radius:6px}
+@media(max-width:680px){main{padding:1.5rem 1rem 4rem}.case-picker{grid-template-columns:1fr}.case-picker button{width:100%}.actions button{flex:1 1 100%}}

@@ -62,6 +62,15 @@ test('user intent is stored before model output; history contains only complete 
     .every(call => call.values[0] === 31 && call.values[1] === 41 && call.values[2] === 51));
 });
 
+test('locked Case history stays readable while new discussion stays blocked', async () => {
+  const { repository } = fixture({ caseRow: { id: 51, status: 'SOP_LOCKED' }, initialTurns: [
+    { turn_number: 1, user_text: '测试目标', assistant_text: reply, status: 'COMPLETE', turn_kind: 'DISCUSS' },
+  ] });
+  assert.equal((await repository.readCaseDiscussion(...scope)).turns[1].content, reply);
+  await assert.rejects(repository.beginCaseDiscussionTurn(...scope,
+    { expectedRevision: 1, userInput: '再讨论' }), { code: 'INVALID_CASE_STATE' });
+});
+
 test('submitting a revision invalidates the pending Plan before confirmation can lock it', async () => {
   const { repository, caseRow, sop, calls } = fixture({ caseRow: { id: 51, status: 'SOP_PENDING' } });
   await repository.beginCaseDiscussionTurn(...scope, { expectedRevision: 0, userInput: '这里要修改' });

@@ -1,4 +1,11 @@
 import { createServer } from 'node:http';
+import { readFileSync } from 'node:fs';
+
+const assets = new Map([
+  ['/case', ['text/html; charset=utf-8', readFileSync(new URL('../public/case.html', import.meta.url))]],
+  ['/case.css', ['text/css; charset=utf-8', readFileSync(new URL('../public/case.css', import.meta.url))]],
+  ['/case.js', ['text/javascript; charset=utf-8', readFileSync(new URL('../public/case.js', import.meta.url))]],
+]);
 
 const pathPattern = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/(discussion|plan|plan\/confirm)$/i;
 
@@ -37,7 +44,15 @@ export function createCaseHttpHandler({ repository, discussionService, confirmPl
     throw new TypeError('API dependencies required');
   }
   return async (request, response) => {
-    const match = pathPattern.exec(new URL(request.url, 'http://localhost').pathname);
+    const pathname = new URL(request.url, 'http://localhost').pathname;
+    if (request.method === 'GET' && assets.has(pathname)) {
+      const [type, body] = assets.get(pathname);
+      response.writeHead(200, { 'content-type': type, 'cache-control': 'no-store',
+        'x-content-type-options': 'nosniff', 'content-security-policy':
+          "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'" });
+      response.end(body); return;
+    }
+    const match = pathPattern.exec(pathname);
     if (!match || !['GET', 'POST'].includes(request.method) ||
         (match?.[3] === 'plan/confirm' && request.method !== 'POST')) {
       send(response, 404, { error: 'NOT_FOUND' }); return;
