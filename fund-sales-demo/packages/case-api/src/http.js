@@ -1,6 +1,6 @@
 import { createServer } from 'node:http';
 
-const pathPattern = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/discussion$/i;
+const pathPattern = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/(discussion|plan|plan\/confirm)$/i;
 
 function send(response, status, value) {
   response.writeHead(status, { 'content-type': 'application/json; charset=utf-8',
@@ -32,19 +32,24 @@ async function jsonBody(request) {
   }
 }
 
-export function createCaseHttpHandler({ repository, discussionService, allowedOrigin }) {
-  if (!repository || !discussionService || !allowedOrigin) throw new TypeError('API dependencies required');
+export function createCaseHttpHandler({ repository, discussionService, confirmPlan, allowedOrigin }) {
+  if (!repository || !discussionService || !confirmPlan || !allowedOrigin) {
+    throw new TypeError('API dependencies required');
+  }
   return async (request, response) => {
     const match = pathPattern.exec(new URL(request.url, 'http://localhost').pathname);
-    if (!match || !['GET', 'POST'].includes(request.method)) {
+    if (!match || !['GET', 'POST'].includes(request.method) ||
+        (match?.[3] === 'plan/confirm' && request.method !== 'POST')) {
       send(response, 404, { error: 'NOT_FOUND' }); return;
     }
     try {
       const token = cookieToken(request.headers.cookie);
       if (!token) { send(response, 401, { error: 'UNAUTHENTICATED' }); return; }
-      const [chatPublicId, casePublicId] = match.slice(1);
+      const [chatPublicId, casePublicId, action] = match.slice(1);
       if (request.method === 'GET') {
-        send(response, 200, await repository.readCaseDiscussion(token, chatPublicId, casePublicId));
+        send(response, 200, action === 'plan' ?
+          await repository.getLatestSopProposal(token, chatPublicId, casePublicId) :
+          await repository.readCaseDiscussion(token, chatPublicId, casePublicId));
         return;
       }
       if (request.headers.origin !== allowedOrigin) {
@@ -55,11 +60,19 @@ export function createCaseHttpHandler({ repository, discussionService, allowedOr
       }
       const body = await jsonBody(request);
       if (!body || typeof body !== 'object' || Array.isArray(body) ||
-          Object.keys(body).length !== 1 || typeof body.userInput !== 'string') {
+          Object.keys(body).length !== 1 ||
+          (action === 'plan/confirm' ? !Number.isSafeInteger(body.versionNumber) || body.versionNumber < 1 :
+            typeof body.userInput !== 'string')) {
         send(response, 400, { error: 'INVALID_INPUT' }); return;
       }
-      send(response, 200, await discussionService.discuss({ token, chatPublicId, casePublicId,
-        userInput: body.userInput }));
+      if (action === 'plan/confirm') {
+        send(response, 200, await confirmPlan({ token, chatPublicId, casePublicId,
+          versionNumber: body.versionNumber }));
+      } else {
+        const method = action === 'plan' ? 'propose' : 'discuss';
+        send(response, 200, await discussionService[method]({ token, chatPublicId, casePublicId,
+          userInput: body.userInput }));
+      }
     } catch (error) {
       send(response, Number.isInteger(error.status) && error.status >= 400 && error.status < 500 ?
         error.status : 500, { error: error.status ? error.code : 'INTERNAL_ERROR' });
