@@ -42,6 +42,25 @@ async function fixture(t) {
     reviseData: async args => {
       calls.push(['revise-data', args]); return { reply: '已修改', data: { revision: 1 } };
     },
+    exchangeRepository: {
+      listChannels: async token => { calls.push(['channels', token]); return { channels: [] }; },
+      listCaseApplications: async (token, ids) => {
+        calls.push(['applications', token, ids]); return { applications: [] };
+      },
+      stageApplication: async (token, input) => {
+        calls.push(['stage', token, input]); return { publicId: 'cccccccc-cccc-cccc-cccc-cccccccccccc' };
+      },
+      createOutboundBatch: async (token, input) => {
+        calls.push(['batch', token, input]); return { publicId: 'dddddddd-dddd-dddd-dddd-dddddddddddd' };
+      },
+      generateOutboundFiles: async (token, input) => {
+        calls.push(['generate', token, input]); return { files: [] };
+      },
+      listOutboundFiles: async token => { calls.push(['files', token]); return { files: [] }; },
+      readOutboundFile: async token => { calls.push(['read-file', token]); return {
+        fileName: 'OFD_306_27_20261003_01_001.TXT', rawBytes: Buffer.from([0, 1, 2]), sha256: 'a'.repeat(64),
+      }; },
+    },
   });
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
@@ -91,6 +110,22 @@ test('the read-only data catalog uses the session scope', async t => {
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { items: [] });
   assert.deepEqual(calls, [['catalog', 'abcdefghijklmnopqrstuvwxyz012345']]);
+});
+
+test('file downloads retain original bytes and writes require the same origin', async t => {
+  const { base, calls } = await fixture(t);
+  const chat = '/api/chats/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+  const cookie = 'case_session=abcdefghijklmnopqrstuvwxyz012345';
+  const file = await fetch(`${base}${chat}/files/81`, { headers: { cookie } });
+  assert.equal(file.status, 200);
+  assert.deepEqual(Buffer.from(await file.arrayBuffer()), Buffer.from([0, 1, 2]));
+  assert.match(file.headers.get('content-disposition'), /OFD_306_27/);
+  assert.equal((await fetch(`${base}${chat}/files/81`)).status, 401);
+  const denied = await fetch(`${base}${chat}/batches`, { method: 'POST', headers: {
+    cookie, origin: 'https://foreign.example', 'content-type': 'application/json',
+  }, body: JSON.stringify({ channelId: '71', businessDate: '20261003', applicationPublicIds: [] }) });
+  assert.equal(denied.status, 403);
+  assert.deepEqual(calls.map(call => call[0]), ['read-file']);
 });
 
 test('a Plan can be proposed, reviewed, and explicitly confirmed by version', async t => {

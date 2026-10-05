@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { confirmationCodeFor, encodeRecord, FIELD_REQUIREMENTS, parseDataFile } from '../../platform-protocol/src/index.js';
+import { buildDataFile, confirmationCodeFor, dataFileName, encodeRecord, FIELD_REQUIREMENTS, parseDataFile } from '../../platform-protocol/src/index.js';
 import { authenticateSession, storeError } from './index.js';
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -53,6 +53,61 @@ function validSnapshot(fileType, record, version, channel, businessDate) {
 export function createExchangeRepository({ transaction }) {
   if (typeof transaction !== 'function') throw new TypeError('transaction is required');
 
+  async function listChannels(token) {
+    return transaction(async db => {
+      const auth = await authenticateSession(db, token);
+      const [rows] = await db.execute(`SELECT id,channel_name,ta_environment,ta_code,
+        distributor_code,protocol_version FROM exchange_channels
+        WHERE workspace_id=? ORDER BY id`, [auth.workspace_id]);
+      return { channels: rows.map(row => ({ id: String(row.id), name: row.channel_name,
+        environment: row.ta_environment, taCode: row.ta_code,
+        distributorCode: row.distributor_code, protocolVersion: row.protocol_version })) };
+    });
+  }
+
+  async function listCaseApplications(token, { chatPublicId, casePublicId }) {
+    validUuid(chatPublicId); validUuid(casePublicId);
+    return transaction(async db => {
+      const auth = await authenticateSession(db, token);
+      const [rows] = await db.execute(`SELECT a.public_id,a.file_type,a.business_code,a.status,a.app_no,
+        a.record_json,DATE_FORMAT(a.business_date,'%Y%m%d') AS business_date,
+        a.channel_id,b.public_id AS batch_public_id
+        FROM case_chats c JOIN cases k ON k.workspace_id=c.workspace_id AND k.chat_id=c.id
+        JOIN applications a ON a.workspace_id=k.workspace_id AND a.chat_id=k.chat_id AND a.case_id=k.id
+        LEFT JOIN batch_applications ba ON ba.workspace_id=a.workspace_id
+          AND ba.chat_id=a.chat_id AND ba.application_id=a.id
+        LEFT JOIN exchange_batches b ON b.workspace_id=ba.workspace_id
+          AND b.chat_id=ba.chat_id AND b.id=ba.batch_id
+        WHERE c.workspace_id=? AND c.public_id=? AND k.public_id=? ORDER BY a.id`,
+      [auth.workspace_id, chatPublicId, casePublicId]);
+      return { applications: rows.map(row => ({ publicId: row.public_id,
+        fileType: row.file_type, businessCode: row.business_code, status: row.status,
+        applicationNumber: row.app_no, record: typeof row.record_json === 'string'
+          ? JSON.parse(row.record_json) : row.record_json,
+        businessDate: row.business_date, channelId: String(row.channel_id),
+        batchPublicId: row.batch_public_id })) };
+    });
+  }
+
+  async function listCaseBindings(token, { chatPublicId, casePublicId }) {
+    validUuid(chatPublicId); validUuid(casePublicId);
+    return transaction(async db => {
+      const auth = await authenticateSession(db, token);
+      const [rows] = await db.execute(`SELECT a.account_no,b.channel_id,b.ta_account_id,
+        b.source_return_record_id
+        FROM case_chats c JOIN cases k ON k.workspace_id=c.workspace_id AND k.chat_id=c.id
+        JOIN case_generated_accounts a ON a.workspace_id=k.workspace_id
+          AND a.chat_id=k.chat_id AND a.case_id=k.id
+        JOIN ta_account_bindings b ON b.workspace_id=a.workspace_id
+          AND b.transaction_account_id=a.account_no
+        WHERE c.workspace_id=? AND c.public_id=? AND k.public_id=? ORDER BY a.id,b.channel_id`,
+      [auth.workspace_id, chatPublicId, casePublicId]);
+      return { bindings: rows.map(row => ({ transactionAccountId: row.account_no,
+        channelId: String(row.channel_id), taAccountId: row.ta_account_id,
+        sourceReturnRecordId: String(row.source_return_record_id) })) };
+    });
+  }
+
   async function stageApplication(token, { chatPublicId, casePublicId, sopVersionId, channelId, businessDate, fileType, record }) {
     validUuid(chatPublicId); validUuid(casePublicId);
     validId(sopVersionId); validId(channelId);
@@ -74,11 +129,51 @@ export function createExchangeRepository({ transaction }) {
       [auth.workspace_id, chatPublicId, casePublicId, sopVersionId, channelId]);
       if (!scope) throw storeError('APPLICATION_SCOPE', 409, 'Case、SOP 或通道不可用于申请');
       const { snapshot, hash } = validSnapshot(fileType, record, scope.protocol_version, scope, businessDate);
+      const [[sourceAccount]] = await db.execute(`SELECT a.id,a.branch_code,c.name,c.investor_type
+        FROM case_generated_accounts a JOIN case_generated_customers c
+          ON c.workspace_id=a.workspace_id AND c.chat_id=a.chat_id
+          AND c.case_id=a.case_id AND c.id=a.customer_id
+        WHERE a.workspace_id=? AND a.chat_id=? AND a.case_id=? AND a.account_no=?`,
+      [auth.workspace_id, scope.chat_id, scope.case_id, record.TransactionAccountID]);
+      if (!sourceAccount || (record.BranchCode && sourceAccount.branch_code !== record.BranchCode) ||
+          (record.IndividualOrInstitution &&
+            sourceAccount.investor_type !== record.IndividualOrInstitution) ||
+          (fileType === '01' && (sourceAccount.name !== record.InvestorName ||
+            sourceAccount.investor_type !== record.IndividualOrInstitution))) {
+        throw storeError('APPLICATION_DATA_MISMATCH', 409, '申请账户或客户信息与已确认数据不一致');
+      }
+      if (fileType === '03' && record.FundCode) {
+        const hasShareClass = record.ShareClass !== undefined && record.ShareClass !== null &&
+          String(record.ShareClass).trim() !== '';
+        const [[sourceFund]] = await db.execute(`SELECT id FROM case_generated_funds
+          WHERE workspace_id=? AND chat_id=? AND case_id=? AND fund_code=?
+          ${hasShareClass ? 'AND share_class=?' : ''} LIMIT 1`,
+        [auth.workspace_id, scope.chat_id, scope.case_id, record.FundCode,
+          ...(hasShareClass ? [record.ShareClass] : [])]);
+        if (!sourceFund) throw storeError('APPLICATION_DATA_MISMATCH', 409, '申请基金与已确认数据不一致');
+      }
+      if (fileType === '03' && record.BusinessCode === '036') {
+        const [[targetFund]] = await db.execute(`SELECT id FROM case_generated_funds
+          WHERE workspace_id=? AND chat_id=? AND case_id=? AND fund_code=? AND share_class=? LIMIT 1`,
+        [auth.workspace_id, scope.chat_id, scope.case_id, record.CodeOfTargetFund, record.TargetShareType]);
+        if (!targetFund) throw storeError('APPLICATION_DATA_MISMATCH', 409, '转入基金与已确认数据不一致');
+      }
       if (fileType === '03' || record.BusinessCode !== '001') {
         const [[binding]] = await db.execute(`SELECT id FROM ta_account_bindings
           WHERE workspace_id=? AND channel_id=? AND transaction_account_id=? AND ta_account_id=?`,
         [auth.workspace_id, scope.channel_id, record.TransactionAccountID, record.TAAccountID]);
         if (!binding) throw storeError('TA_ACCOUNT_UNVERIFIED', 409, 'TA 账号尚无已确认来源');
+      }
+      const [[prior]] = await db.execute(`SELECT public_id,chat_id,case_id,sop_version_id,
+        snapshot_hash FROM applications WHERE workspace_id=? AND channel_id=? AND app_no=? FOR UPDATE`,
+      [auth.workspace_id, scope.channel_id, record.AppSheetSerialNo]);
+      if (prior) {
+        if (String(prior.chat_id) !== String(scope.chat_id) ||
+            String(prior.case_id) !== String(scope.case_id) ||
+            String(prior.sop_version_id) !== String(scope.sop_id) || prior.snapshot_hash !== hash) {
+          throw storeError('APPLICATION_NUMBER_CONFLICT', 409, '申请号已经对应另一份申请');
+        }
+        return { publicId: prior.public_id, snapshotHash: hash, replayed: true };
       }
       const publicId = crypto.randomUUID();
       await db.execute(`INSERT INTO applications
@@ -170,13 +265,37 @@ export function createExchangeRepository({ transaction }) {
         throw storeError('DATA_NOT_CONFIRMED', 409, '仍有 Case 的模拟数据未确认');
       }
       const placeholders = applicationPublicIds.map(() => '?').join(',');
-      const [applications] = await db.execute(`SELECT id,public_id,status,
-        DATE_FORMAT(business_date, '%Y-%m-%d') AS business_date,channel_id,file_type
-        FROM applications WHERE workspace_id=? AND chat_id=? AND public_id IN (${placeholders}) FOR UPDATE`,
+      const [applications] = await db.execute(`SELECT a.id,a.public_id,a.status,
+        DATE_FORMAT(a.business_date, '%Y-%m-%d') AS business_date,a.channel_id,a.file_type,
+        b.public_id AS prior_batch_public_id
+        FROM applications a LEFT JOIN batch_applications ba
+          ON ba.workspace_id=a.workspace_id AND ba.chat_id=a.chat_id AND ba.application_id=a.id
+        LEFT JOIN exchange_batches b ON b.workspace_id=ba.workspace_id
+          AND b.chat_id=ba.chat_id AND b.id=ba.batch_id
+        WHERE a.workspace_id=? AND a.chat_id=? AND a.public_id IN (${placeholders}) FOR UPDATE`,
       [auth.workspace_id, chat.id, ...applicationPublicIds]);
-      if (applications.length !== applicationPublicIds.length || applications.some(app => app.status !== 'READY'
-        || String(app.channel_id) !== String(channelId)
+      if (applications.length !== applicationPublicIds.length || applications.some(app =>
+        String(app.channel_id) !== String(channelId)
         || String(app.business_date) !== date)) {
+        throw storeError('BATCH_APPLICATION_MISMATCH', 409, '申请归属、日期或状态不一致');
+      }
+      const priorBatches = new Set(applications.map(app => app.prior_batch_public_id));
+      if (priorBatches.size === 1 && Boolean(applications[0].prior_batch_public_id) &&
+          applications.every(app => ['BATCHED', 'GENERATED'].includes(app.status))) {
+        const [priorMembers] = await db.execute(`SELECT a.public_id
+          FROM exchange_batches b JOIN batch_applications ba
+            ON ba.workspace_id=b.workspace_id AND ba.chat_id=b.chat_id AND ba.batch_id=b.id
+          JOIN applications a ON a.workspace_id=ba.workspace_id
+            AND a.chat_id=ba.chat_id AND a.id=ba.application_id
+          WHERE b.workspace_id=? AND b.chat_id=? AND b.public_id=? FOR UPDATE`,
+        [auth.workspace_id, chat.id, applications[0].prior_batch_public_id]);
+        if (priorMembers.length !== applicationPublicIds.length ||
+            priorMembers.some(member => !applicationPublicIds.includes(member.public_id))) {
+          throw storeError('BATCH_APPLICATION_MISMATCH', 409, '申请清单与已有批次不一致');
+        }
+        return { publicId: applications[0].prior_batch_public_id, replayed: true };
+      }
+      if (applications.some(app => app.status !== 'READY' || app.prior_batch_public_id)) {
         throw storeError('BATCH_APPLICATION_MISMATCH', 409, '申请归属、日期或状态不一致');
       }
       const [[last]] = await db.execute(`SELECT COALESCE(MAX(batch_number),0) AS number FROM exchange_batches
@@ -198,6 +317,111 @@ export function createExchangeRepository({ transaction }) {
         if (updated.affectedRows !== 1) throw storeError('BATCH_APPLICATION_MISMATCH', 409, '申请已归入其他批次');
       }
       return { publicId, batchNumber: number };
+    });
+  }
+
+  async function generateOutboundFiles(token, { chatPublicId, batchPublicId }) {
+    validUuid(chatPublicId); validUuid(batchPublicId);
+    return transaction(async db => {
+      const auth = await authenticateSession(db, token);
+      const [[batch]] = await db.execute(`SELECT b.id,b.status,b.channel_id,
+        DATE_FORMAT(b.business_date,'%Y%m%d') AS business_date,
+        h.ta_code,h.distributor_code,h.protocol_version
+        FROM exchange_batches b
+        JOIN case_chats c ON c.workspace_id=b.workspace_id AND c.id=b.chat_id
+        JOIN exchange_channels h ON h.workspace_id=b.workspace_id AND h.id=b.channel_id
+        WHERE b.workspace_id=? AND c.public_id=? AND b.public_id=?
+          AND c.status='ACTIVE' FOR UPDATE`, [auth.workspace_id, chatPublicId, batchPublicId]);
+      if (!batch) throw storeError('BATCH_NOT_FOUND', 404, '批次不存在');
+      if (batch.status === 'GENERATED') {
+        const [files] = await db.execute(`SELECT id,file_name,file_type,content_sha256,record_count
+          FROM exchange_files WHERE workspace_id=? AND chat_id=(SELECT id FROM case_chats
+            WHERE workspace_id=? AND public_id=?) AND batch_id=? AND direction='OUTBOUND'
+          ORDER BY file_type`, [auth.workspace_id, auth.workspace_id, chatPublicId, batch.id]);
+        if (!files.length) throw storeError('BATCH_INCOMPLETE', 409, '批次状态与文件不一致');
+        return { batchPublicId, files: files.map(fileSummary), replayed: true };
+      }
+      if (batch.status !== 'DRAFT') throw storeError('BATCH_NOT_GENERATABLE', 409, '批次不能生成文件');
+      await db.execute(`SELECT id FROM exchange_channels WHERE workspace_id=? AND id=? FOR UPDATE`,
+        [auth.workspace_id, batch.channel_id]);
+      const [apps] = await db.execute(`SELECT a.id,a.file_type,a.status,a.record_json
+        FROM batch_applications ba JOIN applications a
+          ON a.workspace_id=ba.workspace_id AND a.chat_id=ba.chat_id AND a.id=ba.application_id
+        WHERE ba.workspace_id=? AND ba.batch_id=? ORDER BY a.file_type,a.id FOR UPDATE`,
+      [auth.workspace_id, batch.id]);
+      if (!apps.length || apps.some(app => app.status !== 'BATCHED')) {
+        throw storeError('BATCH_INCOMPLETE', 409, '批次申请不完整');
+      }
+      const files = [];
+      for (const fileType of ['01', '03']) {
+        const selected = apps.filter(app => app.file_type === fileType);
+        if (!selected.length) continue;
+        const records = selected.map(app => typeof app.record_json === 'string'
+          ? JSON.parse(app.record_json) : app.record_json);
+        const [prior] = await db.execute(`SELECT file_name FROM exchange_files
+          WHERE workspace_id=? AND channel_id=? AND direction='OUTBOUND'
+            AND file_type=? AND file_name LIKE ? FOR UPDATE`,
+        [auth.workspace_id, batch.channel_id, fileType,
+          `OFD_${batch.distributor_code}_${batch.ta_code}_${batch.business_date}_${fileType}%`]);
+        const used = new Set(prior.map(row => row.file_name));
+        let sequence = 1;
+        let fileName;
+        do {
+          fileName = dataFileName({ creator: batch.distributor_code,
+            receiver: batch.ta_code, date: batch.business_date, fileType, sequence });
+          sequence += 1;
+        } while (used.has(fileName) && sequence <= (batch.protocol_version === '21' ? 999 : 1000));
+        if (used.has(fileName)) throw storeError('FILE_SEQUENCE_EXHAUSTED', 409, '当日文件序号已用尽');
+        const raw = buildDataFile({ creator: batch.distributor_code, receiver: batch.ta_code,
+          date: batch.business_date, summaryNo: sequence - 1, fileType, records,
+          version: batch.protocol_version });
+        const digest = crypto.createHash('sha256').update(raw).digest('hex');
+        const [saved] = await db.execute(`INSERT INTO exchange_files
+          (workspace_id,channel_id,chat_id,batch_id,direction,file_type,file_name,
+           content_sha256,raw_bytes,record_count)
+          VALUES (?, ?, (SELECT id FROM case_chats WHERE workspace_id=? AND public_id=?),
+            ?, 'OUTBOUND', ?, ?, ?, ?, ?)`,
+        [auth.workspace_id, batch.channel_id, auth.workspace_id, chatPublicId, batch.id,
+          fileType, fileName, digest, raw, selected.length]);
+        files.push(fileSummary({ id: saved.insertId, file_name: fileName,
+          file_type: fileType, content_sha256: digest, record_count: selected.length }));
+      }
+      await db.execute(`UPDATE applications a JOIN batch_applications ba
+        ON ba.workspace_id=a.workspace_id AND ba.chat_id=a.chat_id AND ba.application_id=a.id
+        SET a.status='GENERATED' WHERE ba.workspace_id=? AND ba.batch_id=? AND a.status='BATCHED'`,
+      [auth.workspace_id, batch.id]);
+      await db.execute(`UPDATE exchange_batches SET status='GENERATED'
+        WHERE workspace_id=? AND id=? AND status='DRAFT'`, [auth.workspace_id, batch.id]);
+      return { batchPublicId, files, replayed: false };
+    });
+  }
+
+  async function listOutboundFiles(token, chatPublicId) {
+    validUuid(chatPublicId);
+    return transaction(async db => {
+      const auth = await authenticateSession(db, token);
+      const [rows] = await db.execute(`SELECT f.id,f.file_name,f.file_type,f.content_sha256,f.record_count,
+        b.public_id AS batch_public_id,b.status AS batch_status
+        FROM case_chats c JOIN exchange_batches b ON b.workspace_id=c.workspace_id AND b.chat_id=c.id
+        JOIN exchange_files f ON f.workspace_id=b.workspace_id AND f.chat_id=b.chat_id AND f.batch_id=b.id
+        WHERE c.workspace_id=? AND c.public_id=? AND f.direction='OUTBOUND'
+        ORDER BY f.id DESC`, [auth.workspace_id, chatPublicId]);
+      return { files: rows.map(row => ({ ...fileSummary(row), batchPublicId: row.batch_public_id,
+        batchStatus: row.batch_status })) };
+    });
+  }
+
+  async function readOutboundFile(token, { chatPublicId, fileId }) {
+    validUuid(chatPublicId); validId(fileId);
+    return transaction(async db => {
+      const auth = await authenticateSession(db, token);
+      const [[file]] = await db.execute(`SELECT f.file_name,f.raw_bytes,f.content_sha256
+        FROM exchange_files f JOIN case_chats c ON c.workspace_id=f.workspace_id AND c.id=f.chat_id
+        WHERE f.workspace_id=? AND c.public_id=? AND f.id=? AND f.direction='OUTBOUND'`,
+      [auth.workspace_id, chatPublicId, fileId]);
+      if (!file) throw storeError('FILE_NOT_FOUND', 404, '文件不存在');
+      return { fileName: file.file_name, rawBytes: file.raw_bytes,
+        sha256: file.content_sha256 };
     });
   }
 
@@ -258,5 +482,12 @@ export function createExchangeRepository({ transaction }) {
     });
   }
 
-  return Object.freeze({ stageApplication, createOutboundBatch, saveInboundFile, matchReturnRecord });
+  return Object.freeze({ listChannels, listCaseApplications, listCaseBindings, stageApplication,
+    createOutboundBatch, generateOutboundFiles,
+    listOutboundFiles, readOutboundFile, saveInboundFile, matchReturnRecord });
+}
+
+function fileSummary(row) {
+  return { id: String(row.id), fileName: row.file_name, fileType: row.file_type,
+    sha256: row.content_sha256, recordCount: Number(row.record_count) };
 }

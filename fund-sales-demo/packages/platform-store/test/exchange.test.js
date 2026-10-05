@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import test from 'node:test';
-import { buildDataFile } from '../../platform-protocol/src/index.js';
+import { buildDataFile, parseDataFile } from '../../platform-protocol/src/index.js';
 import { createExchangeRepository } from '../src/exchange.js';
 
 const token = 'a'.repeat(43);
@@ -14,12 +14,24 @@ const record = { AppSheetSerialNo: '202610030001', BusinessCode: '001', Distribu
 const returned = { ...record, BusinessCode: '101', ReturnCode: '0000', TAAccountID: 'TA123' };
 const raw = buildDataFile({ creator: '27', receiver: '306', date: '20261003', fileType: '02', records: [returned] });
 
-function fixture({ existing, sameBytes, returnItem, application, batchApplications, binding,
-  pendingCount = 0, missingReviewCount = 0 } = {}) {
+function fixture({ existing, sameBytes, returnItem, application, batchApplications, priorMembers, binding,
+  pendingCount = 0, missingReviewCount = 0, sourceAccount = {
+    id: 1, branch_code: '306', name: 'Alice', investor_type: '0'
+  }, sourceFund = { id: 1 }, targetFund = { id: 2 }, generatedBatch, generatedApps, generatedFiles = [] } = {}) {
   const calls = [];
   const db = { async execute(sql, values) {
     calls.push({ sql, values });
     if (sql.includes('FROM platform_sessions')) return [[{ user_id: 7, workspace_id: 31 }]];
+    if (sql.includes('FROM case_generated_accounts a')) return [[sourceAccount]];
+    if (sql.includes('FROM case_generated_funds')) return [[values.includes('000002') ? targetFund : sourceFund]];
+    if (sql.includes('FROM exchange_batches b JOIN batch_applications ba')) return [priorMembers ?? []];
+    if (sql.includes('FROM exchange_batches b')) return [[generatedBatch ?? {
+      id: 111, status: 'DRAFT', channel_id: 71, business_date: '20261003',
+      ta_code: '27', distributor_code: '306', protocol_version: '22'
+    }]];
+    if (sql.includes('FROM batch_applications ba')) return [generatedApps ?? []];
+    if (sql.includes('FROM exchange_files') && sql.includes('file_name FROM')) return [generatedFiles];
+    if (sql.includes('FROM exchange_files') && sql.includes('SELECT id,file_name,file_type')) return [generatedFiles];
     if (sql.includes('SELECT id,status FROM case_chats')) return [[{ id: 41, status: 'ACTIVE' }]];
     if (sql.includes('FROM case_chats')) return [[{
       chat_id: 41, case_id: 51, sop_id: 61, channel_id: 71, distributor_code: '306', protocol_version: '22'
@@ -150,6 +162,58 @@ test('03 staging requires a TA account confirmed by a matched successful 02', as
   assert.equal(confirmed.calls.some(call => call.sql.includes('INSERT INTO applications')), true);
 });
 
+test('03 refund, supplement and cancellation do not bind a missing share class', async () => {
+  for (const businessCode of ['040', '041', '052']) {
+    const trade = { AppSheetSerialNo: `20261003${businessCode}`, BusinessCode: businessCode,
+      DistributorCode: '306', TransactionDate: '20261003', TransactionTime: '120000',
+      TransactionAccountID: '123456', TAAccountID: 'TA123', BranchCode: '306',
+      FundCode: '000001',
+      ...(businessCode === '052' ? { OriginalAppSheetNo: '202610030022' } : {
+        CurrencyType: '156', ApplicationAmount: '100.00'
+      }) };
+    const { repository, calls } = fixture({ binding: { id: 101 } });
+    await repository.stageApplication(token, { chatPublicId, casePublicId, sopVersionId: '61',
+      channelId: '71', businessDate: '20261003', fileType: '03', record: trade });
+    const fundLookup = calls.find(call => call.sql.includes('FROM case_generated_funds'));
+    assert.equal(fundLookup.values.length, 4);
+    assert.doesNotMatch(fundLookup.sql, /share_class=\?/);
+    assert.equal(calls.some(call => call.sql.includes('INSERT INTO applications')), true);
+  }
+});
+
+test('03 staging rejects an investor type that contradicts the confirmed customer', async () => {
+  const trade = { AppSheetSerialNo: '202610030022', BusinessCode: '022', DistributorCode: '306',
+    TransactionDate: '20261003', TransactionTime: '120000', TransactionAccountID: '123456',
+    TAAccountID: 'TA123', BranchCode: '306', FundCode: '000001', CurrencyType: '156',
+    ApplicationAmount: '100.00', ShareClass: 'A', ChargeType: '0', IndividualOrInstitution: '1' };
+  const { repository, calls } = fixture({ binding: { id: 101 } });
+  await assert.rejects(repository.stageApplication(token, { chatPublicId, casePublicId,
+    sopVersionId: '61', channelId: '71', businessDate: '20261003', fileType: '03', record: trade }),
+  { code: 'APPLICATION_DATA_MISMATCH' });
+  assert.equal(calls.some(call => call.sql.includes('INSERT INTO applications')), false);
+});
+
+test('03 conversion requires a confirmed target fund and share class', async () => {
+  const trade = { AppSheetSerialNo: '202610030036', BusinessCode: '036', DistributorCode: '306',
+    TransactionDate: '20261003', TransactionTime: '120000', TransactionAccountID: '123456',
+    TAAccountID: 'TA123', BranchCode: '306', FundCode: '000001', ShareClass: 'A',
+    CodeOfTargetFund: '000002', TargetShareType: 'B', ApplicationVol: '100.00',
+    LargeRedemptionFlag: '0', DiscountRateOfCommission: '1.0000',
+    BackenloadDiscount: '1.0000', ChargeType: '0' };
+  const input = { chatPublicId, casePublicId, sopVersionId: '61', channelId: '71',
+    businessDate: '20261003', fileType: '03', record: trade };
+  const rejected = fixture({ binding: { id: 101 }, targetFund: null });
+  await assert.rejects(rejected.repository.stageApplication(token, input),
+    { code: 'APPLICATION_DATA_MISMATCH' });
+  assert.equal(rejected.calls.some(call => call.sql.includes('INSERT INTO applications')), false);
+  const accepted = fixture({ binding: { id: 101 } });
+  await accepted.repository.stageApplication(token, input);
+  const targetLookup = accepted.calls.find(call => call.sql.includes('FROM case_generated_funds') &&
+    call.values.includes('000002'));
+  assert.deepEqual(targetLookup.values.slice(-2), ['000002', 'B']);
+  assert.equal(accepted.calls.some(call => call.sql.includes('INSERT INTO applications')), true);
+});
+
 test('04 matching uses the mapped confirmation code', async () => {
   const source = { AppSheetSerialNo: '202610030022', BusinessCode: '022', DistributorCode: '306',
     TransactionDate: '20261003', TransactionAccountID: '123456', TAAccountID: 'TA123',
@@ -197,10 +261,97 @@ test('batch date remains the database calendar date across a UTC+8 midnight', as
   const base = { id: 101, public_id: applicationPublicId, status: 'READY',
     channel_id: 71, file_type: '01' };
   const { repository } = fixture({ batchApplications: sql => [{ ...base,
-    business_date: sql.includes('DATE_FORMAT(business_date')
+    business_date: sql.includes('DATE_FORMAT(a.business_date')
       ? '2026-10-03' : new Date('2026-10-02T16:00:00.000Z') }] });
   const result = await repository.createOutboundBatch(token, {
     chatPublicId, channelId: '71', businessDate: '20261003', applicationPublicIds: [applicationPublicId]
   });
   assert.equal(result.batchNumber, 1);
+});
+
+test('batch replay accepts the exact member set and rejects a subset', async () => {
+  const priorBatchPublicId = '9b039fda-601d-4f3c-b065-0f7bf0837ccf';
+  const anotherPublicId = '9b039fda-601d-4f3c-b065-0f7bf0837cd0';
+  const members = [applicationPublicId, anotherPublicId].map((publicId, index) => ({
+    id: 101 + index, public_id: publicId, status: 'GENERATED',
+    business_date: '2026-10-03', channel_id: 71, file_type: '01',
+    prior_batch_public_id: priorBatchPublicId
+  }));
+  const input = { chatPublicId, channelId: '71', businessDate: '20261003' };
+  const full = fixture({ batchApplications: members, priorMembers: members });
+  assert.deepEqual(await full.repository.createOutboundBatch(token, {
+    ...input, applicationPublicIds: [applicationPublicId, anotherPublicId]
+  }), { publicId: priorBatchPublicId, replayed: true });
+  assert.equal(full.calls.some(call => call.sql.includes('INSERT INTO exchange_batches')), false);
+  const subset = fixture({ batchApplications: [members[0]], priorMembers: members });
+  await assert.rejects(subset.repository.createOutboundBatch(token, {
+    ...input, applicationPublicIds: [applicationPublicId]
+  }), { code: 'BATCH_APPLICATION_MISMATCH' });
+});
+
+test('generates a real 01 file from one scoped batch and replays its stored result', async () => {
+  const { repository, calls } = fixture({ generatedApps: [{
+    id: 101, file_type: '01', status: 'BATCHED', record_json: record
+  }] });
+  const generated = await repository.generateOutboundFiles(token, {
+    chatPublicId, batchPublicId: '9b039fda-601d-4f3c-b065-0f7bf0837ccf'
+  });
+  assert.equal(generated.files.length, 1);
+  assert.equal(generated.files[0].fileName, 'OFD_306_27_20261003_01_001.TXT');
+  const insert = calls.find(call => call.sql.includes('INSERT INTO exchange_files'));
+  const parsed = parseDataFile(insert.values.at(-2));
+  assert.equal(parsed.fileType, '01');
+  assert.equal(parsed.records[0].TransactionAccountID, '123456');
+  assert.equal(generated.files[0].sha256, crypto.createHash('sha256').update(insert.values.at(-2)).digest('hex'));
+  assert.equal(calls.some(call => call.sql.includes("SET status='GENERATED'")), true);
+
+  const replay = fixture({ generatedBatch: { status: 'GENERATED', id: 111 },
+    generatedFiles: [{ id: 81, file_name: generated.files[0].fileName,
+      file_type: '01', content_sha256: generated.files[0].sha256, record_count: 1 }] });
+  assert.equal((await replay.repository.generateOutboundFiles(token, {
+    chatPublicId, batchPublicId: '9b039fda-601d-4f3c-b065-0f7bf0837ccf'
+  })).replayed, true);
+});
+
+test('protocol 21 rejects an exhausted three-digit outbound sequence before encoding', async () => {
+  const existingNames = Array.from({ length: 999 }, (_, index) => ({
+    file_name: `OFD_306_27_20261003_01_${String(index + 1).padStart(3, '0')}.TXT`
+  }));
+  const { repository, calls } = fixture({
+    generatedBatch: { id: 111, status: 'DRAFT', channel_id: 71,
+      business_date: '20261003', ta_code: '27', distributor_code: '306', protocol_version: '21' },
+    generatedApps: [{ id: 101, file_type: '01', status: 'BATCHED', record_json: record }],
+    generatedFiles: existingNames
+  });
+  await assert.rejects(repository.generateOutboundFiles(token, {
+    chatPublicId, batchPublicId: '9b039fda-601d-4f3c-b065-0f7bf0837ccf'
+  }), { code: 'FILE_SEQUENCE_EXHAUSTED' });
+  assert.equal(calls.some(call => call.sql.includes('INSERT INTO exchange_files')), false);
+});
+
+test('encodes an eligible 03 application as a separate file', async () => {
+  const trade = { AppSheetSerialNo: '202610030022', BusinessCode: '022', DistributorCode: '306',
+    TransactionDate: '20261003', TransactionTime: '120000', TransactionAccountID: '123456',
+    TAAccountID: 'TA123', BranchCode: '306', FundCode: '000001', CurrencyType: '156',
+    ApplicationAmount: '100.00', ShareClass: 'A', ChargeType: '0' };
+  const { repository, calls } = fixture({ generatedApps: [{
+    id: 102, file_type: '03', status: 'BATCHED', record_json: trade
+  }] });
+  const result = await repository.generateOutboundFiles(token, {
+    chatPublicId, batchPublicId: '9b039fda-601d-4f3c-b065-0f7bf0837ccf'
+  });
+  assert.equal(result.files[0].fileType, '03');
+  const raw = calls.find(call => call.sql.includes('INSERT INTO exchange_files')).values.at(-2);
+  const parsed = parseDataFile(raw);
+  assert.equal(parsed.records[0].TAAccountID, 'TA123');
+  assert.equal(parsed.records[0].ApplicationAmount, '100.00');
+});
+
+test('application data must match confirmed Case tables', async () => {
+  const { repository, calls } = fixture({ sourceAccount: null });
+  await assert.rejects(repository.stageApplication(token, {
+    chatPublicId, casePublicId, sopVersionId: '61', channelId: '71',
+    businessDate: '20261003', fileType: '01', record
+  }), { code: 'APPLICATION_DATA_MISMATCH' });
+  assert.equal(calls.some(call => call.sql.includes('INSERT INTO applications')), false);
 });
