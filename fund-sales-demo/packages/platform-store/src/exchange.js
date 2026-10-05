@@ -370,7 +370,7 @@ export function createExchangeRepository({ transaction }) {
           fileName = dataFileName({ creator: batch.distributor_code,
             receiver: batch.ta_code, date: batch.business_date, fileType, sequence });
           sequence += 1;
-        } while (used.has(fileName) && sequence <= 1000);
+        } while (used.has(fileName) && sequence <= (batch.protocol_version === '21' ? 999 : 1000));
         if (used.has(fileName)) throw storeError('FILE_SEQUENCE_EXHAUSTED', 409, '当日文件序号已用尽');
         const raw = buildDataFile({ creator: batch.distributor_code, receiver: batch.ta_code,
           date: batch.business_date, summaryNo: sequence - 1, fileType, records,

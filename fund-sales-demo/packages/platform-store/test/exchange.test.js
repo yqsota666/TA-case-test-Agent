@@ -313,6 +313,22 @@ test('generates a real 01 file from one scoped batch and replays its stored resu
   })).replayed, true);
 });
 
+test('protocol 21 rejects an exhausted three-digit outbound sequence before encoding', async () => {
+  const existingNames = Array.from({ length: 999 }, (_, index) => ({
+    file_name: `OFD_306_27_20261003_01_${String(index + 1).padStart(3, '0')}.TXT`
+  }));
+  const { repository, calls } = fixture({
+    generatedBatch: { id: 111, status: 'DRAFT', channel_id: 71,
+      business_date: '20261003', ta_code: '27', distributor_code: '306', protocol_version: '21' },
+    generatedApps: [{ id: 101, file_type: '01', status: 'BATCHED', record_json: record }],
+    generatedFiles: existingNames
+  });
+  await assert.rejects(repository.generateOutboundFiles(token, {
+    chatPublicId, batchPublicId: '9b039fda-601d-4f3c-b065-0f7bf0837ccf'
+  }), { code: 'FILE_SEQUENCE_EXHAUSTED' });
+  assert.equal(calls.some(call => call.sql.includes('INSERT INTO exchange_files')), false);
+});
+
 test('encodes an eligible 03 application as a separate file', async () => {
   const trade = { AppSheetSerialNo: '202610030022', BusinessCode: '022', DistributorCode: '306',
     TransactionDate: '20261003', TransactionTime: '120000', TransactionAccountID: '123456',
