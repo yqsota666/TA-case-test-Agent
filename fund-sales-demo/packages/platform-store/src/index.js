@@ -475,7 +475,270 @@ export function createCaseRepository({ transaction }) {
     });
   }
 
+  async function generatedData(token, chatPublicId, casePublicId) {
+    chatPublicId = requiredUuid(chatPublicId, 'Chat');
+    casePublicId = requiredUuid(casePublicId, 'Case');
+    return transaction(async db => {
+      const auth = await authenticateSession(db, token);
+      const [[row]] = await db.execute(`SELECT c.id AS case_id,c.chat_id
+        FROM cases c JOIN case_chats h ON h.workspace_id=c.workspace_id AND h.id=c.chat_id
+        WHERE c.workspace_id=? AND h.public_id=? AND c.public_id=?`,
+      [auth.workspace_id, chatPublicId, casePublicId]);
+      if (!row) throw storeError('CASE_NOT_FOUND', 404, 'Case 不存在');
+      return readGeneratedData(db, [auth.workspace_id, row.chat_id, row.case_id]);
+    });
+  }
+
+  async function generatedDataCatalog(token) {
+    return transaction(async db => {
+      const auth = await authenticateSession(db, token);
+      const [rows] = await db.execute(`SELECT h.public_id AS chat_public_id,h.title AS chat_title,
+        c.public_id AS case_public_id,c.title AS case_title,c.status AS case_status,
+        e.created_at AS generated_at
+        FROM case_chats h JOIN cases c ON c.workspace_id=h.workspace_id AND c.chat_id=h.id
+        LEFT JOIN case_data_executions e ON e.workspace_id=c.workspace_id
+          AND e.chat_id=c.chat_id AND e.case_id=c.id
+        WHERE h.workspace_id=? ORDER BY h.id DESC,c.id`, [auth.workspace_id]);
+      return { items: rows.map(row => ({ chatId: row.chat_public_id,
+        chatTitle: row.chat_title, caseId: row.case_public_id,
+        caseTitle: row.case_title, caseStatus: row.case_status,
+        generatedAt: row.generated_at })) };
+    });
+  }
+
+  async function executeGeneratedData(token, chatPublicId, casePublicId,
+    versionNumber, specification, runGraph) {
+    chatPublicId = requiredUuid(chatPublicId, 'Chat');
+    casePublicId = requiredUuid(casePublicId, 'Case');
+    if (!Number.isSafeInteger(versionNumber) || versionNumber < 1 ||
+        typeof runGraph !== 'function') throw storeError('INVALID_INPUT', 400, '执行参数无效');
+    return transaction(async db => {
+      const auth = await authenticateSession(db, token);
+      const [[chat]] = await db.execute(`SELECT id,status FROM case_chats
+        WHERE workspace_id=? AND public_id=? FOR UPDATE`, [auth.workspace_id, chatPublicId]);
+      if (!chat) throw storeError('CHAT_NOT_FOUND', 404, 'Chat 不存在');
+      if (chat.status !== 'ACTIVE') throw storeError('CHAT_CLOSED', 409, 'Chat 已结束');
+      const [[caseRow]] = await db.execute(`SELECT id,status FROM cases
+        WHERE workspace_id=? AND chat_id=? AND public_id=? FOR UPDATE`,
+      [auth.workspace_id, chat.id, casePublicId]);
+      if (!caseRow) throw storeError('CASE_NOT_FOUND', 404, 'Case 不存在');
+      const keys = [auth.workspace_id, chat.id, caseRow.id];
+      const [[prior]] = await db.execute(`SELECT sop_version_id FROM case_data_executions
+        WHERE workspace_id=? AND chat_id=? AND case_id=?`, keys);
+      if (prior) return { ...await readGeneratedData(db, keys), replayed: true };
+      if (caseRow.status !== 'SOP_LOCKED') {
+        throw storeError('PLAN_NOT_CONFIRMED', 409, '须先确认 Plan');
+      }
+      const [[plan]] = await db.execute(`SELECT id FROM case_sop_versions
+        WHERE workspace_id=? AND chat_id=? AND case_id=? AND version_number=? AND status='LOCKED'`,
+      [...keys, versionNumber]);
+      if (!plan) throw storeError('PLAN_VERSION_CONFLICT', 409, '已确认的 Plan 版本不匹配');
+      await db.execute(`INSERT INTO case_data_executions
+        (workspace_id,chat_id,case_id,sop_version_id,specification_json)
+        VALUES (?,?,?,?,?)`, [...keys, plan.id, JSON.stringify(specification)]);
+      const state = await runGraph(db, { workspaceId: auth.workspace_id,
+        chatId: chat.id, caseId: caseRow.id }, specification);
+      if (!state.validated) throw new Error('数据校验节点未完成');
+      return readGeneratedData(db, keys);
+    });
+  }
+
+  async function readGeneratedData(db, keys) {
+    const [[execution]] = await db.execute(`SELECT sop_version_id,created_at
+      FROM case_data_executions WHERE workspace_id=? AND chat_id=? AND case_id=?`, keys);
+    if (!execution) return { status: 'NOT_STARTED', reviewStatus: 'NOT_STARTED', revision: 0,
+      customers: [], accounts: [], funds: [], holdings: [] };
+    const [customers] = await db.execute(`SELECT id,public_id,workspace_id,chat_id,case_id,
+      name,investor_type,simulated_balance
+      FROM case_generated_customers WHERE workspace_id=? AND chat_id=? AND case_id=? ORDER BY id`, keys);
+    const [accounts] = await db.execute(`SELECT id,workspace_id,chat_id,case_id,customer_id,account_no,branch_code
+      FROM case_generated_accounts WHERE workspace_id=? AND chat_id=? AND case_id=? ORDER BY id`, keys);
+    const [funds] = await db.execute(`SELECT id,workspace_id,chat_id,case_id,fund_code,fund_name,share_class,nav
+      FROM case_generated_funds WHERE workspace_id=? AND chat_id=? AND case_id=? ORDER BY id`, keys);
+    const [holdings] = await db.execute(`SELECT id,workspace_id,chat_id,case_id,account_id,fund_code,share_class,total_volume
+      FROM case_generated_holdings WHERE workspace_id=? AND chat_id=? AND case_id=? ORDER BY id`, keys);
+    const [[edit]] = await db.execute(`SELECT COALESCE(MAX(revision),0) AS revision
+      FROM case_data_edit_events WHERE workspace_id=? AND chat_id=? AND case_id=?`, keys);
+    const [[confirmation]] = await db.execute(`SELECT revision,confirmed_at
+      FROM case_data_confirmations WHERE workspace_id=? AND chat_id=? AND case_id=?`, keys);
+    return { status: 'VALIDATED', planVersionId: String(execution.sop_version_id),
+      reviewStatus: confirmation ? 'CONFIRMED' : 'PENDING_REVIEW',
+      confirmedAt: confirmation?.confirmed_at ?? null,
+      createdAt: execution.created_at, revision: Number(edit.revision), customers, accounts, funds, holdings };
+  }
+
+  async function editGeneratedData(token, chatPublicId, casePublicId, edit, reviewTurn = null) {
+    chatPublicId = requiredUuid(chatPublicId, 'Chat');
+    casePublicId = requiredUuid(casePublicId, 'Case');
+    return transaction(async db => {
+      const auth = await authenticateSession(db, token);
+      const [[chat]] = await db.execute(`SELECT id,status FROM case_chats
+        WHERE workspace_id=? AND public_id=? FOR UPDATE`, [auth.workspace_id, chatPublicId]);
+      if (!chat) throw storeError('CHAT_NOT_FOUND', 404, 'Chat 不存在');
+      if (chat.status !== 'ACTIVE') throw storeError('CHAT_CLOSED', 409, 'Chat 已结束');
+      const [[caseRow]] = await db.execute(`SELECT id FROM cases
+        WHERE workspace_id=? AND chat_id=? AND public_id=?`,
+      [auth.workspace_id, chat.id, casePublicId]);
+      if (!caseRow) throw storeError('CASE_NOT_FOUND', 404, 'Case 不存在');
+      const keys = [auth.workspace_id, chat.id, caseRow.id];
+      const [[execution]] = await db.execute(`SELECT sop_version_id FROM case_data_executions
+        WHERE workspace_id=? AND chat_id=? AND case_id=? FOR UPDATE`, keys);
+      if (!execution) throw storeError('DATA_NOT_STARTED', 409, '请先生成数据');
+      const [[confirmation]] = await db.execute(`SELECT revision FROM case_data_confirmations
+        WHERE workspace_id=? AND chat_id=? AND case_id=?`, keys);
+      if (confirmation) throw storeError('DATA_ALREADY_CONFIRMED', 409, '数据已确认，不能继续修改');
+      const [[latest]] = await db.execute(`SELECT COALESCE(MAX(revision),0) AS revision
+        FROM case_data_edit_events WHERE workspace_id=? AND chat_id=? AND case_id=?`, keys);
+      if (Number(latest.revision) !== edit.revision) {
+        throw storeError('DATA_EDIT_CONFLICT', 409, '数据已被其他修改更新，请刷新后重试');
+      }
+      for (const row of edit.changes.customers) {
+        if (row.id === null) {
+          const [created] = await db.execute(`INSERT INTO case_generated_customers
+            (public_id,workspace_id,chat_id,case_id,name,investor_type,simulated_balance)
+            VALUES (?,?,?,?,?,?,?)`, [crypto.randomUUID(), ...keys, row.name,
+            row.investorType, row.simulatedBalance]);
+          const accountNo = `9${Array.from({ length: 16 }, () => crypto.randomInt(10)).join('')}`;
+          await db.execute(`INSERT INTO case_generated_accounts
+            (workspace_id,chat_id,case_id,customer_id,account_no,branch_code)
+            VALUES (?,?,?,?,?,?)`, [...keys, created.insertId, accountNo, row.branchCode]);
+        } else {
+          const [result] = await db.execute(`UPDATE case_generated_customers
+            SET name=?,investor_type=?,simulated_balance=?
+            WHERE workspace_id=? AND chat_id=? AND case_id=? AND id=?`,
+          [row.name, row.investorType, row.simulatedBalance, ...keys, row.id]);
+          if (!result.affectedRows) throw storeError('DATA_ROW_NOT_FOUND', 404, '客户记录不存在');
+        }
+      }
+      for (const row of edit.changes.accounts) {
+        if (row.id === null) {
+          const [[customer]] = await db.execute(`SELECT id FROM case_generated_customers
+            WHERE workspace_id=? AND chat_id=? AND case_id=? AND id=?`, [...keys,row.customerId]);
+          if (!customer) throw storeError('DATA_ROW_NOT_FOUND', 404, '客户记录不存在');
+          const accountNo = `9${Array.from({ length: 16 }, () => crypto.randomInt(10)).join('')}`;
+          await db.execute(`INSERT INTO case_generated_accounts
+            (workspace_id,chat_id,case_id,customer_id,account_no,branch_code)
+            VALUES (?,?,?,?,?,?)`, [...keys,row.customerId,accountNo,row.branchCode]);
+          continue;
+        }
+        const [result] = await db.execute(`UPDATE case_generated_accounts SET branch_code=?
+          WHERE workspace_id=? AND chat_id=? AND case_id=? AND id=? AND customer_id=?`,
+        [row.branchCode, ...keys, row.id, row.customerId]);
+        if (!result.affectedRows) throw storeError('DATA_ROW_NOT_FOUND', 404, '账户记录不存在');
+      }
+      for (const row of edit.changes.funds) {
+        if (row.id === null) {
+          await db.execute(`INSERT INTO case_generated_funds
+            (workspace_id,chat_id,case_id,fund_code,fund_name,share_class,nav)
+            VALUES (?,?,?,?,?,?,?)`, [...keys, row.fundCode, row.fundName,row.shareClass,row.nav]);
+        } else {
+          const [result] = await db.execute(`UPDATE case_generated_funds SET fund_name=?,nav=?
+            WHERE workspace_id=? AND chat_id=? AND case_id=? AND id=?
+              AND fund_code=? AND share_class=?`,
+          [row.fundName,row.nav,...keys,row.id,row.fundCode,row.shareClass]);
+          if (!result.affectedRows) throw storeError('DATA_ROW_NOT_FOUND', 404, '基金记录不存在');
+        }
+      }
+      for (const row of edit.changes.holdings) {
+        if (row.id === null) {
+          await db.execute(`INSERT INTO case_generated_holdings
+            (workspace_id,chat_id,case_id,account_id,fund_code,share_class,total_volume)
+            VALUES (?,?,?,?,?,?,?)`, [...keys,row.accountId,row.fundCode,row.shareClass,row.totalVolume]);
+        } else {
+          const [result] = await db.execute(`UPDATE case_generated_holdings SET total_volume=?
+            WHERE workspace_id=? AND chat_id=? AND case_id=? AND id=?
+              AND account_id=? AND fund_code=? AND share_class=?`,
+          [row.totalVolume,...keys,row.id,row.accountId,row.fundCode,row.shareClass]);
+          if (!result.affectedRows) throw storeError('DATA_ROW_NOT_FOUND', 404, '持有记录不存在');
+        }
+      }
+      const changed = Object.values(edit.changes).some(rows => rows.length);
+      const afterRevision = edit.revision + Number(changed);
+      if (changed) await db.execute(`INSERT INTO case_data_edit_events
+        (workspace_id,chat_id,case_id,revision,edit_json) VALUES (?,?,?,?,?)`,
+      [...keys,afterRevision,JSON.stringify(edit.changes)]);
+      if (reviewTurn) {
+        const [[lastTurn]] = await db.execute(`SELECT COALESCE(MAX(turn_number),0) AS number
+          FROM case_data_review_turns WHERE workspace_id=? AND chat_id=? AND case_id=?`, keys);
+        await db.execute(`INSERT INTO case_data_review_turns
+          (workspace_id,chat_id,case_id,turn_number,before_revision,after_revision,
+           user_text,assistant_text,changes_json) VALUES (?,?,?,?,?,?,?,?,?)`,
+        [...keys,Number(lastTurn.number)+1,edit.revision,afterRevision,
+          reviewTurn.userInput,reviewTurn.reply,JSON.stringify(edit.changes)]);
+      }
+      return readGeneratedData(db, keys);
+    });
+  }
+
+  async function dataReviewTurns(token, chatPublicId, casePublicId) {
+    chatPublicId = requiredUuid(chatPublicId, 'Chat');
+    casePublicId = requiredUuid(casePublicId, 'Case');
+    return transaction(async db => {
+      const auth = await authenticateSession(db, token);
+      const [[scope]] = await db.execute(`SELECT k.id AS case_id,k.chat_id
+        FROM cases k JOIN case_chats h ON h.workspace_id=k.workspace_id AND h.id=k.chat_id
+        WHERE k.workspace_id=? AND h.public_id=? AND k.public_id=?`,
+      [auth.workspace_id,chatPublicId,casePublicId]);
+      if (!scope) throw storeError('CASE_NOT_FOUND', 404, 'Case 不存在');
+      const [turns] = await db.execute(`SELECT turn_number,before_revision,after_revision,
+        user_text,assistant_text,created_at FROM case_data_review_turns
+        WHERE workspace_id=? AND chat_id=? AND case_id=? ORDER BY turn_number`,
+      [auth.workspace_id,scope.chat_id,scope.case_id]);
+      return { turns: turns.map(turn => ({ number: turn.turn_number,
+        beforeRevision: turn.before_revision, afterRevision: turn.after_revision,
+        userInput: turn.user_text, reply: turn.assistant_text, createdAt: turn.created_at })) };
+    });
+  }
+
+  async function confirmGeneratedData(token, chatPublicId, casePublicId, revision) {
+    chatPublicId = requiredUuid(chatPublicId, 'Chat');
+    casePublicId = requiredUuid(casePublicId, 'Case');
+    if (!Number.isSafeInteger(revision) || revision < 0) {
+      throw storeError('INVALID_REVISION', 400, '数据版本无效');
+    }
+    return transaction(async db => {
+      const auth = await authenticateSession(db, token);
+      const [[chat]] = await db.execute(`SELECT id,status FROM case_chats
+        WHERE workspace_id=? AND public_id=? FOR UPDATE`, [auth.workspace_id,chatPublicId]);
+      if (!chat) throw storeError('CHAT_NOT_FOUND', 404, 'Chat 不存在');
+      if (chat.status !== 'ACTIVE') throw storeError('CHAT_CLOSED', 409, 'Chat 已结束');
+      const [[caseRow]] = await db.execute(`SELECT id,status FROM cases
+        WHERE workspace_id=? AND chat_id=? AND public_id=? FOR UPDATE`,
+      [auth.workspace_id,chat.id,casePublicId]);
+      if (!caseRow) throw storeError('CASE_NOT_FOUND', 404, 'Case 不存在');
+      if (!['SOP_LOCKED','EXECUTING'].includes(caseRow.status)) {
+        throw storeError('INVALID_CASE_STATE', 409, '当前 Case 不能确认数据');
+      }
+      const keys = [auth.workspace_id,chat.id,caseRow.id];
+      const [[execution]] = await db.execute(`SELECT sop_version_id FROM case_data_executions
+        WHERE workspace_id=? AND chat_id=? AND case_id=? FOR UPDATE`, keys);
+      if (!execution) throw storeError('DATA_NOT_STARTED', 409, '数据尚未生成');
+      const [[prior]] = await db.execute(`SELECT revision FROM case_data_confirmations
+        WHERE workspace_id=? AND chat_id=? AND case_id=?`, keys);
+      if (prior) throw storeError('DATA_ALREADY_CONFIRMED', 409, '数据已经确认');
+      const [[latest]] = await db.execute(`SELECT COALESCE(MAX(revision),0) AS revision
+        FROM case_data_edit_events WHERE workspace_id=? AND chat_id=? AND case_id=?`, keys);
+      if (Number(latest.revision) !== revision) {
+        throw storeError('DATA_EDIT_CONFLICT', 409, '数据已更新，请先查看最新版本');
+      }
+      await db.execute(`INSERT INTO case_data_confirmations
+        (workspace_id,chat_id,case_id,revision,actor_user_id) VALUES (?,?,?,?,?)`,
+      [...keys,revision,auth.user_id]);
+      if (caseRow.status !== 'EXECUTING') {
+        await db.execute(`UPDATE cases SET status='EXECUTING'
+          WHERE workspace_id=? AND chat_id=? AND id=?`, keys);
+        await db.execute(`INSERT INTO case_state_events
+          (workspace_id,chat_id,case_id,from_status,to_status,actor_user_id,reason)
+          VALUES (?,?,?,?,?,?,'USER_CONFIRMED_DATA')`,
+        [...keys,caseRow.status,'EXECUTING',auth.user_id]);
+      }
+      return readGeneratedData(db, keys);
+    });
+  }
+
   return Object.freeze({ createChat, createCase, listCases, saveSopProposal,
     getLatestSopProposal, confirmSopProposal, readCaseDiscussion, beginCaseDiscussionTurn,
-    finishCaseDiscussionTurn, abandonCaseDiscussionTurn, finishCasePlanProposal });
+    finishCaseDiscussionTurn, abandonCaseDiscussionTurn, finishCasePlanProposal,
+    generatedData, generatedDataCatalog, executeGeneratedData, editGeneratedData,
+    dataReviewTurns, confirmGeneratedData });
 }

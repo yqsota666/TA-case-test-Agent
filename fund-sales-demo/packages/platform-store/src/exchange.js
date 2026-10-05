@@ -68,6 +68,8 @@ export function createExchangeRepository({ transaction }) {
         JOIN exchange_channels h ON h.workspace_id=c.workspace_id
         WHERE c.workspace_id=? AND c.public_id=? AND c.status='ACTIVE'
           AND k.public_id=? AND k.status IN ('SOP_LOCKED','EXECUTING')
+          AND EXISTS (SELECT 1 FROM case_data_confirmations d
+            WHERE d.workspace_id=k.workspace_id AND d.chat_id=k.chat_id AND d.case_id=k.id)
           AND s.id=? AND h.id=?`,
       [auth.workspace_id, chatPublicId, casePublicId, sopVersionId, channelId]);
       if (!scope) throw storeError('APPLICATION_SCOPE', 409, 'Case、SOP 或通道不可用于申请');
@@ -159,6 +161,14 @@ export function createExchangeRepository({ transaction }) {
             AND s.chat_id=k.chat_id AND s.case_id=k.id AND s.status='LOCKED')`,
       [auth.workspace_id, chat.id]);
       if (Number(pending.count) !== 0) throw storeError('SOP_NOT_LOCKED', 409, '仍有 Case 未锁定 SOP');
+      const [[missingReview]] = await db.execute(`SELECT COUNT(*) AS count FROM cases k
+        LEFT JOIN case_data_confirmations d ON d.workspace_id=k.workspace_id
+          AND d.chat_id=k.chat_id AND d.case_id=k.id
+        WHERE k.workspace_id=? AND k.chat_id=? AND d.case_id IS NULL`,
+      [auth.workspace_id, chat.id]);
+      if (Number(missingReview.count)) {
+        throw storeError('DATA_NOT_CONFIRMED', 409, '仍有 Case 的模拟数据未确认');
+      }
       const placeholders = applicationPublicIds.map(() => '?').join(',');
       const [applications] = await db.execute(`SELECT id,public_id,status,
         DATE_FORMAT(business_date, '%Y-%m-%d') AS business_date,channel_id,file_type

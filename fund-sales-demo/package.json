@@ -8,6 +8,8 @@
     "test:protocol": "node --test packages/platform-protocol/test/*.test.js",
     "test:store": "node --test packages/platform-store/test/*.test.js",
     "test:agent": "node --test packages/case-agent/test/*.test.js",
-    "db:migrate": "node packages/platform-store/src/migrate.js"
+    "db:migrate": "node packages/platform-store/src/migrate.js",
+    "start:case-api": "node packages/case-api/src/server.js",
+    "test:case-api": "node --test packages/case-api/test/*.test.js"
   }
 }

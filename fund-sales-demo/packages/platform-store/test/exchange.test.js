@@ -14,7 +14,8 @@ const record = { AppSheetSerialNo: '202610030001', BusinessCode: '001', Distribu
 const returned = { ...record, BusinessCode: '101', ReturnCode: '0000', TAAccountID: 'TA123' };
 const raw = buildDataFile({ creator: '27', receiver: '306', date: '20261003', fileType: '02', records: [returned] });
 
-function fixture({ existing, sameBytes, returnItem, application, batchApplications, binding, pendingCount = 0 } = {}) {
+function fixture({ existing, sameBytes, returnItem, application, batchApplications, binding,
+  pendingCount = 0, missingReviewCount = 0 } = {}) {
   const calls = [];
   const db = { async execute(sql, values) {
     calls.push({ sql, values });
@@ -23,6 +24,9 @@ function fixture({ existing, sameBytes, returnItem, application, batchApplicatio
     if (sql.includes('FROM case_chats')) return [[{
       chat_id: 41, case_id: 51, sop_id: 61, channel_id: 71, distributor_code: '306', protocol_version: '22'
     }]];
+    if (sql.includes('LEFT JOIN case_data_confirmations d')) {
+      return [[{ count: missingReviewCount }]];
+    }
     if (sql.includes('COUNT(*) AS count FROM cases')) return [[{ count: pendingCount }]];
     if (sql.includes('FROM applications') && sql.includes('public_id IN')) {
       return [typeof batchApplications === 'function' ? batchApplications(sql) : batchApplications ?? []];
@@ -52,6 +56,7 @@ test('stages an encoded 01 snapshot under a locked SOP and server-side scope', a
   assert.match(result.snapshotHash, /^[a-f0-9]{64}$/);
   const scope = calls.find(call => call.sql.includes('FROM case_chats'));
   assert.match(scope.sql, /s\.status='LOCKED'/);
+  assert.match(scope.sql, /AND EXISTS \(SELECT 1 FROM case_data_confirmations d/);
   assert.deepEqual(scope.values, [31, chatPublicId, casePublicId, '61', '71']);
   const saved = calls.find(call => call.sql.includes('INSERT INTO applications'));
   assert.deepEqual(saved.values.slice(1, 6), [31, 41, 51, 61, 71]);
@@ -182,6 +187,10 @@ test('a batch groups ready applications only after all Chat Case SOPs are locked
     chatPublicId, channelId: '71', businessDate: '20261003', applicationPublicIds: [applicationPublicId]
   }), { code: 'SOP_NOT_LOCKED' });
   assert.equal(pending.calls.some(call => call.sql.includes('INSERT INTO exchange_batches')), false);
+  const noData = fixture({ batchApplications, missingReviewCount: 1 });
+  await assert.rejects(noData.repository.createOutboundBatch(token, {
+    chatPublicId, channelId: '71', businessDate: '20261003', applicationPublicIds: [applicationPublicId]
+  }), { code: 'DATA_NOT_CONFIRMED' });
 });
 
 test('batch date remains the database calendar date across a UTC+8 midnight', async () => {
