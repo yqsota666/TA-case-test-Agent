@@ -13,7 +13,13 @@ const transaction = async action => {
     const result = await action(db);
     await db.commit();
     return result;
-  } catch (error) { await db.rollback(); throw error; }
+  } catch (error) {
+    try { await db.rollback(); }
+    catch (rollbackError) {
+      console.error('数据库回滚失败', rollbackError.code ?? 'UNKNOWN');
+    }
+    throw error;
+  }
   finally { db.release(); }
 };
 try {

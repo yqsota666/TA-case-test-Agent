@@ -18,7 +18,10 @@ const transaction = async action => {
     await connection.commit();
     return result;
   } catch (error) {
-    await connection.rollback();
+    try { await connection.rollback(); }
+    catch (rollbackError) {
+      console.error('数据库回滚失败', rollbackError.code ?? 'UNKNOWN');
+    }
     throw error;
   } finally { connection.release(); }
 };
