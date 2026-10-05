@@ -209,6 +209,7 @@ test('file sequence exhaustion persists an operational recovery state and retrie
   const recovered = await f.service.prepare(input);
   assert.equal(recovered.phase, 'GENERATED');
   assert.equal(recovered.operationError, undefined);
+  assert.doesNotMatch(recovered.reply, /文件序号已用尽/);
   assert.equal(f.files.length, 1); assert.equal(f.applications.length, 1);
   assert.equal(f.calls.filter(call => call[0] === 'derive').length, 1);
 });

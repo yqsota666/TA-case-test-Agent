@@ -35,7 +35,7 @@ export function createApplicationPreparationService({ repository, preparations, 
     const recovering = ['PREPARING', 'WAITING_OPERATION'].includes(previous.phase) && previous.intents.length && !userInput;
     const history = boundPreparationHistory(previous);
     const suggestion = recovering ?
-      { intents: previous.intents, reply: previous.reply, questions: previous.modelQuestions ?? [] } :
+      { intents: previous.intents, reply: previous.resumeReply ?? previous.reply, questions: previous.modelQuestions ?? [] } :
       await derive({ plan: plan.proposal,
         data: { customers: data.customers, accounts: data.accounts, funds: data.funds, holdings: data.holdings },
         channel, bindings: bindingResult.bindings, catalog: preparationCatalog(channel.protocolVersion),
@@ -92,7 +92,7 @@ export function createApplicationPreparationService({ repository, preparations, 
     } catch (cause) {
       if (cause.code !== 'FILE_SEQUENCE_EXHAUSTED') throw cause;
       return preparations.save(token, { ...scope, revision: state.revision, state: {
-        ...state, phase: 'WAITING_OPERATION', questions: [],
+        ...state, phase: 'WAITING_OPERATION', questions: [], resumeReply: suggestion.reply,
         operationError: { code: cause.code, message: '当日文件序号已用尽' },
         reply: '当日文件序号已用尽，申请与批次已保留。须先由通道维护人员处理当日文件编号容量，再点击继续生成重试；不能通过修改已入库申请解决。',
       } });
