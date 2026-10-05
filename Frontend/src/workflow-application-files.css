@@ -1,0 +1,17 @@
+/* finesse · component: application-file-panel · register=product
+ * tokens: inherited from workflow.css */
+.waf{width:100%;max-width:780px;margin:18px auto 0;border:1px solid var(--wf-line);border-radius:7px;padding:16px;background:var(--wf-sidebar);color:inherit}
+.waf-heading{display:flex;align-items:center;gap:9px}.waf-heading strong{flex:1;font-size:14px}.waf-heading button,.waf-preview button{border:0;background:transparent;color:inherit;cursor:pointer}
+.waf-help{color:var(--wf-muted);font-size:12px;line-height:1.5;margin:9px 0 12px}
+.waf-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 12px}
+.waf-form label{display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--wf-muted)}
+.waf-form input,.waf-form select{width:100%;height:38px;min-width:0;padding:5px 8px;border:1px solid var(--wf-line);border-radius:5px;background:var(--wf-surface);color:inherit;font:inherit}
+.waf-span,.waf-actions{grid-column:1/-1}.waf-span{font-size:12px;color:var(--wf-muted);margin:1px 0}
+.waf-actions button{min-height:36px;border:1px solid var(--wf-accent);background:var(--wf-accent);color:#fff;border-radius:5px;padding:7px 12px;cursor:pointer}
+.waf-actions button:disabled{opacity:.5;cursor:not-allowed}.waf-actions button:active{transform:translateY(1px)}
+.waf button:focus-visible,.waf a:focus-visible,.waf input:focus-visible,.waf select:focus-visible{outline:2px solid var(--wf-accent);outline-offset:2px}
+@media(hover:hover){.waf-heading button:hover,.waf-file button:hover,.waf-preview button:hover{text-decoration:underline}.waf-actions button:hover:not(:disabled){filter:brightness(.93)}}
+.waf-error{font-size:12px;color:#b34338;margin:10px 0}.waf-list{margin-top:17px;border-top:1px solid var(--wf-line);padding-top:12px;font-size:12px}.waf-list>strong{font-size:12px}.waf-list>p{color:var(--wf-muted)}
+.waf-file{display:flex;align-items:center;gap:9px;border-top:1px solid var(--wf-line);padding:8px 0}.waf-file:first-of-type{margin-top:7px}.waf-file button{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;text-align:left;border:0;background:transparent;color:inherit;cursor:pointer}.waf-file span{color:var(--wf-muted)}.waf-file a{display:flex;color:var(--wf-accent)}
+.waf-preview{margin-top:15px;border-top:1px solid var(--wf-line);padding-top:10px}.waf-preview>div:first-child{display:flex;justify-content:space-between;gap:8px;font-size:12px}.waf-table{max-height:320px;overflow:auto;margin-top:8px;border:1px solid var(--wf-line)}.waf-table table{border-collapse:collapse;white-space:nowrap;font-size:11px}.waf-table th,.waf-table td{padding:6px 8px;border-right:1px solid var(--wf-line);border-bottom:1px solid var(--wf-line);text-align:left}.waf-table th{position:sticky;top:0;background:var(--wf-sidebar)}
+@media(max-width:650px){.waf-form{grid-template-columns:1fr}.waf{padding:12px}}

@@ -1,0 +1,22 @@
+{
+  "name": "ta-case-backend",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "test:protocol-contract": "node --test packages/platform-protocol/test/definitions.test.js",
+    "test:protocol": "node --test packages/platform-protocol/test/*.test.js",
+    "test:store": "node --test packages/platform-store/test/*.test.js",
+    "test:agent": "node --test packages/case-agent/test/*.test.js",
+    "db:migrate": "node packages/platform-store/src/migrate.js",
+    "start:case-api": "node packages/case-api/src/server.js",
+    "test:case-api": "node --test packages/case-api/test/*.test.js",
+    "test": "node --test packages/case-agent/test/*.test.js packages/case-api/test/*.test.js packages/platform-store/test/*.test.js packages/platform-protocol/test/*.test.js",
+    "start:legacy": "node legacy/services/sales/src/platform-server.js"
+  },
+  "dependencies": {
+    "mysql2": "3.24.4"
+  }
+}

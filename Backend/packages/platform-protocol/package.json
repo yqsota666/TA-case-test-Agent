@@ -1,0 +1,13 @@
+{
+  "name": "@fund-demo/platform-protocol",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.js",
+  "dependencies": {
+    "iconv-lite": "0.7.3"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  }
+}
