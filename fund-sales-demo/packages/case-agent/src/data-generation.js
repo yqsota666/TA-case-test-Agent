@@ -2,9 +2,12 @@ import crypto from 'node:crypto';
 import { StateGraph, StateSchema, START, END } from '@langchain/langgraph';
 import { z } from 'zod';
 
-const Money = z.string().regex(/^\d{1,14}\.\d{2}$/);
-const Nav = z.string().regex(/^\d{1,8}\.\d{8}$/);
-const Volume = z.string().regex(/^\d{1,10}\.\d{8}$/);
+const decimal = (integerDigits, fractionalDigits) => z.string()
+  .regex(new RegExp(`^\\d{1,${integerDigits}}\\.\\d{${fractionalDigits}}$`))
+  .transform(value => value.replace(/^0+(?=\d+\.)/, ''));
+const Money = decimal(14, 2);
+const Nav = decimal(8, 8);
+const Volume = decimal(10, 8);
 const Id = z.string().regex(/^\d{1,20}$/);
 const Branch = z.string().regex(/^\d{1,9}$/);
 const FundCode = z.string().regex(/^\d{6}$/);

@@ -27,3 +27,15 @@ test('missing Plan details and broken customer references stop before data write
     accounts: [{ customerIndex: 0, branchCode: '305' }], funds: [], missing: [] })),
   { code: 'DATA_SPEC_INVALID' });
 });
+
+test('decimal values use MySQL canonical form before generation validates stored rows', () => {
+  const data = parseDataSpecification(JSON.stringify({
+    customers: [{ name: '模拟客户甲', investorType: '1', simulatedBalance: '0001.00' }],
+    accounts: [{ customerIndex: 0, branchCode: '305' }],
+    funds: [{ fundCode: '990901', fundName: '模拟基金', shareClass: 'A', nav: '0001.00000000' }],
+    holdings: [{ accountIndex: 0, fundIndex: 0, totalVolume: '0001.00000000' }], missing: [],
+  }));
+  assert.equal(data.customers[0].simulatedBalance, '1.00');
+  assert.equal(data.funds[0].nav, '1.00000000');
+  assert.equal(data.holdings[0].totalVolume, '1.00000000');
+});
