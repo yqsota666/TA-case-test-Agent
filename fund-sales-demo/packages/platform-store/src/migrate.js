@@ -12,9 +12,13 @@ export function migrationStatements(sql) {
     const create = /^CREATE TABLE ([a-z][a-z0-9_]*)\s*\(/i.exec(statement);
     const compact = statement.replace(/\s+/g, ' ');
     const widenSopStatus = /^ALTER TABLE case_sop_versions DROP CHECK ck_sop_status, DROP CHECK ck_sop_lock, MODIFY COLUMN status VARCHAR\(24\) NOT NULL DEFAULT 'DRAFT', ADD CONSTRAINT ck_sop_status CHECK \(status IN \('DRAFT','PENDING_CONFIRMATION','LOCKED'\)\), ADD CONSTRAINT ck_sop_lock CHECK \(\(status='LOCKED'\)=\(locked_at IS NOT NULL\)\)$/i.test(compact);
-    if (!create && !widenSopStatus) throw new Error('迁移语句不在允许的范围内');
-    return { sql: statement, table: create?.[1] ?? 'case_sop_versions',
-      kind: create ? 'CREATE' : 'WIDEN_SOP_STATUS',
+    const addTurnKind = /^ALTER TABLE case_discussion_turns ADD COLUMN turn_kind VARCHAR\(16\) NOT NULL DEFAULT 'DISCUSS', ADD CONSTRAINT ck_discussion_kind CHECK \(turn_kind IN \('DISCUSS','PROPOSE_PLAN'\)\)$/i.test(compact);
+    const addSopSource = /^ALTER TABLE case_sop_versions ADD COLUMN source_turn_number INT UNSIGNED NULL, ADD CONSTRAINT fk_sop_source_turn FOREIGN KEY \(workspace_id,chat_id,case_id,source_turn_number\) REFERENCES case_discussion_turns\(workspace_id,chat_id,case_id,turn_number\)$/i.test(compact);
+    const widenReply = /^ALTER TABLE case_discussion_turns MODIFY COLUMN assistant_text MEDIUMTEXT NULL$/i.test(compact);
+    if (!create && !widenSopStatus && !addTurnKind && !addSopSource && !widenReply) throw new Error('迁移语句不在允许的范围内');
+    return { sql: statement, table: create?.[1] ?? (addTurnKind || widenReply ? 'case_discussion_turns' : 'case_sop_versions'),
+      kind: create ? 'CREATE' : addTurnKind ? 'ADD_TURN_KIND' : addSopSource ? 'ADD_SOP_SOURCE' :
+        widenReply ? 'WIDEN_REPLY' : 'WIDEN_SOP_STATUS',
       checksum: crypto.createHash('sha256').update(statement).digest('hex') };
   });
 }
@@ -27,6 +31,19 @@ async function tableExists(db, name) {
 
 async function stepApplied(db, step) {
   if (step.kind === 'CREATE') return tableExists(db, step.table);
+  if (step.kind === 'ADD_TURN_KIND' || step.kind === 'ADD_SOP_SOURCE') {
+    const table = step.kind === 'ADD_TURN_KIND' ? 'case_discussion_turns' : 'case_sop_versions';
+    const column = step.kind === 'ADD_TURN_KIND' ? 'turn_kind' : 'source_turn_number';
+    const [[row]] = await db.execute(`SELECT COUNT(*) AS count FROM information_schema.columns
+      WHERE table_schema=DATABASE() AND table_name=? AND column_name=?`, [table, column]);
+    return Number(row.count) === 1;
+  }
+  if (step.kind === 'WIDEN_REPLY') {
+    const [[row]] = await db.execute(`SELECT data_type AS data_type FROM information_schema.columns
+      WHERE table_schema=DATABASE() AND table_name='case_discussion_turns' AND column_name='assistant_text'`);
+    if (!row) throw new Error('case_discussion_turns.assistant_text 不存在，无法扩展');
+    return row.data_type === 'mediumtext';
+  }
   const [[row]] = await db.execute(`SELECT character_maximum_length AS width
     FROM information_schema.columns WHERE table_schema=DATABASE()
       AND table_name='case_sop_versions' AND column_name='status'`);

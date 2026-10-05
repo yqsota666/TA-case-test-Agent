@@ -9,9 +9,10 @@ const scope = [token, chatPublicId, casePublicId];
 const reply = '想先确认：你想测什么？\n初步理解：目标待明确。\n还需明确：输入条件。';
 
 function fixture({ chat = { id: 41, status: 'ACTIVE' },
-  caseRow = { id: 51, status: 'DISCUSSING' }, sop = { id: 61, status: 'PENDING_CONFIRMATION' } } = {}) {
+  caseRow = { id: 51, status: 'DISCUSSING' }, sop = { id: 61, status: 'PENDING_CONFIRMATION' },
+  initialTurns = [] } = {}) {
   const calls = [];
-  const turns = [];
+  const turns = [...initialTurns];
   const db = { async execute(sql, values) {
     calls.push({ sql, values });
     if (sql.includes('FROM platform_sessions')) return [[{ user_id: 7, workspace_id: 31 }]];
@@ -19,11 +20,14 @@ function fixture({ chat = { id: 41, status: 'ACTIVE' },
     if (sql.includes('FROM cases')) return [[caseRow]];
     if (sql.includes('FROM case_sop_versions')) return [[sop]];
     if (sql.includes('FROM case_discussion_turns')) {
+      if (sql.includes('COUNT(*)')) return [[{ count: turns.filter(row => row.status === 'COMPLETE' &&
+        row.turn_number < values[3]).length }]];
       if (sql.includes('AND turn_number=?')) return [[turns.find(row => row.turn_number === values[3])]];
       return sql.includes('ORDER BY turn_number DESC') ? [[turns.at(-1)]] : [turns];
     }
     if (sql.includes('INSERT INTO case_discussion_turns')) {
-      turns.push({ turn_number: values[3], user_text: values[4], assistant_text: null, status: 'PENDING' });
+      turns.push({ turn_number: values[3], user_text: values[4], assistant_text: null,
+        status: 'PENDING', turn_kind: values[6] });
     }
     if (sql.includes('SET assistant_text=?')) {
       const row = turns.find(item => item.turn_number === values[5]);
@@ -44,7 +48,7 @@ test('user intent is stored before model output; history contains only complete 
   assert.deepEqual(await repository.beginCaseDiscussionTurn(...scope,
     { expectedRevision: 0, userInput: '  我想确认边界  ' }), { revision: 1, turnNumber: 1 });
   assert.deepEqual(await repository.readCaseDiscussion(...scope),
-    { revision: 1, turns: [], pending: { turnNumber: 1, userInput: '我想确认边界' } });
+    { revision: 1, turns: [], pending: { turnNumber: 1, userInput: '我想确认边界', kind: 'DISCUSS' } });
   await assert.rejects(repository.beginCaseDiscussionTurn(...scope,
     { expectedRevision: 1, userInput: '另一句' }), { code: 'DISCUSSION_IN_PROGRESS' });
   await repository.finishCaseDiscussionTurn(...scope,
@@ -78,7 +82,7 @@ test('a pending response blocks a new Plan; abandoning it permits another turn',
   assert.deepEqual(await repository.readCaseDiscussion(...scope), { revision: 1, turns: [], pending: null });
   await repository.beginCaseDiscussionTurn(...scope, { expectedRevision: 1, userInput: '重新讨论' });
   assert.deepEqual((await repository.readCaseDiscussion(...scope)).pending,
-    { turnNumber: 2, userInput: '重新讨论' });
+    { turnNumber: 2, userInput: '重新讨论', kind: 'DISCUSS' });
 });
 
 test('closed Chat, foreign Case, and locked SOP block discussion requests', async () => {
@@ -92,4 +96,57 @@ test('closed Chat, foreign Case, and locked SOP block discussion requests', asyn
       { expectedRevision: 0, userInput: '继续' }), { code });
     assert.equal(calls.some(call => call.sql.includes('INSERT INTO case_discussion_turns')), false);
   }
+});
+
+test('a proposal turn and SOP version share one scoped transaction', async () => {
+  const previous = [1, 2].map(turn_number => ({ turn_number, user_text: `问题${turn_number}`,
+    assistant_text: `回答${turn_number}`, status: 'COMPLETE', turn_kind: 'DISCUSS' }));
+  const { repository, calls } = fixture({ initialTurns: previous, sop: null });
+  const plan = { objective: '检查规则', preconditions: [], scenarios: [
+    { title: '边界', setup: '准备数据', action: '执行', expected: '可观察结果', evidence: '记录' },
+  ], openQuestions: [] };
+  await repository.beginCaseDiscussionTurn(...scope,
+    { expectedRevision: 2, userInput: '请生成方案', kind: 'PROPOSE_PLAN' });
+  await assert.rejects(repository.finishCaseDiscussionTurn(...scope,
+    { turnNumber: 3, assistantReply: reply, promptVersion: 'plan-proposal-v1' }),
+  { code: 'STALE_DISCUSSION' });
+  const saved = await repository.finishCasePlanProposal(...scope,
+    { turnNumber: 3, assistantReply: '测试目标：检查规则',
+      promptVersion: 'plan-proposal-v1', proposal: plan });
+  assert.deepEqual(saved, { revision: 3, versionNumber: 1, status: 'PENDING_CONFIRMATION' });
+  const insertion = calls.find(call => call.sql.includes('INSERT INTO case_sop_versions'));
+  assert.deepEqual(insertion.values.slice(0, 4), [31, 41, 51, 1]);
+  assert.equal(insertion.values.at(-1), 3);
+  assert.ok(calls.some(call => call.sql.includes("SET status='SOP_PENDING'")));
+  assert.ok(calls.some(call => call.sql.includes('AI_PLAN_PROPOSAL')));
+});
+
+test('a valid Plan display longer than 4000 characters can be saved', async () => {
+  const previous = [1, 2].map(turn_number => ({ turn_number, user_text: `问题${turn_number}`,
+    assistant_text: `回答${turn_number}`, status: 'COMPLETE', turn_kind: 'DISCUSS' }));
+  const { repository } = fixture({ initialTurns: previous, sop: null });
+  const plan = { objective: '检查规则', preconditions: [], scenarios: [
+    { title: '边界', setup: '准备数据', action: '执行', expected: '可观察结果', evidence: '记录' },
+  ], openQuestions: [] };
+  await repository.beginCaseDiscussionTurn(...scope,
+    { expectedRevision: 2, userInput: '请生成方案', kind: 'PROPOSE_PLAN' });
+  const saved = await repository.finishCasePlanProposal(...scope,
+    { turnNumber: 3, assistantReply: '测试目标：' + '边界'.repeat(2000),
+      promptVersion: 'plan-proposal-v1', proposal: plan });
+  assert.equal(saved.versionNumber, 1);
+});
+
+test('proposal completion rejects too little discussion before writing a SOP', async () => {
+  const { repository, calls } = fixture({ initialTurns: [
+    { turn_number: 1, user_text: '问题', assistant_text: '回答', status: 'COMPLETE', turn_kind: 'DISCUSS' },
+  ], sop: null });
+  await repository.beginCaseDiscussionTurn(...scope,
+    { expectedRevision: 1, userInput: '请生成方案', kind: 'PROPOSE_PLAN' });
+  const plan = { objective: '检查规则', preconditions: [], scenarios: [
+    { title: '边界', setup: '准备数据', action: '执行', expected: '可观察结果', evidence: '记录' },
+  ], openQuestions: [] };
+  await assert.rejects(repository.finishCasePlanProposal(...scope,
+    { turnNumber: 2, assistantReply: '测试目标：检查规则',
+      promptVersion: 'plan-proposal-v1', proposal: plan }), { code: 'INSUFFICIENT_DISCUSSION' });
+  assert.equal(calls.some(call => call.sql.includes('INSERT INTO case_sop_versions')), false);
 });

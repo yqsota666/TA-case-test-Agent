@@ -186,14 +186,14 @@ export function createCaseRepository({ transaction }) {
         WHERE workspace_id=? AND chat_id=? AND public_id=?`,
       [auth.workspace_id, chat.id, casePublicId]);
       if (!caseRow) throw storeError('CASE_NOT_FOUND', 404, 'Case 不存在');
-      const [[latest]] = await db.execute(`SELECT version_number,plan_json,status,locked_at
+      const [[latest]] = await db.execute(`SELECT version_number,plan_json,status,locked_at,source_turn_number
         FROM case_sop_versions WHERE workspace_id=? AND chat_id=? AND case_id=?
         ORDER BY version_number DESC LIMIT 1`,
       [auth.workspace_id, chat.id, caseRow.id]);
       if (!latest) return null;
       return { versionNumber: latest.version_number, status: latest.status,
         proposal: typeof latest.plan_json === 'string' ? JSON.parse(latest.plan_json) : latest.plan_json,
-        lockedAt: latest.locked_at };
+        lockedAt: latest.locked_at, sourceTurnNumber: latest.source_turn_number };
     });
   }
 
@@ -260,7 +260,7 @@ export function createCaseRepository({ transaction }) {
       if (!['DISCUSSING', 'SOP_PENDING'].includes(caseRow.status)) {
         throw storeError('INVALID_CASE_STATE', 409, '当前 Case 不能继续讨论');
       }
-      const [rows] = await db.execute(`SELECT turn_number,user_text,assistant_text,status
+      const [rows] = await db.execute(`SELECT turn_number,user_text,assistant_text,status,turn_kind
         FROM case_discussion_turns WHERE workspace_id=? AND chat_id=? AND case_id=?
         ORDER BY turn_number`, [auth.workspace_id, chat.id, caseRow.id]);
       const turns = [];
@@ -273,7 +273,7 @@ export function createCaseRepository({ transaction }) {
           turns.push({ role: 'user', content: row.user_text },
             { role: 'assistant', content: row.assistant_text });
         } else if (row.status === 'PENDING' && index === rows.length - 1) {
-          pending = { turnNumber: Number(row.turn_number), userInput: row.user_text };
+          pending = { turnNumber: Number(row.turn_number), userInput: row.user_text, kind: row.turn_kind };
         } else if (row.status !== 'ABANDONED') {
           throw storeError('CORRUPT_HISTORY', 500, 'Case 讨论记录状态无效');
         }
@@ -283,11 +283,12 @@ export function createCaseRepository({ transaction }) {
   }
 
   async function beginCaseDiscussionTurn(token, chatPublicId, casePublicId,
-    { expectedRevision, userInput }) {
+    { expectedRevision, userInput, kind = 'DISCUSS' }) {
     chatPublicId = requiredUuid(chatPublicId, 'Chat');
     casePublicId = requiredUuid(casePublicId, 'Case');
     if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0 || expectedRevision >= 0xffffffff ||
-        typeof userInput !== 'string' || !userInput.trim() || userInput.length > 4000) {
+        typeof userInput !== 'string' || !userInput.trim() || userInput.length > 4000 ||
+        !['DISCUSS', 'PROPOSE_PLAN'].includes(kind)) {
       throw storeError('INVALID_DISCUSSION_TURN', 400, '讨论输入或版本无效');
     }
     return transaction(async db => {
@@ -334,9 +335,9 @@ export function createCaseRepository({ transaction }) {
       }
       const revision = expectedRevision + 1;
       await db.execute(`INSERT INTO case_discussion_turns
-        (workspace_id,chat_id,case_id,turn_number,user_text,actor_user_id)
-        VALUES (?,?,?,?,?,?)`,
-      [auth.workspace_id, chat.id, caseRow.id, revision, userInput.trim(), auth.user_id]);
+        (workspace_id,chat_id,case_id,turn_number,user_text,actor_user_id,turn_kind)
+        VALUES (?,?,?,?,?,?,?)`,
+      [auth.workspace_id, chat.id, caseRow.id, revision, userInput.trim(), auth.user_id, kind]);
       return { revision, turnNumber: revision };
     });
   }
@@ -363,10 +364,10 @@ export function createCaseRepository({ transaction }) {
       if (caseRow.status !== 'DISCUSSING') {
         throw storeError('INVALID_CASE_STATE', 409, '当前 Case 不能完成讨论');
       }
-      const [[turn]] = await db.execute(`SELECT status FROM case_discussion_turns
+      const [[turn]] = await db.execute(`SELECT status,turn_kind FROM case_discussion_turns
         WHERE workspace_id=? AND chat_id=? AND case_id=? AND turn_number=? FOR UPDATE`,
       [auth.workspace_id, chat.id, caseRow.id, turnNumber]);
-      if (turn?.status !== 'PENDING') {
+      if (turn?.status !== 'PENDING' || turn.turn_kind !== 'DISCUSS') {
         throw storeError('STALE_DISCUSSION', 409, '讨论回合已完成或已取消');
       }
       await db.execute(`UPDATE case_discussion_turns
@@ -410,7 +411,71 @@ export function createCaseRepository({ transaction }) {
     });
   }
 
+  async function finishCasePlanProposal(token, chatPublicId, casePublicId,
+    { turnNumber, assistantReply, promptVersion, proposal }) {
+    chatPublicId = requiredUuid(chatPublicId, 'Chat');
+    casePublicId = requiredUuid(casePublicId, 'Case');
+    if (!Number.isSafeInteger(turnNumber) || turnNumber < 1 ||
+        typeof assistantReply !== 'string' || !assistantReply.trim() || assistantReply.length > 120000 ||
+        typeof promptVersion !== 'string' || !/^[a-z0-9][a-z0-9-]{0,79}$/.test(promptVersion) ||
+        !validSopPlan(proposal)) {
+      throw storeError('INVALID_PLAN', 400, 'Plan 提案或讨论回复无效');
+    }
+    const planJson = JSON.stringify(proposal);
+    if (planJson.length > 100000) throw storeError('INVALID_PLAN', 400, 'Plan 提案过长');
+    return transaction(async db => {
+      const auth = await authenticateSession(db, token);
+      const [[chat]] = await db.execute(`SELECT id,status FROM case_chats
+        WHERE workspace_id=? AND public_id=? FOR UPDATE`, [auth.workspace_id, chatPublicId]);
+      if (!chat) throw storeError('CHAT_NOT_FOUND', 404, 'Chat 不存在');
+      if (chat.status !== 'ACTIVE') throw storeError('CHAT_CLOSED', 409, 'Chat 已结束');
+      const [[caseRow]] = await db.execute(`SELECT id,status FROM cases
+        WHERE workspace_id=? AND chat_id=? AND public_id=? FOR UPDATE`,
+      [auth.workspace_id, chat.id, casePublicId]);
+      if (!caseRow) throw storeError('CASE_NOT_FOUND', 404, 'Case 不存在');
+      if (caseRow.status !== 'DISCUSSING') {
+        throw storeError('INVALID_CASE_STATE', 409, '当前 Case 不能提交 Plan 提案');
+      }
+      const [[turn]] = await db.execute(`SELECT status,turn_kind FROM case_discussion_turns
+        WHERE workspace_id=? AND chat_id=? AND case_id=? AND turn_number=? FOR UPDATE`,
+      [auth.workspace_id, chat.id, caseRow.id, turnNumber]);
+      if (turn?.status !== 'PENDING' || turn.turn_kind !== 'PROPOSE_PLAN') {
+        throw storeError('STALE_DISCUSSION', 409, 'Plan 提案回合已完成或类型不符');
+      }
+      const [[history]] = await db.execute(`SELECT COUNT(*) AS count FROM case_discussion_turns
+        WHERE workspace_id=? AND chat_id=? AND case_id=? AND turn_number<? AND status='COMPLETE'`,
+      [auth.workspace_id, chat.id, caseRow.id, turnNumber]);
+      if (Number(history.count) < 2) {
+        throw storeError('INSUFFICIENT_DISCUSSION', 409, 'Plan 提案前至少需要两轮完整讨论');
+      }
+      const [[latest]] = await db.execute(`SELECT id,version_number,status FROM case_sop_versions
+        WHERE workspace_id=? AND chat_id=? AND case_id=?
+        ORDER BY version_number DESC LIMIT 1 FOR UPDATE`,
+      [auth.workspace_id, chat.id, caseRow.id]);
+      if (latest?.status === 'LOCKED' || latest?.status === 'PENDING_CONFIRMATION') {
+        throw storeError('INVALID_CASE_STATE', 409, '当前 Case 已有不可覆盖的 SOP');
+      }
+      const versionNumber = (latest?.version_number ?? 0) + 1;
+      await db.execute(`INSERT INTO case_sop_versions
+        (workspace_id,chat_id,case_id,version_number,plan_json,status,source_turn_number)
+        VALUES (?,?,?,?,?,'PENDING_CONFIRMATION',?)`,
+      [auth.workspace_id, chat.id, caseRow.id, versionNumber, planJson, turnNumber]);
+      await db.execute(`UPDATE case_discussion_turns
+        SET assistant_text=?,prompt_version=?,status='COMPLETE',finished_at=UTC_TIMESTAMP(3)
+        WHERE workspace_id=? AND chat_id=? AND case_id=? AND turn_number=?`,
+      [assistantReply, promptVersion, auth.workspace_id, chat.id, caseRow.id, turnNumber]);
+      await db.execute(`UPDATE cases SET status='SOP_PENDING'
+        WHERE workspace_id=? AND chat_id=? AND id=?`,
+      [auth.workspace_id, chat.id, caseRow.id]);
+      await db.execute(`INSERT INTO case_state_events
+        (workspace_id,chat_id,case_id,from_status,to_status,reason)
+        VALUES (?,?,?,'DISCUSSING','SOP_PENDING','AI_PLAN_PROPOSAL')`,
+      [auth.workspace_id, chat.id, caseRow.id]);
+      return { revision: turnNumber, versionNumber, status: 'PENDING_CONFIRMATION' };
+    });
+  }
+
   return Object.freeze({ createChat, createCase, listCases, saveSopProposal,
     getLatestSopProposal, confirmSopProposal, readCaseDiscussion, beginCaseDiscussionTurn,
-    finishCaseDiscussionTurn, abandonCaseDiscussionTurn });
+    finishCaseDiscussionTurn, abandonCaseDiscussionTurn, finishCasePlanProposal });
 }

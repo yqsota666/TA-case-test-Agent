@@ -1,9 +1,10 @@
-import { createDiscussionGraph, discussTurn } from './discussion-graph.js';
+import { createDiscussionGraph, discussTurn, proposeDiscussionPlan } from './discussion-graph.js';
 
 export function createPersistedDiscussionService({ repository, complete }) {
   if (!repository || typeof repository.readCaseDiscussion !== 'function' ||
       typeof repository.beginCaseDiscussionTurn !== 'function' ||
       typeof repository.finishCaseDiscussionTurn !== 'function' ||
+      typeof repository.finishCasePlanProposal !== 'function' ||
       typeof repository.abandonCaseDiscussionTurn !== 'function') {
     throw new TypeError('repository discussion methods are required');
   }
@@ -15,7 +16,7 @@ export function createPersistedDiscussionService({ repository, complete }) {
     }
     const input = userInput.trim();
     const history = await repository.readCaseDiscussion(token, chatPublicId, casePublicId);
-    if (history.pending && history.pending.userInput !== input) {
+    if (history.pending && (history.pending.userInput !== input || history.pending.kind !== 'DISCUSS')) {
       const error = new Error('上一轮讨论尚未完成，请重试原输入或取消该轮');
       error.code = 'DISCUSSION_IN_PROGRESS';
       throw error;
@@ -32,9 +33,36 @@ export function createPersistedDiscussionService({ repository, complete }) {
       revision: saved.revision };
   }
 
+  async function propose({ token, chatPublicId, casePublicId, userInput }) {
+    if (typeof userInput !== 'string' || !userInput.trim() || userInput.length > 4000) {
+      throw new TypeError('userInput must contain 1–4000 characters');
+    }
+    const input = userInput.trim();
+    const history = await repository.readCaseDiscussion(token, chatPublicId, casePublicId);
+    if (history.pending && (history.pending.userInput !== input || history.pending.kind !== 'PROPOSE_PLAN')) {
+      const error = new Error('上一轮讨论尚未完成，请重试原输入或取消该轮');
+      error.code = 'DISCUSSION_IN_PROGRESS';
+      throw error;
+    }
+    if (history.turns.length < 4) throw new Error('Plan 提案前至少需要两轮完整讨论');
+    const pending = history.pending ?? await repository.beginCaseDiscussionTurn(
+      token, chatPublicId, casePublicId,
+      { expectedRevision: history.revision, userInput: input, kind: 'PROPOSE_PLAN' });
+    const result = await proposeDiscussionPlan(graph, { priorTurns: history.turns, userInput: input });
+    const saved = await repository.finishCasePlanProposal(token, chatPublicId, casePublicId, {
+      turnNumber: pending.turnNumber,
+      assistantReply: result.reply,
+      promptVersion: result.promptVersion,
+      proposal: result.proposal,
+    });
+    return { reply: result.reply, proposal: result.proposal, phase: result.phase,
+      promptVersion: result.promptVersion, revision: saved.revision,
+      versionNumber: saved.versionNumber };
+  }
+
   async function abandon({ token, chatPublicId, casePublicId, turnNumber }) {
     return repository.abandonCaseDiscussionTurn(token, chatPublicId, casePublicId, turnNumber);
   }
 
-  return Object.freeze({ discuss, abandon });
+  return Object.freeze({ discuss, propose, abandon });
 }
