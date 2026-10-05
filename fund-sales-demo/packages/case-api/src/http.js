@@ -1,7 +1,12 @@
 import { createServer } from 'node:http';
 import { DataEditSchema } from '../../case-agent/src/index.js';
+import { parseDataFile } from '../../platform-protocol/src/index.js';
 
 const pathPattern = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/(discussion|plan|plan\/confirm|data|data\/execute|data\/review|data\/confirm)$/i;
+const applicationPath = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/applications$/i;
+const bindingPath = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/ta-bindings$/i;
+const batchPath = /^\/api\/chats\/([0-9a-f-]{36})\/batches(?:\/([0-9a-f-]{36})\/generate)?$/i;
+const filesPath = /^\/api\/chats\/([0-9a-f-]{36})\/files(?:\/([1-9]\d*))?$/i;
 
 function send(response, status, value) {
   response.writeHead(status, { 'content-type': 'application/json; charset=utf-8',
@@ -38,7 +43,7 @@ async function jsonBody(request) {
 }
 
 export function createCaseHttpHandler({ repository, discussionService, confirmPlan, executeData,
-  reviseData, allowedOrigin }) {
+  reviseData, exchangeRepository, allowedOrigin }) {
   if (!repository || !discussionService || !confirmPlan || !executeData || !reviseData || !allowedOrigin) {
     throw new TypeError('API dependencies required');
   }
@@ -46,7 +51,18 @@ export function createCaseHttpHandler({ repository, discussionService, confirmPl
     const pathname = new URL(request.url, 'http://localhost').pathname;
     const catalog = pathname === '/api/data/catalog' && request.method === 'GET';
     const match = pathPattern.exec(pathname);
-    if (!catalog && (!match || !['GET', 'POST', 'PATCH'].includes(request.method) ||
+    const application = applicationPath.exec(pathname);
+    const bindings = bindingPath.exec(pathname);
+    const batch = batchPath.exec(pathname);
+    const files = filesPath.exec(pathname);
+    const channels = pathname === '/api/exchange/channels';
+    const exchangeRoute = Boolean(exchangeRepository &&
+      ((channels && request.method === 'GET') ||
+        (bindings && request.method === 'GET') ||
+        (application && ['GET', 'POST'].includes(request.method)) ||
+        (batch && request.method === 'POST') ||
+        (files && request.method === 'GET')));
+    if (!catalog && !exchangeRoute && (!match || !['GET', 'POST', 'PATCH'].includes(request.method) ||
         (request.method === 'PATCH' && match?.[3] !== 'data') ||
         (['plan/confirm', 'data/execute', 'data/confirm'].includes(match?.[3]) && request.method !== 'POST') ||
         (match?.[3] === 'data/review' && !['GET', 'POST'].includes(request.method)) ||
@@ -56,8 +72,72 @@ export function createCaseHttpHandler({ repository, discussionService, confirmPl
     try {
       const token = cookieToken(request.headers.cookie);
       if (!token) { send(response, 401, { error: 'UNAUTHENTICATED' }); return; }
+      if (exchangeRoute && channels) {
+        send(response, 200, await exchangeRepository.listChannels(token)); return;
+      }
+      if (exchangeRoute && application && request.method === 'GET') {
+        send(response, 200, await exchangeRepository.listCaseApplications(token,
+          { chatPublicId: application[1], casePublicId: application[2] })); return;
+      }
+      if (exchangeRoute && bindings) {
+        send(response, 200, await exchangeRepository.listCaseBindings(token,
+          { chatPublicId: bindings[1], casePublicId: bindings[2] })); return;
+      }
+      if (exchangeRoute && files) {
+        if (!files[2]) { send(response, 200, await exchangeRepository.listOutboundFiles(token, files[1])); return; }
+        const file = await exchangeRepository.readOutboundFile(token,
+          { chatPublicId: files[1], fileId: files[2] });
+        if (new URL(request.url, 'http://localhost').searchParams.get('view') === 'records') {
+          const parsed = parseDataFile(file.rawBytes);
+          send(response, 200, { fileName: file.fileName, sha256: file.sha256,
+            fileType: parsed.fileType, records: parsed.records }); return;
+        }
+        response.writeHead(200, { 'content-type': 'application/octet-stream',
+          'content-disposition': `attachment; filename="${file.fileName}"`,
+          'content-length': file.rawBytes.length, 'cache-control': 'no-store',
+          'x-content-type-options': 'nosniff' });
+        response.end(file.rawBytes); return;
+      }
       if (catalog) {
         send(response, 200, await repository.generatedDataCatalog(token)); return;
+      }
+      if (exchangeRoute) {
+        if (request.headers.origin !== allowedOrigin) {
+          send(response, 403, { error: 'INVALID_ORIGIN' }); return;
+        }
+        if (!String(request.headers['content-type'] ?? '').startsWith('application/json')) {
+          send(response, 415, { error: 'UNSUPPORTED_MEDIA_TYPE' }); return;
+        }
+        const body = await jsonBody(request);
+        if (!body || typeof body !== 'object' || Array.isArray(body)) {
+          send(response, 400, { error: 'INVALID_INPUT' }); return;
+        }
+        if (application) {
+          const keys = Object.keys(body);
+          if (keys.length !== 4 || !['channelId', 'businessDate', 'fileType', 'record']
+            .every(key => Object.hasOwn(body, key))) {
+            send(response, 400, { error: 'INVALID_INPUT' }); return;
+          }
+          const data = await repository.generatedData(token, application[1], application[2]);
+          if (data.reviewStatus !== 'CONFIRMED') {
+            send(response, 409, { error: 'DATA_NOT_CONFIRMED' }); return;
+          }
+          send(response, 200, await exchangeRepository.stageApplication(token, {
+            chatPublicId: application[1], casePublicId: application[2],
+            sopVersionId: data.planVersionId, ...body }));
+        } else if (batch[2]) {
+          if (Object.keys(body).length) { send(response, 400, { error: 'INVALID_INPUT' }); return; }
+          send(response, 200, await exchangeRepository.generateOutboundFiles(token,
+            { chatPublicId: batch[1], batchPublicId: batch[2] }));
+        } else {
+          if (Object.keys(body).length !== 3 ||
+              !['channelId', 'businessDate', 'applicationPublicIds'].every(key => Object.hasOwn(body, key))) {
+            send(response, 400, { error: 'INVALID_INPUT' }); return;
+          }
+          send(response, 200, await exchangeRepository.createOutboundBatch(token,
+            { chatPublicId: batch[1], ...body }));
+        }
+        return;
       }
       const [chatPublicId, casePublicId, action] = match.slice(1);
       if (request.method === 'GET') {
@@ -125,7 +205,7 @@ export function createCaseHttpHandler({ repository, discussionService, confirmPl
       }
       send(response, Number.isInteger(error.status) && error.status >= 400 && error.status < 500 ?
         error.status : 500, { error: error.status ? error.code : 'INTERNAL_ERROR',
-          ...(error.status && String(error.code).startsWith('DATA_') ? { message: error.message } : {}) });
+          ...(error.status ? { message: error.message } : {}) });
     }
   };
 }

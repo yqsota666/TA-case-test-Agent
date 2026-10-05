@@ -1,5 +1,6 @@
 import mysql from 'mysql2/promise';
 import { createCaseRepository } from '../../platform-store/src/index.js';
+import { createExchangeRepository } from '../../platform-store/src/exchange.js';
 import { migrationConfig } from '../../platform-store/src/migrate.js';
 import { createPersistedDiscussionService, createSophnetCompletion,
   createPlanConfirmationGraph, decidePlan, deriveDataSpecification,
@@ -26,6 +27,7 @@ const transaction = async action => {
   } finally { connection.release(); }
 };
 const repository = createCaseRepository({ transaction });
+const exchangeRepository = createExchangeRepository({ transaction });
 const discussionService = createPersistedDiscussionService({ repository,
   complete: createSophnetCompletion() });
 const complete = createSophnetCompletion();
@@ -76,5 +78,5 @@ const reviseData = async ({ token, chatPublicId, casePublicId, revision, userInp
   return { reply: suggestion.reply, data: updated };
 };
 const server = createCaseHttpServer({ repository, discussionService, confirmPlan,
-  executeData, reviseData, allowedOrigin });
+  executeData, reviseData, exchangeRepository, allowedOrigin });
 server.listen(Number(process.env.CASE_API_PORT ?? 3100), '127.0.0.1');
