@@ -1,0 +1,22 @@
+{
+  "name": "ta-case-legacy-compat",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node services/sales/src/platform-server.js"
+  },
+  "dependencies": {
+    "@ai-sdk/openai-compatible": "3.0.59",
+    "@langchain/core": "1.2.13",
+    "@langchain/langgraph": "1.4.18",
+    "@langchain/langgraph-checkpoint-postgres": "1.0.5",
+    "adm-zip": "0.6.1",
+    "ai": "7.0.122",
+    "cors": "2.8.6",
+    "express": "5.2.1",
+    "mysql2": "3.24.4",
+    "pg": "8.20.0",
+    "zod": "4.6.5",
+    "iconv-lite": "^0.7.0"
+  }
+}

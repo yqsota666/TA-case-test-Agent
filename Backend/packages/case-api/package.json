@@ -1,0 +1,15 @@
+{
+  "name": "@fund-demo/case-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@fund-demo/case-agent": "workspace:0.1.0",
+    "@fund-demo/platform-store": "workspace:0.1.0",
+    "mysql2": "3.24.4"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test test/*.test.js"
+  }
+}
