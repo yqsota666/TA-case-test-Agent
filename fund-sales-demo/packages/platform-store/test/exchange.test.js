@@ -17,13 +17,13 @@ const raw = buildDataFile({ creator: '27', receiver: '306', date: '20261003', fi
 function fixture({ existing, sameBytes, returnItem, application, batchApplications, priorMembers, binding,
   pendingCount = 0, missingReviewCount = 0, sourceAccount = {
     id: 1, branch_code: '306', name: 'Alice', investor_type: '0'
-  }, sourceFund = { id: 1 }, generatedBatch, generatedApps, generatedFiles = [] } = {}) {
+  }, sourceFund = { id: 1 }, targetFund = { id: 2 }, generatedBatch, generatedApps, generatedFiles = [] } = {}) {
   const calls = [];
   const db = { async execute(sql, values) {
     calls.push({ sql, values });
     if (sql.includes('FROM platform_sessions')) return [[{ user_id: 7, workspace_id: 31 }]];
     if (sql.includes('FROM case_generated_accounts a')) return [[sourceAccount]];
-    if (sql.includes('FROM case_generated_funds')) return [[sourceFund]];
+    if (sql.includes('FROM case_generated_funds')) return [[values.includes('000002') ? targetFund : sourceFund]];
     if (sql.includes('FROM exchange_batches b JOIN batch_applications ba')) return [priorMembers ?? []];
     if (sql.includes('FROM exchange_batches b')) return [[generatedBatch ?? {
       id: 111, status: 'DRAFT', channel_id: 71, business_date: '20261003',
@@ -191,6 +191,27 @@ test('03 staging rejects an investor type that contradicts the confirmed custome
     sopVersionId: '61', channelId: '71', businessDate: '20261003', fileType: '03', record: trade }),
   { code: 'APPLICATION_DATA_MISMATCH' });
   assert.equal(calls.some(call => call.sql.includes('INSERT INTO applications')), false);
+});
+
+test('03 conversion requires a confirmed target fund and share class', async () => {
+  const trade = { AppSheetSerialNo: '202610030036', BusinessCode: '036', DistributorCode: '306',
+    TransactionDate: '20261003', TransactionTime: '120000', TransactionAccountID: '123456',
+    TAAccountID: 'TA123', BranchCode: '306', FundCode: '000001', ShareClass: 'A',
+    CodeOfTargetFund: '000002', TargetShareType: 'B', ApplicationVol: '100.00',
+    LargeRedemptionFlag: '0', DiscountRateOfCommission: '1.0000',
+    BackenloadDiscount: '1.0000', ChargeType: '0' };
+  const input = { chatPublicId, casePublicId, sopVersionId: '61', channelId: '71',
+    businessDate: '20261003', fileType: '03', record: trade };
+  const rejected = fixture({ binding: { id: 101 }, targetFund: null });
+  await assert.rejects(rejected.repository.stageApplication(token, input),
+    { code: 'APPLICATION_DATA_MISMATCH' });
+  assert.equal(rejected.calls.some(call => call.sql.includes('INSERT INTO applications')), false);
+  const accepted = fixture({ binding: { id: 101 } });
+  await accepted.repository.stageApplication(token, input);
+  const targetLookup = accepted.calls.find(call => call.sql.includes('FROM case_generated_funds') &&
+    call.values.includes('000002'));
+  assert.deepEqual(targetLookup.values.slice(-2), ['000002', 'B']);
+  assert.equal(accepted.calls.some(call => call.sql.includes('INSERT INTO applications')), true);
 });
 
 test('04 matching uses the mapped confirmation code', async () => {

@@ -152,6 +152,12 @@ export function createExchangeRepository({ transaction }) {
           ...(hasShareClass ? [record.ShareClass] : [])]);
         if (!sourceFund) throw storeError('APPLICATION_DATA_MISMATCH', 409, '申请基金与已确认数据不一致');
       }
+      if (fileType === '03' && record.BusinessCode === '036') {
+        const [[targetFund]] = await db.execute(`SELECT id FROM case_generated_funds
+          WHERE workspace_id=? AND chat_id=? AND case_id=? AND fund_code=? AND share_class=? LIMIT 1`,
+        [auth.workspace_id, scope.chat_id, scope.case_id, record.CodeOfTargetFund, record.TargetShareType]);
+        if (!targetFund) throw storeError('APPLICATION_DATA_MISMATCH', 409, '转入基金与已确认数据不一致');
+      }
       if (fileType === '03' || record.BusinessCode !== '001') {
         const [[binding]] = await db.execute(`SELECT id FROM ta_account_bindings
           WHERE workspace_id=? AND channel_id=? AND transaction_account_id=? AND ta_account_id=?`,
