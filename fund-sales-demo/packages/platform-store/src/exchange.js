@@ -136,14 +136,20 @@ export function createExchangeRepository({ transaction }) {
         WHERE a.workspace_id=? AND a.chat_id=? AND a.case_id=? AND a.account_no=?`,
       [auth.workspace_id, scope.chat_id, scope.case_id, record.TransactionAccountID]);
       if (!sourceAccount || (record.BranchCode && sourceAccount.branch_code !== record.BranchCode) ||
+          (record.IndividualOrInstitution &&
+            sourceAccount.investor_type !== record.IndividualOrInstitution) ||
           (fileType === '01' && (sourceAccount.name !== record.InvestorName ||
             sourceAccount.investor_type !== record.IndividualOrInstitution))) {
         throw storeError('APPLICATION_DATA_MISMATCH', 409, '申请账户或客户信息与已确认数据不一致');
       }
       if (fileType === '03' && record.FundCode) {
+        const hasShareClass = record.ShareClass !== undefined && record.ShareClass !== null &&
+          String(record.ShareClass).trim() !== '';
         const [[sourceFund]] = await db.execute(`SELECT id FROM case_generated_funds
-          WHERE workspace_id=? AND chat_id=? AND case_id=? AND fund_code=? AND share_class=?`,
-        [auth.workspace_id, scope.chat_id, scope.case_id, record.FundCode, record.ShareClass]);
+          WHERE workspace_id=? AND chat_id=? AND case_id=? AND fund_code=?
+          ${hasShareClass ? 'AND share_class=?' : ''} LIMIT 1`,
+        [auth.workspace_id, scope.chat_id, scope.case_id, record.FundCode,
+          ...(hasShareClass ? [record.ShareClass] : [])]);
         if (!sourceFund) throw storeError('APPLICATION_DATA_MISMATCH', 409, '申请基金与已确认数据不一致');
       }
       if (fileType === '03' || record.BusinessCode !== '001') {
@@ -270,6 +276,17 @@ export function createExchangeRepository({ transaction }) {
       const priorBatches = new Set(applications.map(app => app.prior_batch_public_id));
       if (priorBatches.size === 1 && Boolean(applications[0].prior_batch_public_id) &&
           applications.every(app => ['BATCHED', 'GENERATED'].includes(app.status))) {
+        const [priorMembers] = await db.execute(`SELECT a.public_id
+          FROM exchange_batches b JOIN batch_applications ba
+            ON ba.workspace_id=b.workspace_id AND ba.chat_id=b.chat_id AND ba.batch_id=b.id
+          JOIN applications a ON a.workspace_id=ba.workspace_id
+            AND a.chat_id=ba.chat_id AND a.id=ba.application_id
+          WHERE b.workspace_id=? AND b.chat_id=? AND b.public_id=? FOR UPDATE`,
+        [auth.workspace_id, chat.id, applications[0].prior_batch_public_id]);
+        if (priorMembers.length !== applicationPublicIds.length ||
+            priorMembers.some(member => !applicationPublicIds.includes(member.public_id))) {
+          throw storeError('BATCH_APPLICATION_MISMATCH', 409, '申请清单与已有批次不一致');
+        }
         return { publicId: applications[0].prior_batch_public_id, replayed: true };
       }
       if (applications.some(app => app.status !== 'READY' || app.prior_batch_public_id)) {
