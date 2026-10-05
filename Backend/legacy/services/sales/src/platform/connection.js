@@ -16,7 +16,7 @@ export function readPlatformConfig(filePath, overrides = process.env) {
   const database = setting('PLATFORM_DB_NAME') || PLATFORM_DATABASE;
   if (database !== PLATFORM_DATABASE) throw new Error('新平台只允许连接 sales_platform_v2');
   const password = setting('PLATFORM_DB_PASSWORD');
-  if (!password) throw new Error('缺少 PLATFORM_DB_PASSWORD，请先执行 db:platform:init');
+  if (!password) throw new Error('缺少 PLATFORM_DB_PASSWORD，请通过环境变量或 PLATFORM_ENV_FILE 提供兼容数据库凭据');
   return {
     host: setting('PLATFORM_DB_HOST') || '127.0.0.1',
     port: Number(setting('PLATFORM_DB_PORT') || 3307),

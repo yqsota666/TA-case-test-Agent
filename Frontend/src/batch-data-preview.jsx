@@ -38,7 +38,8 @@ function DataGrid({table,onSelectTable}){
       {column.linkTo?<button type="button" className="bdp-cell-link" onClick={()=>onSelectTable(column.linkTo)}
         aria-label={`${table.title} 第${rowIndex+1}行 ${column.label}，查看${linkedNames[column.linkTo]}`}>{String(row[column.key]??'')}</button>:
         <input aria-label={`${table.title} 第${rowIndex+1}行 ${column.label}`} value={String(row[column.key]??'')}
-          onChange={event=>table.onChange(rowIndex,column.key,event.target.value)}/>}
+          readOnly={Boolean(column.readOnly)}
+          onChange={event=>{if(!column.readOnly)table.onChange(rowIndex,column.key,event.target.value);}}/>}
     </td>)}</tr>)}</tbody>
   </table></div>;
 }
@@ -60,10 +61,10 @@ export function BatchDataPreview({cases,onClose}){
       {key:'id',label:'客户ID'},{key:'name',label:'客户名称'},{key:'investorType',label:'类型'},{key:'certificateNo',label:'证件号'},
     ],rows:[customer],onChange:(_,key,value)=>changeObject('customer',key,value)},
     {key:'capital',title:'资金',columns:[
-      {key:'customerId',label:'客户ID',linkTo:'customer'},{key:'balance',label:'模拟余额'},
+      {key:'customerId',label:'客户ID',linkTo:'customer',readOnly:true},{key:'balance',label:'模拟余额'},
     ],rows:[{customerId:customer.id,balance:customer.balance}],onChange:(_,key,value)=>changeObject('customer',key,value)},
     {key:'account',title:'交易账户',columns:[
-      {key:'id',label:'账户ID'},{key:'customerId',label:'客户ID',linkTo:'customer'},
+      {key:'id',label:'账户ID'},{key:'customerId',label:'客户ID',linkTo:'customer',readOnly:true},
       {key:'number',label:'交易账号'},{key:'branchCode',label:'网点'},{key:'status',label:'状态'},
     ],rows:[{...account,customerId:customer.id}],onChange:(_,key,value)=>changeObject('account',key,value)},
     {key:'fund',title:'基金',columns:[
@@ -71,12 +72,12 @@ export function BatchDataPreview({cases,onClose}){
       {key:'name',label:'基金名称'},{key:'nav',label:'单位净值'},
     ],rows:funds,onChange:(index,key,value)=>changeList('funds',index,key,value)},
     {key:'target',title:'目标份额',columns:[
-      {key:'customerId',label:'客户ID',linkTo:'customer'},{key:'accountId',label:'账户ID',linkTo:'account'},
-      {key:'fundCode',label:'基金代码',linkTo:'fund'},{key:'shareClass',label:'类别',linkTo:'fund'},
+      {key:'customerId',label:'客户ID',linkTo:'customer',readOnly:true},{key:'accountId',label:'账户ID',linkTo:'account',readOnly:true},
+      {key:'fundCode',label:'基金代码',linkTo:'fund',readOnly:true},{key:'shareClass',label:'类别',linkTo:'fund',readOnly:true},
       {key:'volume',label:'目标份额'},{key:'startDate',label:'计划起始日'},
     ],rows:targets,onChange:(index,key,value)=>changeList('targets',index,key,value)},
     ...(scenarios.length?[{key:'scenario',title:'净值情景',columns:[
-      {key:'fundCode',label:'基金代码',linkTo:'fund'},{key:'name',label:'情景'},{key:'nav',label:'净值'},
+      {key:'fundCode',label:'基金代码',linkTo:'fund',readOnly:true},{key:'name',label:'情景'},{key:'nav',label:'净值'},
     ],rows:scenarios,onChange:(index,key,value)=>changeList('scenarios',index,key,value)}]:[]),
   ];
   const active=tables.find(table=>table.key===selectedTable)??tables[0];

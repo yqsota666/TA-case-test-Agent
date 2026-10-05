@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node services/sales/src/platform-server.js"
+    "start": "node services/sales/src/platform-server.js",
+    "test": "node --test test/*.test.js"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "3.0.59",

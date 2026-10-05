@@ -17,7 +17,7 @@ export function createApplicationPreparationService({ repository, preparations, 
     if (revision !== undefined && revision !== previous.revision) {
       throw error('APPLICATION_PREPARATION_CONFLICT', '申请内容已更新，请刷新后重试');
     }
-    if (previous.phase === 'PREPARING' && (userInput || (channelId && channelId !== previous.channelId))) {
+    if (['PREPARING', 'WAITING_OPERATION'].includes(previous.phase) && (userInput || (channelId && channelId !== previous.channelId))) {
       throw error('APPLICATION_PREPARATION_CONFLICT', '上次生成尚未完成，请先继续生成再补充新信息');
     }
     channelId ??= previous.channelId ?? (channelResult.channels.length === 1 ? channelResult.channels[0].id : undefined);
@@ -32,7 +32,7 @@ export function createApplicationPreparationService({ repository, preparations, 
       throw error('APPLICATION_ALREADY_STAGED', '已有申请进入原通道，不能切换通道');
     }
     userInput = [previous.pendingUserInput, userInput].filter(Boolean).join('\n');
-    const recovering = previous.phase === 'PREPARING' && previous.intents.length && !userInput;
+    const recovering = ['PREPARING', 'WAITING_OPERATION'].includes(previous.phase) && previous.intents.length && !userInput;
     const history = boundPreparationHistory(previous);
     const suggestion = recovering ?
       { intents: previous.intents, reply: previous.reply, questions: previous.modelQuestions ?? [] } :
@@ -61,32 +61,41 @@ export function createApplicationPreparationService({ repository, preparations, 
       modelQuestions: suggestion.questions, questions: compiled.questions,
       stagedKeys: previous.stagedKeys, files: previous.files, waiting: compiled.waiting,
     } });
-    for (const application of compiled.records) {
-      await exchangeRepository.stageApplication(token, { ...scope, sopVersionId: data.planVersionId,
-        channelId, businessDate: application.businessDate, fileType: application.fileType, record: application.record });
-      if (!state.stagedKeys.includes(application.key)) state.stagedKeys.push(application.key);
-    }
-    const { applications } = await exchangeRepository.listCaseApplications(token, scope);
-    const ours = new Set(compiled.records.map(item => item.record.AppSheetSerialNo));
-    const batches = new Set(applications.filter(item => ours.has(item.applicationNumber) &&
-      item.status === 'BATCHED').map(item => item.batchPublicId));
-    const dates = new Set(compiled.records.map(item => item.businessDate));
     let waitingChat = false;
-    for (const date of dates) {
-      const ready = applications.filter(item => ours.has(item.applicationNumber) && item.status === 'READY' &&
-        item.channelId === channelId && item.businessDate.replaceAll('-','') === date);
-      if (!ready.length) continue;
-      try {
-        const batch = await exchangeRepository.createOutboundBatch(token, { chatPublicId, channelId,
-          businessDate: date, applicationPublicIds: ready.map(item => item.publicId) });
-        batches.add(batch.publicId);
-      } catch (cause) {
-        if (!['SOP_NOT_LOCKED','DATA_NOT_CONFIRMED'].includes(cause.code)) throw cause;
-        waitingChat = true;
+    try {
+      for (const application of compiled.records) {
+        await exchangeRepository.stageApplication(token, { ...scope, sopVersionId: data.planVersionId,
+          channelId, businessDate: application.businessDate, fileType: application.fileType, record: application.record });
+        if (!state.stagedKeys.includes(application.key)) state.stagedKeys.push(application.key);
       }
-    }
-    for (const batchPublicId of batches) {
-      await exchangeRepository.generateOutboundFiles(token, { chatPublicId, batchPublicId });
+      const { applications } = await exchangeRepository.listCaseApplications(token, scope);
+      const ours = new Set(compiled.records.map(item => item.record.AppSheetSerialNo));
+      const batches = new Set(applications.filter(item => ours.has(item.applicationNumber) &&
+        item.status === 'BATCHED').map(item => item.batchPublicId));
+      const dates = new Set(compiled.records.map(item => item.businessDate));
+      for (const date of dates) {
+        const ready = applications.filter(item => ours.has(item.applicationNumber) && item.status === 'READY' &&
+          item.channelId === channelId && item.businessDate.replaceAll('-','') === date);
+        if (!ready.length) continue;
+        try {
+          const batch = await exchangeRepository.createOutboundBatch(token, { chatPublicId, channelId,
+            businessDate: date, applicationPublicIds: ready.map(item => item.publicId) });
+          batches.add(batch.publicId);
+        } catch (cause) {
+          if (!['SOP_NOT_LOCKED','DATA_NOT_CONFIRMED'].includes(cause.code)) throw cause;
+          waitingChat = true;
+        }
+      }
+      for (const batchPublicId of batches) {
+        await exchangeRepository.generateOutboundFiles(token, { chatPublicId, batchPublicId });
+      }
+    } catch (cause) {
+      if (cause.code !== 'FILE_SEQUENCE_EXHAUSTED') throw cause;
+      return preparations.save(token, { ...scope, revision: state.revision, state: {
+        ...state, phase: 'WAITING_OPERATION', questions: [],
+        operationError: { code: cause.code, message: '当日文件序号已用尽' },
+        reply: '当日文件序号已用尽，申请与批次已保留。须先由通道维护人员处理当日文件编号容量，再点击继续生成重试；不能通过修改已入库申请解决。',
+      } });
     }
     const caseApps = await exchangeRepository.listCaseApplications(token, scope);
     const ourBatches = new Set(caseApps.applications

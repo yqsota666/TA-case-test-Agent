@@ -169,7 +169,7 @@ export function WorkflowApp(){
   },[view,dataCaseActive,generatedSelection.chatId,generatedSelection.caseId]);
   useEffect(()=>{if(!user)return;refreshDetail();const interval=setInterval(()=>{if(document.visibilityState==='visible')refreshDetail({silent:true});},5000);return()=>clearInterval(interval);},[user,refreshDetail]);
   useEffect(()=>{endOfMessages.current?.scrollIntoView({block:'end'});},[agent?.messages?.length,selectedCase]);
-  const act=async(fn)=>{setBusy(true);setNotice('');try{await fn();setDialog(null);setReason('');await refreshCatalog();await refreshDetail();}catch(error){setNotice(error.message);}finally{setBusy(false);}};
+  const act=async(fn)=>{setBusy(true);setNotice('');try{await fn();setDialog(null);setReason('');await refreshCatalog();await refreshDetail();return true;}catch(error){setNotice(error.message);return false;}finally{setBusy(false);}};
   const createChat=()=>act(async()=>{const created=await request('/v2/chats',{method:'POST',body:{title,channelId,businessDate}});setSelectedChat(created.chatPublicId);setSelectedCase(null);setView('discussion');setTitle('');});
   const createCase=()=>act(async()=>{const created=await request(`/v2/chats/${selectedChat}/cases`,{method:'POST',body:{title}});setSelectedCase(created.caseId);setView('discussion');setTitle('');});
   const finishChat=()=>act(()=>request(`/v2/chats/${selectedChat}/end`,{method:'POST',body:{reason}}));
@@ -184,8 +184,8 @@ export function WorkflowApp(){
     }catch(error){setNotice(error.message);}finally{setBusy(false);}
   };
   const send=async(event)=>{event.preventDefault();const content=message.trim();if(!content||busy||ended||!agent)return;
-    await act(()=>request(`/chats/${selectedAgentChat}/runs/${selectedRun}/agent/messages`,
-      {method:'POST',body:{requestId:crypto.randomUUID(),content}}));setMessage('');};
+    const sent=await act(()=>request(`/chats/${selectedAgentChat}/runs/${selectedRun}/agent/messages`,
+      {method:'POST',body:{requestId:crypto.randomUUID(),content}}));if(sent)setMessage('');};
   const upload=async(file)=>{if(!file||!selectedChat||ended)return;
     if(!/\.zip$/i.test(file.name)){setNotice('请选择 ZIP 格式的 TA 回传包');return;}
     const reader=new FileReader();reader.onload=()=>act(()=>request('/v2/returns',

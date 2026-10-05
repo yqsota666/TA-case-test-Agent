@@ -11,7 +11,7 @@ const trade = { ...opening, key: 'trade1', fileType: '03', businessCode: '022', 
   fields: { TransactionTime: '120000', ApplicationAmount: '100.00', CurrencyType: '156', ChargeType: '0' } };
 const input = { token: 'session', chatPublicId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
   casePublicId: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb' };
-function fixture({ intents = [opening, trade], confirmed = true, failOnce = false,
+function fixture({ intents = [opening, trade], confirmed = true, failOnce = false, fileError = null,
   mysqlJsonOrder = false, reply = '按方案准备', channels = [{ id: '7', distributorCode: '306', protocolVersion: '22' }] } = {}) {
   let saved = { phase: 'NOT_STARTED', revision: 0, intents: [], turns: [], stagedKeys: [], files: [] };
   const applications = [], files = [], bindings = [], calls = [];
@@ -47,6 +47,7 @@ function fixture({ intents = [opening, trade], confirmed = true, failOnce = fals
       }); return { publicId: id };
     },
     generateOutboundFiles: async (token, { batchPublicId }) => {
+      if (fileError) throw fileError;
       if (failOnce) { failOnce = false; throw new Error('interrupted'); }
       const apps = applications.filter(item => item.batchPublicId === batchPublicId);
       apps.forEach(item => { item.status = 'GENERATED'; });
@@ -59,7 +60,7 @@ function fixture({ intents = [opening, trade], confirmed = true, failOnce = fals
   const service = createApplicationPreparationService({ repository, preparations, exchangeRepository,
     derive: async context => { calls.push(['derive', context.userInput]); return {
       ...await deriveApplicationPreparation(async () => JSON.stringify({ reply, intents: structuredClone(intents), questions: [] }), context) }; } });
-  return { service, applications, files, bindings, calls, setIntents: next => { intents = next; } };
+  return { service, applications, files, bindings, calls, setIntents: next => { intents = next; }, setFileError: next => { fileError = next; } };
 }
 
 test('confirmed data generates 01 and waits for 02 before generating 03 once', async () => {
@@ -190,4 +191,24 @@ test('material submitted before selecting a channel is retained until successful
   assert.equal(ready.turns.at(-1).userInput, pending.pendingUserInput);
   assert.equal(ready.pendingUserInput, '');
   assert.equal(f.calls.filter(call => call[0] === 'derive').at(-1)[1], pending.pendingUserInput);
+});
+
+test('file sequence exhaustion persists an operational recovery state and retries frozen applications', async () => {
+  const f = fixture({ intents: [opening], fileError: Object.assign(new Error('exhausted'),
+    { code: 'FILE_SEQUENCE_EXHAUSTED', status: 409 }) });
+  const pending = await f.service.prepare(input);
+  assert.equal(pending.phase, 'WAITING_OPERATION');
+  assert.equal(pending.operationError.code, 'FILE_SEQUENCE_EXHAUSTED');
+  assert.deepEqual(pending.stagedKeys, ['open1']);
+  assert.equal(f.applications.length, 1);
+  assert.equal(f.applications[0].status, 'BATCHED');
+  assert.equal((await f.service.prepare(input)).phase, 'WAITING_OPERATION');
+  await assert.rejects(f.service.prepare({ ...input, userInput: '改日期' }),
+    { code: 'APPLICATION_PREPARATION_CONFLICT' });
+  f.setFileError(null);
+  const recovered = await f.service.prepare(input);
+  assert.equal(recovered.phase, 'GENERATED');
+  assert.equal(recovered.operationError, undefined);
+  assert.equal(f.files.length, 1); assert.equal(f.applications.length, 1);
+  assert.equal(f.calls.filter(call => call[0] === 'derive').length, 1);
 });

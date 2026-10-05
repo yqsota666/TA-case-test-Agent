@@ -57,7 +57,7 @@ export async function assertWritableRun(db, auth, scope) {
     await db.execute('SELECT id FROM workspaces WHERE id=? FOR UPDATE',[auth.workspace_id]);
     const [[open]]=await db.execute(`SELECT chat_id FROM global_case_ledgers
       WHERE workspace_id=? AND ended_at IS NULL ORDER BY chat_id LIMIT 1`,[auth.workspace_id]);
-    if(open)throw scopeError('当前工作空间正在推进全局 Chat','CHAT_SCOPE_REQUIRED',409);
+    if(open)throw scopeError('当前工作空间正在推进全局 Chat',409,'CHAT_SCOPE_REQUIRED');
   }
 }
 

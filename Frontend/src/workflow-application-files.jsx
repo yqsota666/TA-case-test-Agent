@@ -50,10 +50,11 @@ export function WorkflowApplicationFiles({data,chatId,caseId,request}){
     {!busy&&state?.reply&&<p className="wdr-assistant">{state.reply}</p>}
     {!busy&&state?.questions?.length>0&&<ul className="waf-help">{state.questions.map((question,index)=><li key={index}>{question}</li>)}</ul>}
     {state?.phase==='WAITING_TA'&&<p className="waf-help">收到并匹配成功的 02 回传后，点击继续生成即可准备 03 文件。</p>}
+    {state?.phase==='WAITING_OPERATION'&&<p className="waf-help">当前申请已冻结，须先处理通道的运行问题；处理后可重试原批次。</p>}
     {state?.phase==='PREPARING'&&<p className="waf-help">上次生成尚未完成。点击继续生成可恢复。</p>}
-    {(!state||['NOT_STARTED','PREPARING','WAITING_TA','WAITING_CHAT'].includes(state.phase))&&
+    {(!state||['NOT_STARTED','PREPARING','WAITING_OPERATION','WAITING_TA','WAITING_CHAT'].includes(state.phase))&&
       <div className="waf-actions"><button type="button" disabled={busy} onClick={()=>run()}>继续生成</button></div>}
-    {state&&(state.phase==='NEEDS_INPUT'||(error&&state.phase!=='PREPARING'))&&<form className="wdr-form" onSubmit={submit}>
+    {state&&(state.phase==='NEEDS_INPUT'||(error&&!['PREPARING','WAITING_OPERATION'].includes(state.phase)))&&<form className="wdr-form" onSubmit={submit}>
       <textarea aria-label="补充申请信息" value={input} disabled={busy} onChange={event=>setInput(event.target.value)}
         placeholder="告诉 AI 要补充的证件、金额、日期等信息…" maxLength={4000}/>
       <button type="submit" disabled={busy||!input.trim()}>发送补充信息</button>
