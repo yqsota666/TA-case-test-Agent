@@ -34,3 +34,24 @@ test('a valid data definition is generated before Plan locking and passed to exe
   assert.deepEqual(calls, ['derive', 'confirm', 'execute']);
   assert.equal(result.data.reviewStatus, 'PENDING_REVIEW');
 });
+
+test('a failed data write can be retried through the same Plan confirmation request', async () => {
+  let status = 'PENDING_CONFIRMATION';
+  let derivations = 0;
+  let attempts = 0;
+  const confirmPlan = createConfirmPlanWithData({
+    repository: { getLatestSopProposal: async () => ({ ...pending, status }) },
+    derive: async () => { derivations += 1; return { customers: [] }; },
+    confirm: async () => { status = 'LOCKED'; },
+    executeData: async () => {
+      attempts += 1;
+      if (attempts === 1) throw new Error('temporary database failure');
+      return { reviewStatus: 'PENDING_REVIEW' };
+    },
+  });
+  await assert.rejects(confirmPlan(input), /temporary database failure/);
+  const result = await confirmPlan(input);
+  assert.equal(result.phase, 'DATA_REVIEW');
+  assert.equal(derivations, 1);
+  assert.equal(attempts, 2);
+});
