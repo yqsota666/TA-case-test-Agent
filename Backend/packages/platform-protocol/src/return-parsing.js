@@ -16,7 +16,7 @@ function validDate(value) {
 }
 
 export function parseReturnFiles(files, { expectedType, channel }) {
-  if (!['02', '04'].includes(expectedType)) fail('UNSUPPORTED_RETURN_TYPE', '仅支持分别解析 02 和 04');
+  if (!['02', '04', '05'].includes(expectedType)) fail('UNSUPPORTED_RETURN_TYPE', '仅支持分别解析 02、04 和 05');
   if (!Array.isArray(files) || files.length < 1 || files.length > 17) {
     fail('INVALID_RETURN_PACKAGE', '请上传回传 TXT 文件，可同时附带原始 OFI 索引；最多 17 份');
   }

@@ -16,6 +16,11 @@ async function fixture(t, {orderRejected=false}={}) {
     exchangePlanSupplement:{confirm:async(token,input)=>{calls.push(['supplement',token,input]);return{versionNumber:2,status:'LOCKED',supplemented:true};}},
     returnConfirmation: Object.fromEntries(['read','delivery','apply','salesData','selectAccount'].map(method =>
       [method,async (token,input) => { calls.push(['confirmation-'+method,token,input]); return { ok:true }; }])),
+    holdingsReturn: {
+      read: async (token,scope)=>{calls.push(['holdings-read',token,scope]);return {steps:[],parses:[]};},
+      parse: async (token,input)=>{calls.push(['holdings-parse',token,input]);return {phase:'PARSED'};},
+      apply: async (token,input)=>{calls.push(['holdings-apply',token,input]);return {businessApplied:true};},
+    },
     returnParsing: {
       read: async (token, scope) => { calls.push(['parsing-read', token, scope]); return { steps: [] }; },
       parse: async (token, input) => { calls.push(['parsing-write', token, input]); return orderRejected?{phase:'ORDER_REJECTED',parseId:'81',orderError:{error:'ORDER_VIOLATION',message:'缺少send03，请补齐后重试'},result:{businessApplied:false}}:{phase:'PARSED'}; },
@@ -339,3 +344,16 @@ test('legacy schedule supplement is explicit, authenticated and accepts only tim
  for(const extra of [{objective:'改目标'},{workspaceId:'999'}])assert.equal((await fetch(base+path,{method:'POST',headers,body:JSON.stringify({...payload,...extra})})).status,400);
  assert.equal((await fetch(base+path,{method:'POST',headers:{...headers,origin:'https://foreign.invalid'},body:JSON.stringify(payload)})).status,403);
 });
+
+ test('05 endpoints require session/origin, pass scoped ids and reject extra fields',async t=>{
+  const {base,calls}=await fixture(t);const path=route.replace('/discussion','/holdings-return');
+  const headers={cookie:'case_session=abcdefghijklmnopqrstuvwxyz012345',origin:allowedOrigin,'content-type':'application/json'};
+  assert.equal((await fetch(base+path)).status,401);
+  assert.equal((await fetch(base+path,{headers})).status,200);
+  for(const [action,body] of [['parse',{channelId:'7',files:[],exchangeStepId:'r05'}],['apply',{parseId:'1'}]]){
+   const result=await fetch(base+path+'/'+action,{method:'POST',headers,body:JSON.stringify(body)});assert.equal(result.status,200);
+   assert.equal(calls.at(-1)[0],'holdings-'+action);assert.equal(calls.at(-1)[2].casePublicId,'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
+   assert.equal((await fetch(base+path+'/'+action,{method:'POST',headers:{...headers,origin:'https://foreign.example'},body:JSON.stringify(body)})).status,403);
+   assert.equal((await fetch(base+path+'/'+action,{method:'POST',headers,body:JSON.stringify({...body,workspaceId:'999'})})).status,400);
+  }
+ });

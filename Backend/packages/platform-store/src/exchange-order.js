@@ -16,8 +16,10 @@ export async function exchangeOrderContext(db, keys, write = true) {
     WHERE r.workspace_id=? AND r.chat_id=? AND r.case_id=? AND r.plan_version=?${write ? ' FOR UPDATE' : ''}`, scope);
   const [bindings] = await db.execute(`SELECT step_id AS stepId,batch_id,file_type FROM case_exchange_plan_bindings
     WHERE workspace_id=? AND chat_id=? AND case_id=? AND plan_version=?${write ? ' FOR UPDATE' : ''}`, scope);
+  const [holdingsReceipts] = await db.execute(`SELECT step_id AS stepId,CAST(parse_id AS CHAR) AS holdingsParseId
+    FROM case_holdings_plan_receipts WHERE workspace_id=? AND chat_id=? AND case_id=? AND plan_version=?`,scope);
   return { plan, version: locked.version_number, bindings,
-    events: [...events, ...receipts.map(receipt => ({ ...receipt, condition: 'PARSED' }))] };
+    events: [...events, ...holdingsReceipts.map(row=>({...row,condition:'PARSED'})), ...receipts.map(receipt => ({ ...receipt, condition: 'PARSED' }))] };
 }
 export async function checkExchangeOrder(db, keys, {stepId,direction,fileType,businessDate,batchId,parseId,condition}) {
   const context = await exchangeOrderContext(db, keys);
