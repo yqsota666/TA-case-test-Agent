@@ -577,7 +577,7 @@ export function createCaseRepository({ transaction }) {
       const keys = [auth.workspace_id, chat.id, caseRow.id];
       const [[prior]] = await db.execute(`SELECT sop_version_id FROM case_data_executions
         WHERE workspace_id=? AND chat_id=? AND case_id=? FOR UPDATE`, keys);
-      if (prior) return { ...await readGeneratedData(db, keys), replayed: true };
+      if (prior) return { ...await readGeneratedData(db, keys, true), replayed: true };
       if (caseRow.status !== 'SOP_LOCKED') {
         throw storeError('PLAN_NOT_CONFIRMED', 409, '须先确认 Plan');
       }
@@ -595,31 +595,32 @@ export function createCaseRepository({ transaction }) {
       const state = await runGraph(db, { workspaceId: auth.workspace_id,
         chatId: chat.id, caseId: caseRow.id }, specification);
       if (!state.validated) throw new Error('数据校验节点未完成');
-      return readGeneratedData(db, keys);
+      return readGeneratedData(db, keys, true);
     });
   }
 
-  async function readGeneratedData(db, keys) {
+  async function readGeneratedData(db, keys, write = false) {
+    const lock = write ? ' FOR UPDATE' : '';
     const [[execution]] = await db.execute(`SELECT sop_version_id,created_at,
       (SELECT JSON_CONTAINS_PATH(v.plan_json,'one','$.contract') FROM case_sop_versions v
        WHERE v.workspace_id=case_data_executions.workspace_id AND v.chat_id=case_data_executions.chat_id
-        AND v.case_id=case_data_executions.case_id AND v.id=case_data_executions.sop_version_id) AS plan_data_frozen
-      FROM case_data_executions WHERE workspace_id=? AND chat_id=? AND case_id=?`, keys);
+        AND v.case_id=case_data_executions.case_id AND v.id=case_data_executions.sop_version_id${lock}) AS plan_data_frozen
+      FROM case_data_executions WHERE workspace_id=? AND chat_id=? AND case_id=?${lock}`, keys);
     if (!execution) return { status: 'NOT_STARTED', reviewStatus: 'NOT_STARTED', revision: 0,
       customers: [], accounts: [], funds: [], holdings: [] };
     const [customers] = await db.execute(`SELECT id,public_id,workspace_id,chat_id,case_id,
       name,investor_type,simulated_balance
-      FROM case_generated_customers WHERE workspace_id=? AND chat_id=? AND case_id=? ORDER BY id`, keys);
+      FROM case_generated_customers WHERE workspace_id=? AND chat_id=? AND case_id=? ORDER BY id${lock}`, keys);
     const [accounts] = await db.execute(`SELECT id,workspace_id,chat_id,case_id,customer_id,account_no,branch_code
-      FROM case_generated_accounts WHERE workspace_id=? AND chat_id=? AND case_id=? ORDER BY id`, keys);
+      FROM case_generated_accounts WHERE workspace_id=? AND chat_id=? AND case_id=? ORDER BY id${lock}`, keys);
     const [funds] = await db.execute(`SELECT id,workspace_id,chat_id,case_id,fund_code,fund_name,share_class,nav
-      FROM case_generated_funds WHERE workspace_id=? AND chat_id=? AND case_id=? ORDER BY id`, keys);
+      FROM case_generated_funds WHERE workspace_id=? AND chat_id=? AND case_id=? ORDER BY id${lock}`, keys);
     const [holdings] = await db.execute(`SELECT id,workspace_id,chat_id,case_id,account_id,fund_code,share_class,total_volume
-      FROM case_generated_holdings WHERE workspace_id=? AND chat_id=? AND case_id=? ORDER BY id`, keys);
+      FROM case_generated_holdings WHERE workspace_id=? AND chat_id=? AND case_id=? ORDER BY id${lock}`, keys);
     const [[edit]] = await db.execute(`SELECT COALESCE(MAX(revision),0) AS revision
-      FROM case_data_edit_events WHERE workspace_id=? AND chat_id=? AND case_id=?`, keys);
+      FROM case_data_edit_events WHERE workspace_id=? AND chat_id=? AND case_id=?${lock}`, keys);
     const [[confirmation]] = await db.execute(`SELECT revision,confirmed_at
-      FROM case_data_confirmations WHERE workspace_id=? AND chat_id=? AND case_id=?`, keys);
+      FROM case_data_confirmations WHERE workspace_id=? AND chat_id=? AND case_id=?${lock}`, keys);
     return { ...(Number(execution.plan_data_frozen)?{planDataFrozen:true}:{}),status: 'VALIDATED', purpose: 'APPLICATION_DRAFT', businessApplied: false, planVersionId: String(execution.sop_version_id),
       reviewStatus: confirmation ? 'CONFIRMED' : 'PENDING_REVIEW',
       confirmedAt: confirmation?.confirmed_at ?? null,
@@ -729,7 +730,7 @@ export function createCaseRepository({ transaction }) {
         [...keys,Number(lastTurn.number)+1,edit.revision,afterRevision,
           reviewTurn.userInput,reviewTurn.reply,JSON.stringify(edit.changes)]);
       }
-      return readGeneratedData(db, keys);
+      return readGeneratedData(db, keys, true);
     });
   }
 
@@ -795,7 +796,7 @@ export function createCaseRepository({ transaction }) {
           VALUES (?,?,?,?,?,?,'USER_CONFIRMED_DATA')`,
         [...keys,caseRow.status,'EXECUTING',auth.user_id]);
       }
-      return readGeneratedData(db, keys);
+      return readGeneratedData(db, keys, true);
     });
   }
 
