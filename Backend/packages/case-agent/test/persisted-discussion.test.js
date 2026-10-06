@@ -7,7 +7,7 @@ import { createPersistedDiscussionService } from '../src/index.js';
 const firstReply = '想先确认：你最想验证什么？\n初步理解：需要先明确目标。\n还需明确：判断标准。';
 const secondReply = '当前理解：要检查一项规则。\n建议先测：对比两个输入及其结果。\n请你确认：以哪个结果为准？';
 const plan = { objective: '检查规则', preconditions: [], scenarios: [
-  { title: '边界', setup: '准备两组数据', action: '分别执行', expected: '结果可比较', evidence: '记录结果' },
+  { title: '边界', setup: '准备两组数据', action: '分别执行', expected: '确认状态CONFIRMED，结果可比较', evidence: '记录结果' },
 ], openQuestions: [], exchangePlan };
 const scope = { token: 'session', chatPublicId: 'chat', casePublicId: 'case' };
 

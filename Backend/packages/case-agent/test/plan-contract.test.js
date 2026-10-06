@@ -83,3 +83,16 @@ test('typed quantities bind each field in a shared Chinese quote and reject swap
  for(const value of ['1','000001','90']){const invalid=structuredClone(c);invalid.expectations[0].expectedValue=value;assert.equal(validPlanContract(invalid,p),false);}
  const swapped=structuredClone(c);swapped.expectations[1].expectedValue='10';swapped.expectations[2].expectedValue='90';assert.equal(validPlanContract(swapped,p),false);
 });
+
+test('typed nonnumeric tokens and field-local comparisons cannot invent PASS conditions',()=>{
+ for(const [quote,field,value] of [['状态FAILED','status','CONFIRMED'],['状态NOT_CONFIRMED','status','CONFIRMED'],['TA账户TA0001','taAccountId','TA000']]){
+  const p={...plan,scenarios:[{expected:quote}]},c=planContract(p);
+  Object.assign(c.expectations[0],{expectedQuote:quote,field,expectedValue:value});
+  assert.equal(validPlanContract(c,p),false,quote);
+ }
+ const quote='总份额至少100份、可用90份',p={...plan,scenarios:[{expected:quote}]},c=planContract(p);
+ const base=c.expectations[0];
+ c.expectations=[{...base,source:'CURRENT_FORMAL_HOLDING',field:'availableVolume',expectedValue:'90',expectedQuote:quote,operator:'gte',selector:{...base.selector,fundCode:'000001',shareClass:'0',fileType:null,businessDate:null}}];
+ assert.equal(validPlanContract(c,p),false);
+ c.expectations[0].operator='eq';assert.equal(validPlanContract(c,p),true);
+});
