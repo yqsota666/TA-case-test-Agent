@@ -13,6 +13,7 @@ async function fixture(t, {orderRejected=false}={}) {
   const calls = [];
   const server = createCaseHttpServer({
     allowedOrigin,
+    exchangePlanSupplement:{confirm:async(token,input)=>{calls.push(['supplement',token,input]);return{versionNumber:2,status:'LOCKED',supplemented:true};}},
     returnConfirmation: Object.fromEntries(['read','delivery','apply','salesData','selectAccount'].map(method =>
       [method,async (token,input) => { calls.push(['confirmation-'+method,token,input]); return { ok:true }; }])),
     returnParsing: {
@@ -328,4 +329,13 @@ test('planned upload rejects order with 409 and explicit evidence id; step id is
  assert.equal(response.status,409);const body=await response.json();assert.equal(body.error,'ORDER_VIOLATION');assert.equal(body.parseId,'81');assert.match(body.message,/send03/);
  assert.equal(calls.at(-1)[2].exchangeStepId,'receive04');
  const wrong=await fetch(base+path,{method:'POST',headers,body:JSON.stringify({...payload,workspaceId:'999'})});assert.equal(wrong.status,400);
+});
+
+test('legacy schedule supplement is explicit, authenticated and accepts only timing plus file mappings',async t=>{
+ const {base,calls}=await fixture(t);const path=route.replace('/discussion','/exchange-plan/confirm');
+ const headers={cookie:'case_session='+ 'a'.repeat(43),origin:allowedOrigin,'content-type':'application/json'};
+ const payload={baseVersionNumber:1,exchangePlan:{status:'READY'},mappings:[]};
+ const success=await fetch(base+path,{method:'POST',headers,body:JSON.stringify(payload)});assert.equal(success.status,200);assert.equal((await success.json()).versionNumber,2);assert.equal(calls.at(-1)[0],'supplement');
+ for(const extra of [{objective:'改目标'},{workspaceId:'999'}])assert.equal((await fetch(base+path,{method:'POST',headers,body:JSON.stringify({...payload,...extra})})).status,400);
+ assert.equal((await fetch(base+path,{method:'POST',headers:{...headers,origin:'https://foreign.invalid'},body:JSON.stringify(payload)})).status,403);
 });

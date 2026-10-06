@@ -1,6 +1,6 @@
 import {authenticateSession,storeError} from './index.js';
 import {validExchangePlan} from '../../platform-protocol/src/exchange-plan.js';
-import {checkExchangeOrder,recordExchangeEvent} from './exchange-order.js';
+import {checkExchangeOrder,recordExchangeEvent,exchangeOrderContext} from './exchange-order.js';
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const json = value => typeof value === 'string' ? JSON.parse(value) : value;
 const fail = (code,message) => {throw storeError(code,409,message);};
@@ -104,7 +104,14 @@ export function createExchangePlanSupplementRepository({transaction}) {
         }
         if(!progress)fail('ORDER_VIOLATION','现有事实不满足补充计划的前置条件，请调整明确映射，不能猜测完成步骤');
       }
-      return {versionNumber:version,status:'LOCKED',supplemented:true};
+      const actual=await exchangeOrderContext(db,keys);
+      return {versionNumber:version,status:'LOCKED',supplemented:true,
+        message:'文件时序已补充并锁定；原业务目标、场景、申请和正式数据未改写。已发送和已确认事实仅按本次明确映射继承。',
+        steps:input.exchangePlan.steps.map(step=>({...step,actual:{
+          sent:actual.events.some(event=>event.stepId===step.stepId && event.condition==='SENT'),
+          parsedPackages:new Set(actual.events.filter(event=>event.stepId===step.stepId && event.condition==='PARSED').map(event=>String(event.parse_id))).size,
+          confirmed:actual.events.some(event=>event.stepId===step.stepId && event.condition==='CONFIRMED'),
+        }}))};
     });
   }
   return Object.freeze({confirm});
