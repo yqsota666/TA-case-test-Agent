@@ -30,7 +30,7 @@ test('MySQL: reset reads committed epochs and duplicate requests after waiting f
    await db.execute('SELECT id FROM case_chats WHERE id=? FOR UPDATE',[chat.insertId]);
    const locked=new Promise(resolve=>{waiting=resolve;});
    const pending=repo.confirm(token,{channelId:String(channel.insertId),requestId,reason:'synthetic reset',confirmation:'TA_RESET_CONFIRMED'});
-   await locked;
+   await Promise.race([locked,pending]);
    // Authentication has already established a snapshot; this event commits while the reset is waiting.
    await db.execute('INSERT INTO ta_reset_events(workspace_id,channel_id,epoch,account_id_cutoff,request_id,reason,actor_user_id) VALUES (?,?,?,0,?,?,?)',[workspaceId,channel.insertId,epoch,insertId,'synthetic reset',userId]);
    await db.commit();

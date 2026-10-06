@@ -89,7 +89,7 @@ const reviseData = async ({ token, chatPublicId, casePublicId, revision, userInp
     repository.generatedData(token, chatPublicId, casePublicId),
     repository.dataReviewTurns(token, chatPublicId, casePublicId),
   ]);
-  if(plan.proposal.contract) throw Object.assign(new Error('Plan数据已锁定；业务修改请新建Case重新确认'),{code:'PLAN_DATA_FROZEN',status:409});
+  if(plan?.proposal?.contract) throw Object.assign(new Error('Plan数据已锁定；业务修改请新建Case重新确认'),{code:'PLAN_DATA_FROZEN',status:409});
   if (data.reviewStatus !== 'PENDING_REVIEW') {
     const error = new Error('当前数据不能继续修改');
     error.code = 'DATA_NOT_REVIEWABLE'; error.status = 409; throw error;
