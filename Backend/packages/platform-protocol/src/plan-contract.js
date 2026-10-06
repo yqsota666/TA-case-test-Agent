@@ -12,6 +12,12 @@ function decimalUnits(value) {
   const [whole, fraction=''] = value.replace(/^-/,'').split('.');
   return (BigInt(whole)*100000000n+BigInt(fraction.padEnd(8,'0')))*(value.startsWith('-')?-1n:1n);
 }
+function quotedDecimals(quote){
+  const normalized=quote.replace(/[−－]/g,'-');
+  return [...normalized.matchAll(/(?<![A-Za-z0-9_.+-])[-+]?\d+(?:\.\d+)?(?![A-Za-z0-9_.])/g)]
+    .filter(match=>!(/\d[,，]$/.test(normalized.slice(0,match.index)) || /^[,，]\d/.test(normalized.slice(match.index+match[0].length))))
+    .map(match=>decimalUnits(match[0].replace(/^\+/,'')));
+}
 export const RESULT_FIELDS = Object.freeze({
   APPLICATION_CONFIRMATION: ['status','returnCode','confirmedAmount','confirmedVolume','taAccountId'],
   FORMAL_ACCOUNT: ['transactionAccountId','taAccountId','branchCode'],
@@ -92,7 +98,7 @@ function validExpectations(c,d,plan) {
     }
     if (['confirmedAmount','confirmedVolume','totalVolume','availableVolume','frozenVolume'].includes(a.field)) {
       const expected=decimalUnits(a.expectedValue);
-      if (expected===null || !(a.expectedQuote.match(/-?\d+(?:\.\d+)?/g)??[]).some(value=>decimalUnits(value)===expected)) return false;
+      if (expected===null || !quotedDecimals(a.expectedQuote).some(value=>value===expected)) return false;
     } else if (a.operator!=='eq') return false;
     if (a.operator==='gte' && !/(至少|不低于|不少于|大于等于|>=|≥)/.test(a.expectedQuote)) return false;
     if (a.operator==='lte' && !/(最多|不高于|不超过|不多于|小于等于|<=|≤)/.test(a.expectedQuote)) return false;

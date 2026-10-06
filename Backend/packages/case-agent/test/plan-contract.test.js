@@ -57,3 +57,19 @@ test('model-invented available/frozen numeric checks fail contract generation an
  const graph=createCaseResultGraph({collect:async()=>snapshot,complete:async()=>{throw Error('must not reinterpret malformed confirmed contract');}});
  assert.equal((await graph.invoke({})).suggestion.outcome,'REVIEW');
 });
+
+
+test('numeric quote tokens reject exponent/thousands fragments and preserve Unicode negative signs',()=>{
+ const make=(quote,value,field='confirmedAmount',source='APPLICATION_CONFIRMATION')=>{
+  const p={...plan,scenarios:[{expected:quote}]},c=planContract(p);
+  c.expectations=[{...c.expectations[0],expectedQuote:quote,expectedValue:value,field,source}];
+  if(source==='CURRENT_FORMAL_HOLDING')Object.assign(c.expectations[0].selector,{fundCode:'000001',shareClass:'0',fileType:null,businessDate:null});
+  return validPlanContract(c,p);
+ };
+ for(const [quote,values] of [['确认金额1,000元',['1','0']],['确认金额1e3元',['1','3']],['确认金额USD100元',['100']],['确认金额100.000000001元',['100']]])for(const value of values)assert.equal(make(quote,value),false);
+ assert.equal(make('确认金额−100.00元','100'),false);assert.equal(make('确认金额−100.00元','-100'),true);
+ assert.equal(make('确认金额－100.00元','-100'),true);assert.equal(make('确认金额+100.00元','100'),true);
+ assert.equal(make('确认金额100元,无需其他结果','100'),true);
+ for(const field of ['confirmedAmount','confirmedVolume']){assert.equal(make('明确结果100.00','100',field),true);assert.equal(make('未明确数字','100',field),false);}
+ for(const field of ['totalVolume','availableVolume','frozenVolume']){assert.equal(make('明确结果100.00','100',field,'CURRENT_FORMAL_HOLDING'),true);assert.equal(make('未明确数字','100',field,'CURRENT_FORMAL_HOLDING'),false);}
+});
