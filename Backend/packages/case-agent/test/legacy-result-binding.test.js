@@ -46,3 +46,20 @@ test('one legacy scenario cannot splice unique application and holding evidence 
  const opening=make();opening.plan.scenarios[0].expected='开户成功，总份额100份';opening.evidence[0].source.fileType='01';opening.evidence[0].values.fundCode=null;opening.evidence[0].values.shareClass=null;
  assert.equal(compareCaseResults(opening,{assertions:assertions.map(a=>({...a,expectedQuote:opening.plan.scenarios[0].expected})),uncertainties:[]}).outcome,'PASS');
 });
+
+test('legacy residue cleanup uses exact numeric binder grammar, preserving prefix ranges and post-field comparison phrases',()=>{
+ for(const [quote,operator] of [['至少确认份额100份','gte'],['确认份额应达到100份','eq'],['confirmed volume >=100份','gte'],['不低于total volume100份','gte'],['ConfirmedVol应达到100份','eq'],['最终正式持仓100份','eq'],['总持仓100份','eq'],['confirmed amount100元','eq']]){
+  const field=/total|持仓/.test(quote)?'totalVolume':quote.includes('amount')?'confirmedAmount':'confirmedVolume';const state={plan:{scenarios:[{expected:quote}]},pending:[],issues:[],evidence:[{id:'n',source:{kind:'HOLDING'},values:{[field]:'100'}}]};
+  const assertion={scenarioIndex:0,expectedQuote:quote,evidenceId:'n',field,operator,expectedValue:'100'};const result=compareCaseResults(state,{assertions:[assertion],uncertainties:[]});assert.equal(result.outcome,'PASS',quote);assert.equal(canConfirmCaseResult(state,result),true);
+ }
+ for(const quote of ['不要至少确认份额100份','至少未知要求确认份额100份','确认份额应达到100万份','确认份额应达到100份或200份']){
+  const state={plan:{scenarios:[{expected:quote}]},pending:[],issues:[],evidence:[{id:'n',source:{kind:'HOLDING'},values:{confirmedVolume:'100'}}]};assert.equal(compareCaseResults(state,{assertions:[{scenarioIndex:0,expectedQuote:quote,evidenceId:'n',field:'confirmedVolume',operator:'eq',expectedValue:'100'}],uncertainties:[]}).outcome,'REVIEW',quote);
+ }
+});
+test('distinct opening and purchase status checks bind their own file types without losing completeness or ambiguity protection',()=>{
+ const quote='开户成功，申购成功',state={plan:{scenarios:[{expected:quote}]},pending:[],issues:[],evidence:['01','03'].map(fileType=>({id:fileType,source:{kind:'APPLICATION_CONFIRMATION',fileType,channelId:'7',businessDate:fileType==='01'?'20261006':'20261007'},values:{transactionAccountId:'90000000000000001',status:'CONFIRMED',fundCode:fileType==='03'?'000001':null,shareClass:fileType==='03'?'0':null}}))};
+ const assertions=state.evidence.map(e=>({scenarioIndex:0,expectedQuote:quote,evidenceId:e.id,field:'status',operator:'eq',expectedValue:'CONFIRMED'}));const result=compareCaseResults(state,{assertions,uncertainties:[]});assert.equal(result.outcome,'PASS');assert.equal(canConfirmCaseResult(state,result),true);
+ for(const only of assertions)assert.equal(compareCaseResults(state,{assertions:[only],uncertainties:[]}).outcome,'REVIEW');
+ const duplicate=structuredClone(state);duplicate.evidence.push({...duplicate.evidence[0],id:'duplicate'});assert.equal(compareCaseResults(duplicate,{assertions,uncertainties:[]}).outcome,'REVIEW');
+ const failed=structuredClone(state);failed.evidence[1].values.status='FAILED';assert.equal(compareCaseResults(failed,{assertions,uncertainties:[]}).outcome,'FAIL');
+});

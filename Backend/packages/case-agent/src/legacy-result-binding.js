@@ -1,5 +1,5 @@
 import {validDate} from '../../platform-protocol/src/exchange-plan.js';
-import {numericQuoteBindings,hasLiteralExpectation} from '../../platform-protocol/src/numeric-expectations.js';
+import {numericQuoteBindingSpans,hasLiteralExpectation} from '../../platform-protocol/src/numeric-expectations.js';
 const labels={status:'最终状态|申请状态|确认状态|状态|status',returnCode:'TA返回代码|返回代码|返回码|结果代码|结果码|错误代码|错误码|returnCode',transactionAccountId:'交易账户号|交易账号|交易账户|销售账号|账号|transactionAccountId',taAccountId:'TA账户号|TA账号|TA账户|TA号|taAccountId',fundCode:'基金代码|基金编码|基金|fundCode',shareClass:'份额类别|份额分类|shareClass',branchCode:'网点编号|网点代码|网点|branchCode',snapshotDate:'确认日期|快照日期|业务日期|快照日|日期|snapshotDate',channelId:'通道编号|通道号|通道|channelId'};
 const marker=new RegExp(Object.values(labels).join('|'),'gi');
 const connector='(?:\\s|[=:：,，]|均为|应为|应该为|应当为|为|是|等于)*';
@@ -22,10 +22,7 @@ export function legacyExpectationBindings(expected){
   if(/[?？]|吗|是否|不|未|没有|非|还是|或/.test(clause))continue;
   bindings.push({field:'status',value:m[1]==='成功'?'CONFIRMED':'FAILED',...(m[0].startsWith('申购')?{fileType:'03'}:m[0].startsWith('开户')?{fileType:'01'}:{})});residual=residual.replace(m[0],'');
  }
- for(const b of numericQuoteBindings(text)){
-  // Numeric recognition remains governed by the exact field/decimal binder.
-  residual=residual.replace(new RegExp('(?:确认成交金额|确认金额|确认成交份额|确认份额|确认份数|总份额|总份数|持仓总量|持仓份额|持仓|可用份额|可用份数|可用持仓|可用|冻结份额|冻结份数|冻结持仓|冻结|confirmedAmount|confirmedVolume|totalVolume|availableVolume|frozenVolume)'+connector+'(?:至少|最多|不低于|不少于|大于等于|小于等于|不超过|不高于|不多于|>=|<=|≥|≤)*\\s*[-+]?\\d+(?:\\.\\d+)?(?:元|份)?','i'),'');
- }
+ for(const b of numericQuoteBindingSpans(text))residual=residual.replace(text.slice(b.start,b.end),'');
  for(const b of bindings.filter(b=>b.field==='status'))residual=residual.replace(new RegExp('^[\\s，,。；;、：:]*'+b.value+'(?=$|[\\s，,。；;、：:])'),'');
  residual=residual.replace(/场景\d+|申请|开户|申购|最终|正式|均|应|结果|账户/g,'').replace(/[\s，,。；;、：:()（）]/g,'');
  return {bindings,recognized:!residual.length};
@@ -49,8 +46,9 @@ export function legacyBindingIssues(snapshot,checks,scenarioIndex){
 
  for(const c of covered){
   const source=snapshot.evidence.find(e=>e.id===c.evidenceId);
-  const candidates=snapshot.evidence.filter(e=>e.source.kind===source?.source.kind && Object.hasOwn(e.values,c.field) && bindings.every(b=>{
-   if(!['transactionAccountId','fundCode','shareClass','snapshotDate','channelId'].includes(b.field))return !b.fileType || e.source.kind!=='APPLICATION_CONFIRMATION' || e.source.fileType===b.fileType;
+  const candidates=snapshot.evidence.filter(e=>e.source.kind===source?.source.kind && Object.hasOwn(e.values,c.field) &&
+   (!bindings.some(b=>b.fileType) || e.source.kind!=='APPLICATION_CONFIRMATION' || e.source.fileType===source.source.fileType) && bindings.every(b=>{
+   if(!['transactionAccountId','fundCode','shareClass','snapshotDate','channelId'].includes(b.field))return true;
    const value=b.field==='channelId'?e.source.channelId:b.field==='snapshotDate'?(e.values.snapshotDate??e.source.businessDate):e.values[b.field];return String(value??'')===b.value;
   }));
   if(candidates.length!==1)issues.push(`场景${scenarioIndex+1}的${c.field}来源不能唯一确定`);
