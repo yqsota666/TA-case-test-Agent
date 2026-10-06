@@ -63,7 +63,7 @@ export function createHoldingsReturnRepository({ transaction }) {
       const current=await channel(db,keys[0],input.channelId,true);
       if(JSON.stringify(current)!==JSON.stringify(target))reject('CHANNEL_CHANGED','通道已变更，请重新解析');
       const checked=await order(db,keys,input.exchangeStepId,parsed.result.files[0].date,input.channelId);
-      for(const file of parsed.rawFiles.filter(f=>f.fileName.startsWith('OFD_'))) {
+      for(const file of parsed.result.files.filter(f=>f.fileType==='05')) {
         const [used]=await db.execute(`SELECT r.step_id FROM case_holdings_plan_receipts r
           JOIN case_holdings_return_parses p ON p.workspace_id=r.workspace_id AND p.chat_id=r.chat_id AND p.case_id=r.case_id AND p.id=r.parse_id
           JOIN case_holdings_return_files f ON f.workspace_id=p.workspace_id AND f.chat_id=p.chat_id AND f.case_id=p.case_id AND f.parse_id=p.id

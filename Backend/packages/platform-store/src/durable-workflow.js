@@ -51,7 +51,8 @@ export async function workflowFacts(db,{owner,keys},token,input) {
 }
 export function createDurableWorkflowRepository({pool,lockTimeout=5}) {
  async function run(token,input,event) {
-  if(event && (!uuid.test(input.eventId??'') || typeof input.expectedStage!=='string' || input.expectedStage.length>40))throw storeError('INVALID_INPUT',400,'恢复事件标识或等待阶段无效');
+  if(event && (typeof input.eventId!=='string' || !uuid.test(input.eventId) || typeof input.expectedStage!=='string' || input.expectedStage.length>40))throw storeError('INVALID_INPUT',400,'恢复事件标识或等待阶段无效');
+  const eventId=event?input.eventId.toLowerCase():null;
   const db=await pool.getConnection();let lockName;
   try {
    const initial=await workflowScope(db,token,input);
@@ -62,7 +63,9 @@ export function createDurableWorkflowRepository({pool,lockTimeout=5}) {
    const scope=await workflowScope(db,token,input,true);
    if(event && scope.owner.chat_status!=='ACTIVE')throw storeError('CHAT_CLOSED',409,'Chat已结束，仅可读取工作流');
    if(event) {
-    const [[saved]]=await db.execute(`SELECT expected_stage,response_json FROM case_workflow_events WHERE workspace_id=? AND chat_id=? AND case_id=? AND event_id=?`,[...scope.keys,input.eventId]);
+    const [savedEvents]=await db.execute(`SELECT expected_stage,response_json FROM case_workflow_events WHERE workspace_id=? AND chat_id=? AND case_id=? AND LOWER(event_id)=? ORDER BY created_at,event_id LIMIT 2 FOR UPDATE`,[...scope.keys,eventId]);
+    if(savedEvents.length>1)throw storeError('WORKFLOW_EVENT_CONFLICT',409,'历史事件标识存在歧义，请使用新事件标识');
+    const saved=savedEvents[0];
     if(saved) {
      if(saved.expected_stage!==input.expectedStage)throw storeError('WORKFLOW_EVENT_CONFLICT',409,'同一事件不能更换内容');
      await db.commit();return {...json(saved.response_json),replayed:true};
@@ -79,7 +82,7 @@ export function createDurableWorkflowRepository({pool,lockTimeout=5}) {
    if(prior.values?.revision===facts.revision) result={...prior.values.position,revision:facts.revision,checkpointId:prior.config.configurable.checkpoint_id,interrupted:prior.tasks.some(t=>t.interrupts?.length)};
    else if(facts.chatStatus!=='ACTIVE') result={...workflowPosition(facts),revision:facts.revision,checkpointId:prior.config.configurable.checkpoint_id??null,interrupted:false};
    else result=await reconcileWorkflow(graph,config);
-   if(event)await db.execute(`INSERT INTO case_workflow_events (workspace_id,chat_id,case_id,event_id,expected_stage,response_json) VALUES (?,?,?,?,?,?)`,[...scope.keys,input.eventId,input.expectedStage,JSON.stringify(result)]);
+   if(event)await db.execute(`INSERT INTO case_workflow_events (workspace_id,chat_id,case_id,event_id,expected_stage,response_json) VALUES (?,?,?,?,?,?)`,[...scope.keys,eventId,input.expectedStage,JSON.stringify(result)]);
    await db.commit();return result;
   } catch(error) {await db.rollback();throw error;}
   finally {try {if(lockName)await db.execute('SELECT RELEASE_LOCK(?)',[lockName]);}finally{db.release();}}
