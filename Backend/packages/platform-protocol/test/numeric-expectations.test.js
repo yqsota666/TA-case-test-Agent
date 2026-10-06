@@ -40,3 +40,9 @@ test('recognized negation in the current clause cannot be removed by shortening 
  assert.equal(hasNumericFieldExpectation('totalVolume','100','总份额不少于100','gte'),true);
  assert.equal(hasNumericFieldExpectation('totalVolume','100','不少于总份额100','gte'),true);
 });
+
+test('known literal values followed by questions or alternatives are not fixed expectations',()=>{
+ for(const quote of ['开户状态为CONFIRMED吗？','开户状态为CONFIRMED或FAILED','状态CONFIRMED/FAILED','状态CONFIRMED（成功确认）或者FAILED','status CONFIRMED or FAILED','是否状态CONFIRMED'])assert.equal(hasLiteralExpectation('CONFIRMED',quote,'status'),false,quote);
+ assert.equal(hasLiteralExpectation('CONFIRMED','01/02开户申请与03/04申购申请最终状态均为CONFIRMED','status'),true);
+ for(const quote of ['总份额100份吗？','总份额100份或200份'])assert.deepEqual(numericQuoteBindings(quote),[]);
+});
