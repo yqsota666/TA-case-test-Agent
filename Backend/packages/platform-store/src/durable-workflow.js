@@ -5,12 +5,12 @@ import { exchangeOrderContext } from './exchange-order.js';
 import { SqlWorkflowSaver,createDurableWorkflowGraph,reconcileWorkflow,workflowPosition } from '../../case-agent/src/durable-workflow.js';
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const json=v=>typeof v==='string'?JSON.parse(v):v;
-export async function workflowScope(db,token,scope) {
+export async function workflowScope(db,token,scope,write=false) {
  if(![scope.chatPublicId,scope.casePublicId].every(v=>uuid.test(v??'')))throw storeError('INVALID_INPUT',400,'Chat或Case标识无效');
  const auth=await authenticateSession(db,token);
  const [[owner]]=await db.execute(`SELECT c.id AS chat_id,k.id AS case_id,c.status AS chat_status,k.status AS case_status
  FROM case_chats c JOIN cases k ON k.workspace_id=c.workspace_id AND k.chat_id=c.id
- WHERE c.workspace_id=? AND c.public_id=? AND k.public_id=?`,[auth.workspace_id,scope.chatPublicId,scope.casePublicId]);
+ WHERE c.workspace_id=? AND c.public_id=? AND k.public_id=?${write?' FOR UPDATE':''}`,[auth.workspace_id,scope.chatPublicId,scope.casePublicId]);
  if(!owner)throw storeError('CASE_NOT_FOUND',404,'Case不存在');
  return {owner,keys:[auth.workspace_id,owner.chat_id,owner.case_id]};
 }
@@ -59,7 +59,8 @@ export function createDurableWorkflowRepository({pool,lockTimeout=5}) {
    const [[lock]]=await db.execute('SELECT GET_LOCK(?,?) AS acquired',[lockName,lockTimeout]);
    if(Number(lock.acquired)!==1)throw storeError('WORKFLOW_BUSY',409,'工作流正在恢复，请稍后重试同一事件');
    await db.beginTransaction();
-   const scope=await workflowScope(db,token,input);
+   const scope=await workflowScope(db,token,input,true);
+   if(event && scope.owner.chat_status!=='ACTIVE')throw storeError('CHAT_CLOSED',409,'Chat已结束，仅可读取工作流');
    if(event) {
     const [[saved]]=await db.execute(`SELECT expected_stage,response_json FROM case_workflow_events WHERE workspace_id=? AND chat_id=? AND case_id=? AND event_id=?`,[...scope.keys,input.eventId]);
     if(saved) {

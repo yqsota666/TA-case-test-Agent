@@ -1,3 +1,5 @@
+import {setTimeout as delay} from 'node:timers/promises';
+import {createChatLifecycleRepository} from '../src/chat-lifecycle.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
@@ -70,10 +72,16 @@ test('MySQL durable workflow: restart, multi-instance event replay, rollback, is
  await assert.rejects(createDurableWorkflowRepository({pool,lockTimeout:0}).read(token,scope),{code:'WORKFLOW_BUSY'});
  await lockDb.execute('SELECT RELEASE_LOCK(?)',[name]);
  assert.equal((await repo.read(token,scope)).stage,'FILE_EXCHANGE');
- await lockDb.execute("UPDATE case_chats SET status='CLOSED',closed_at=CURRENT_TIMESTAMP(3) WHERE public_id=?",[chat.publicId]);
+ // Holding the same Chat/Case locks used by workflow persistence serializes force closure.
+ await lockDb.beginTransaction();await workflowScope(lockDb,token,scope,true);
+ let closeSettled=false;
+ const closing=createChatLifecycleRepository({transaction}).close(token,{chatPublicId:chat.publicId,mode:'FORCE',reason:'合成并发封存'}).finally(()=>{closeSettled=true;});
+ await delay(100);assert.equal(closeSettled,false);
+ await lockDb.rollback();assert.equal((await closing).status,'FORCE_CLOSED');
  const [[before]]=await lockDb.execute('SELECT HEX(saver_blob) AS snapshotHex FROM case_workflow_checkpoints WHERE workspace_id=? AND chat_id=? AND case_id=?',keys);
  assert.equal((await repo.read(token,scope)).stage,'CHAT_CLOSED');
  await assert.rejects(repo.resume(token,{...scope,eventId:crypto.randomUUID(),expectedStage:'FILE_EXCHANGE'}),{code:'CHAT_CLOSED'});
+ await assert.rejects(repo.resume(token,event),{code:'CHAT_CLOSED'});
  const [[after]]=await lockDb.execute('SELECT HEX(saver_blob) AS snapshotHex FROM case_workflow_checkpoints WHERE workspace_id=? AND chat_id=? AND case_id=?',keys);assert.equal(after.snapshotHex,before.snapshotHex);
  await lockDb.execute('UPDATE platform_sessions SET expires_at=DATE_SUB(UTC_TIMESTAMP(),INTERVAL 1 HOUR) WHERE token_hash=?',[sessionTokenHash(token)]);
  await assert.rejects(repo.read(token,scope),{code:'UNAUTHENTICATED'});
