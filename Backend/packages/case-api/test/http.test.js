@@ -404,4 +404,13 @@ test('durable workflow route authenticates and accepts notification only',async 
  assert.equal(calls.at(-1)[2].eventId,input.eventId);
  assert.equal((await fetch(base+path+'/resume',{method:'POST',headers,body:JSON.stringify({...input,stage:'PASS'})})).status,400);
  assert.equal((await fetch(base+path+'/resume',{method:'POST',headers:{...headers,origin:'https://invalid.example'},body:JSON.stringify(input)})).status,403);
+
+
+test('strict Plan cannot bypass frozen application values through the legacy manual record endpoint',async t=>{
+ let staged=0;
+ const server=createCaseHttpServer({repository:{generatedData:async()=>({reviewStatus:'CONFIRMED',planDataFrozen:true,planVersionId:'1'})},discussionService:{},confirmPlan:()=>{},executeData:()=>{},reviseData:()=>{},exchangeRepository:{stageApplication:async()=>{staged++;return{};}},allowedOrigin:'http://127.0.0.1:5188'});
+ server.listen(0,'127.0.0.1');await once(server,'listening');t.after(()=>{server.closeAllConnections();server.close();});
+ const url=`http://127.0.0.1:${server.address().port}/api/chats/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/cases/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/applications`;
+ const response=await fetch(url,{method:'POST',headers:{origin:'http://127.0.0.1:5188',cookie:'case_session=synthetic','content-type':'application/json'},body:JSON.stringify({channelId:'1',businessDate:'20261006',fileType:'03',record:{ApplicationAmount:'450.00'}})});
+ assert.equal(response.status,409);assert.equal((await response.json()).error,'PLAN_DATA_FROZEN');assert.equal(staged,0);
 });
