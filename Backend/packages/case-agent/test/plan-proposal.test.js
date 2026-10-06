@@ -84,7 +84,7 @@ test('only independent unconfirmed Chinese TA outcome clauses receive explicit s
  const parsed=parsePlanProposal(JSON.stringify(raw));
  assert.equal(parsed.scenarios[0].expected,'开户申请状态为CONFIRMED（成功确认）；申购申请状态为FAILED（业务失败）；总份额100份');
  assert.deepEqual(parsed.openQuestions,[]);
- for(const expected of ['开户不成功','申购成功吗？','开户失败后申购成功','Case测试通过']){
+ for(const expected of ['开户不成功','申购成功吗？','开户失败后申购成功','开户状态为CONFIRMED吗？','开户状态为CONFIRMED或FAILED','Case测试通过']){
   const result=parsePlanProposal(JSON.stringify({...raw,scenarios:[{...raw.scenarios[0],expected}]}));
   assert.equal(result.scenarios[0].expected,expected);
   assert.equal(result.openQuestions.length,expected==='Case测试通过'?0:1);

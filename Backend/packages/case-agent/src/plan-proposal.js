@@ -1,3 +1,4 @@
+import { hasLiteralExpectation } from '../../platform-protocol/src/numeric-expectations.js';
 import { z } from 'zod';
 import { validPlanContract } from '../../platform-protocol/src/plan-contract.js';
 import { validExchangePlan } from '../../platform-protocol/src/exchange-plan.js';
@@ -32,8 +33,9 @@ function normalizeUnconfirmedStatusExpectations(proposal) {
         const status=match[3]==='成功'?'CONFIRMED':'FAILED';
         return `${match[1]}${match[2]}申请状态为${status}（${match[3]==='成功'?'成功确认':'业务失败'}）${match[4]}`;
       }
-      if(/(?:开户|申购)/.test(clause) && /(?:成功|失败)/.test(clause) &&
-         !/状态(?:均为|为|是|[:：])?(?:CONFIRMED|FAILED)/.test(clause) && questions.length<50){
+      const status=clause.match(/CONFIRMED|FAILED/)?.[0];
+      if(((/(?:开户|申购)/.test(clause) && /(?:成功|失败)/.test(clause)) || status) &&
+         !(status && hasLiteralExpectation(status,clause,'status')) && questions.length<50){
         const question=`请澄清场景${index+1}的TA业务确认结果：${clause.trim()}`;
         if(!questions.includes(question))questions.push(question);
       }

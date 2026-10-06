@@ -125,3 +125,10 @@ test('typed quote extraction cannot remove recognized negative scenario context'
   assert.equal(validPlanContract(c,p),false);
  }
 });
+
+test('typed status questions and alternatives remain invalid even in historical contracts',()=>{
+ for(const expected of ['开户状态为CONFIRMED吗？','开户状态为CONFIRMED或FAILED']){
+  const p={...plan,scenarios:[{expected}]},c=planContract(p);
+  assert.equal(validPlanContract(c,p),false,expected);
+ }
+});
