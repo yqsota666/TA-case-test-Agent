@@ -1,4 +1,4 @@
-import { hasNumericFieldExpectation, hasLiteralExpectation } from './numeric-expectations.js';
+import { hasNumericFieldExpectation, hasLiteralExpectation, numericQuoteBindings, preciseDecimal } from './numeric-expectations.js';
 import { validDate } from './exchange-plan.js';
 const exact = (v, keys) => v && typeof v === 'object' && !Array.isArray(v) &&
   Object.keys(v).length === keys.length && keys.every(k => Object.hasOwn(v, k));
@@ -93,5 +93,9 @@ function validExpectations(c,d,plan) {
     if (a.operator==='lte' && !/(最多|不高于|不超过|不多于|小于等于|<=|≤)/.test(a.expectedQuote)) return false;
     return true;
   })) return false;
-  return c.missing.length>0 || plan.scenarios.every((_,i)=>c.expectations.some(a=>a.scenarioIndex===i));
+  return c.missing.length>0 || plan.scenarios.every((scenario,i)=>{
+    const assertions=c.expectations.filter(a=>a.scenarioIndex===i);
+    return assertions.length>0 && numericQuoteBindings(scenario.expected).every(binding=>assertions.some(a=>
+      a.field===binding.field && a.operator===binding.operator && preciseDecimal(a.expectedValue)===preciseDecimal(binding.value)));
+  });
 }

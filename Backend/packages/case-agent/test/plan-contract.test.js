@@ -32,7 +32,7 @@ test('confirmed typed expectations match the exact account/round; ambiguity, mis
 test('numeric expected values require an exact decimal literal in the quoted scenario, not inferred initial conditions',()=>{
  const quotedPlan={...plan,scenarios:[{expected:'确认成功，CONFIRMED；确认金额100.00元；最终总份额100份；无其他交易，不产生初始模拟持仓'}]};
  const c=planContract(quotedPlan),numeric={...c.expectations[0],expectedQuote:'确认金额100.00元',field:'confirmedAmount',expectedValue:'100'};
- c.expectations.push(numeric);assert.equal(validPlanContract(c,quotedPlan),true);
+ c.expectations.push(numeric,{...numeric,source:'CURRENT_FORMAL_HOLDING',field:'totalVolume',expectedQuote:'最终总份额100份',selector:{...numeric.selector,fundCode:'000001',shareClass:'0',fileType:null,businessDate:null}});assert.equal(validPlanContract(c,quotedPlan),true);
  numeric.expectedValue='100.00000001';assert.equal(validPlanContract(c,quotedPlan),false);
  numeric.expectedValue='100.00';numeric.expectedQuote='无其他交易，不产生初始模拟持仓';assert.equal(validPlanContract(c,quotedPlan),false);
  numeric.expectedValue='0';assert.equal(validPlanContract(c,quotedPlan),false);
@@ -94,5 +94,19 @@ test('typed nonnumeric tokens and field-local comparisons cannot invent PASS con
  const base=c.expectations[0];
  c.expectations=[{...base,source:'CURRENT_FORMAL_HOLDING',field:'availableVolume',expectedValue:'90',expectedQuote:quote,operator:'gte',selector:{...base.selector,fundCode:'000001',shareClass:'0',fileType:null,businessDate:null}}];
  assert.equal(validPlanContract(c,p),false);
- c.expectations[0].operator='eq';assert.equal(validPlanContract(c,p),true);
+ c.expectations[0].operator='eq';c.expectations.push({...c.expectations[0],field:'totalVolume',expectedValue:'100',operator:'gte'});assert.equal(validPlanContract(c,p),true);
+});
+
+test('typed contracts cannot omit explicit numeric fields and silently PASS changed balances',async()=>{
+ const quote='总份额100份、可用90份、冻结10份',p={...plan,scenarios:[{expected:quote}]},c=planContract(p);
+ const base=c.expectations[0];
+ c.expectations=[{...base,source:'CURRENT_FORMAL_HOLDING',field:'totalVolume',expectedValue:'100',expectedQuote:quote,selector:{...base.selector,fundCode:'000001',shareClass:'0',fileType:null,businessDate:null}}];
+ assert.equal(validPlanContract(c,p),false);
+ const snapshot={plan:{...p,contract:c},preparedAccounts:[],pending:[],issues:[],evidence:[{id:'holding:1',source:{kind:'CURRENT_FORMAL_HOLDING',channelId:'7'},values:{transactionAccountId:'90000000000000001',fundCode:'000001',shareClass:'0',totalVolume:'100',availableVolume:'80',frozenVolume:'20'}}]};
+ const graph=createCaseResultGraph({collect:async()=>snapshot,complete:async()=>{throw Error('must not reinterpret a confirmed incomplete contract');}});
+ assert.equal((await graph.invoke({})).suggestion.outcome,'REVIEW');
+ c.missing=['可用和冻结尚未绑定明确核验条件'];assert.equal(validPlanContract(c,p),true);
+ assert.equal(compareConfirmedExpectations(snapshot).outcome,'REVIEW');
+ c.missing=[];c.expectations.push({...c.expectations[0],field:'availableVolume',expectedValue:'90'},{...c.expectations[0],field:'frozenVolume',expectedValue:'10'});
+ assert.equal(validPlanContract(c,p),true);assert.equal(compareConfirmedExpectations(snapshot).outcome,'FAIL');
 });

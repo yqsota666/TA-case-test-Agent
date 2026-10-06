@@ -217,7 +217,7 @@ Plan固定字段为 `objective`、`preconditions`、`scenarios`、`openQuestions
 - dataSpecification包含customers、accounts、funds、holdings、missing：沿用草稿字段与索引规则；新增账户由系统分配交易账号，不能假装已经成功开户。正式状态仍只在TA回传成功且用户确认应用后改变。
 - applications逐项固定key、SEND stepId、businessCode、accountIndex或已有transactionAccountId、fundIndex与协议fields；当前固定开户001和申购022。金额、基金、证件及申请时间在确认前展示；日期来自明确DATE步骤。相对发文日期、关键字段缺失或不支持的业务必须先澄清。新账户03必须依赖该账户01对应的02成功CONFIRMED，已有正式账户允许直接03。
 - assumptions明确业务假设。净值、费用、舍入、初始状态或确认规则不明确时不得从申请金额猜TA确认结果，列入missing。
-- expectations包含scenarioIndex、expectedQuote、source、selector、field、operator、expectedValue。source限申请确认、正式账户、当前正式持仓；selector精确指定新准备账户索引或已有交易账号，可指定通道；持仓必须指定基金与类别，申请确认必须指定文件类型与业务日期。operator支持eq/gte/lte；非数值仅eq。数值expectedValue必须在expectedQuote中明确对应本字段；场景/基金编号以及其他余额数值不构成依据，缺少明确对应时拒绝formatter输出。每个场景至少有一项断言，仍需人工检查语义是否完整覆盖，代码不宣称能证明自然语言完整性。
+- expectations包含scenarioIndex、expectedQuote、source、selector、field、operator、expectedValue。source限申请确认、正式账户、当前正式持仓；selector精确指定新准备账户索引或已有交易账号，可指定通道；持仓必须指定基金与类别，申请确认必须指定文件类型与业务日期。operator支持eq/gte/lte；非数值仅eq。数值expectedValue必须在expectedQuote中明确对应本字段；场景/基金编号以及其他余额数值不构成依据，缺少明确对应时拒绝formatter输出。每个场景至少有一项断言，且显式识别的数量字段/值/比较方向必须逐项覆盖；缺项时只能记录missing进入澄清，不能以READY锁定。仍需人工检查其他语义是否完整覆盖，代码不宣称能证明自然语言完整性。
 - missing是预期或申请中的待澄清条件。准备数据缺条件不能确认DATA；全部待澄清项、文件时序和场景问题清空后才能确认EXPECTATIONS。
 
 `POST .../plan/confirm`请求必须为 `{versionNumber,section:"DATA"或"EXPECTATIONS"}`。DATA同事务核验最新版并保存actor/时间，保持SOP_PENDING且不写草稿。EXPECTATIONS要求同版本已有DATA确认，再保存第二次确认并锁定。`case_plan_section_confirmations`以Workspace/Chat/Case/版本/section为主键，重复DATA幂等；新版不继承旧版确认，旧版确认保留审计。GET Plan返回本版本confirmations。
