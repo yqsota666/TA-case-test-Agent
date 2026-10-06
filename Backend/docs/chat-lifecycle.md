@@ -17,7 +17,7 @@
 - POST `.../lifecycle/retest`：`{requestId,casePublicId,reason}`，同父 Chat 创建关联 Case。
 - POST `.../lifecycle/new-run`：`{requestId,reason,confirmPreserveFormalData:true}`，创建新的空白 Chat。
 
-requestId 为 UUID，按 Workspace/来源 Chat 唯一。相同重试返回既有目标，改变操作、来源 Case 或原因拒绝。请求与创建关联在同事务写入；Chat 行锁与来源后续唯一约束防止重复后续。
+requestId 为 UUID，按 Workspace/来源 Chat 唯一。新请求统一保存小写，大小写变体视为同一请求；单条历史大写键持锁兼容查找并保留原记录。历史若已存在多个大小写变体，同范围内关联不唯一则返回409 RUN_REQUEST_CONFLICT，不猜选目标、不创建新Chat/Case，也不覆盖旧键、目标或原因。相同重试返回既有目标，改变操作、来源 Case 或原因拒绝。请求与创建关联在同事务写入；Chat 行锁与来源后续唯一约束防止重复后续。
 
 迁移020只新增审计关联表，无历史数据更新或清空。MySQL测试覆盖迁移复跑、封存前提、真实状态保留、原有写路径冻结、同父多Case复测、幂等冲突、跨Workspace隔离和全回滚。TA全系统重置另行实现明确的人工已重置事件，不由这个接口冒充。
 

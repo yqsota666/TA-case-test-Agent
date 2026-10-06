@@ -1,5 +1,7 @@
 # Case 耐久等待恢复编排
 
+当前完整流程以[Case全流程设计](../../docs/Case全流程设计.md)和[Backend说明](../README.md)为准；本文件以下测试计数记录模块各次引入时的验证，最终整体验证见验收报告。
+
 Case图包含 `reconcile_committed_business → 对应阶段等待节点 → reconcile_committed_business` 循环。前者读取认证范围内业务SQL，等待节点使用原生LangGraph `interrupt`；通知用 `Command({resume})` 恢复。MySQL保存LangGraph checkpoint、pending writes和事件响应，进程重启后继续原来的等待点。
 
 等待阶段覆盖讨论、Plan数据确认、Plan预期确认、准备草稿、草稿确认、文件时序补充、文件交换、结果判断、人工确认结果、Case最终及Chat关闭。文件交换返回多个同时可以处理的step；01/03是否相依、独立05位于哪个时间点，始终由用户已确认Plan DAG与SQL SENT/PARSED/CONFIRMED事件决定。
@@ -12,7 +14,7 @@ GET `/api/chats/:chat/cases/:case/workflow` 认证后对账并返回 `{stage,wai
 
 实际图有九个独立interrupt等待节点：discussion、confirm_plan_data、confirm_expectations、prepare_data、confirm_draft、define_exchange_order、file_exchange、evaluate_result、confirm_result。每个等待点恢复后重新读取SQL事实，而非接受用户提交的“成功”。
 
-02/04已实际应用且全部相关申请为CONFIRMED或FAILED时，该接收步骤完成；失败不满足后续要求CONFIRMED的成功依赖。05完成来自独立解析记录的applied_at，而非伪造TA成功事件。若剩余步骤都依赖未取得的成功确认，FILE_EXCHANGE的waiting为空，需要人工处理失败或新建Case重规划。
+02/04已实际应用且全部相关申请为CONFIRMED或FAILED时，该接收步骤完成；失败不满足后续要求CONFIRMED的成功依赖。05完成来自独立解析记录的applied_at，而非伪造TA成功事件。对同Case、当前计划且精确关联账户的已应用失败02，如果它使必需03/04无法执行，协调器将该业务阻断证据带入结果核对；人工PASS被拒绝，人工FAIL后可关联后续Case。未应用的失败仍等待，不相关或全部可选分支的失败不阻断其他必需步骤；可选03桥接到必需04仍纳入依赖闭包。证据关联不唯一、任一501哨兵提示查询超过500项或证据已变化时需要REVIEW，不能依据部分证据完成流程。不会放行03、伪造未来回传或修改正式数据。
 
 验证：191常规测试通过，5个MySQL选测默认跳过；单独真实MySQL测试覆盖新库/复跑、图服务重建、同UUID双实例恢复、checkpoint与事件写入中途失败回滚、锁竞争超时和恢复、双确认→草稿→文件等待、跨workspace/chat隔离、过期会话、关闭后只读。使用可删除独立数据库，不写运行业务库。
 
