@@ -14,13 +14,25 @@ export function createSophnetCompletion({
     }
     if(reasoningEffort!==undefined && !['low','high','max'].includes(reasoningEffort))throw new TypeError('invalid reasoningEffort');
     if(thinkingMode!==undefined && !['enabled','disabled'].includes(thinkingMode))throw new TypeError('invalid thinkingMode');
-    const response = await sdk.chat.completions.create({
+    let response;
+    try {response = await sdk.chat.completions.create({
       ...(thinkingMode===undefined?{}:{thinking:{type:thinkingMode}}),
       ...(reasoningEffort===undefined?{}:{reasoning_effort:reasoningEffort}),
       model,
       messages: [{ role: 'system', content: system },
         ...(messages ?? [{ role: 'user', content: user }])],
     });
+    } catch (error) {
+      let code,status,message;
+      if(error.name==='APIConnectionTimeoutError'||error.code==='ETIMEDOUT'||[408,504].includes(error.status)){
+        code='MODEL_TIMEOUT';status=504;message='模型响应超时，请重试同一待完成回合';
+      }else if(error.name==='APIConnectionError'||['ECONNRESET','ECONNREFUSED','ENOTFOUND','EAI_AGAIN'].includes(error.code)||error.status===429||error.status>=500){
+        code='MODEL_UNAVAILABLE';status=503;message='模型服务暂时不可用，请稍后重试同一待完成回合';
+      }else if(Number.isInteger(error.status)&&error.status>=400&&error.status<500){
+        code='MODEL_PROVIDER_REJECTED';status=502;message='模型服务拒绝请求，请检查服务配置后重试';
+      }else throw error;
+      throw Object.assign(new Error(message),{code,status});
+    }
     const content = response.choices?.[0]?.message?.content;
     if (typeof content !== 'string') {
       const error = new Error('模型没有返回文本');

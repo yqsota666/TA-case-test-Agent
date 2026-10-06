@@ -164,3 +164,5 @@ GET Case `/workflow` 对账并返回stage/waiting/revision/checkpointId/interrup
 仅必需步骤阻挡阶段，可操作的独立可选05通过optionalActions返回。最新PASS/FAIL建议还须Plan版本和当前证据SHA一致、无pending/issues，才显示结果确认；旧建议或REVIEW回到评估。结果收集校验整个原包摘要，缺文件、只剩索引和原字节损坏均要求REVIEW，不给通过建议。详见 [耐久编排](docs/durable-workflow.md)；包含历史路由/讨论循环、双确认、所有文件分支和生命周期的完整图位于 [主设计](../docs/Case全流程设计.md)。
 
 迁移018为Plan双确认，020为生命周期关联，021为checkpoint，022为外部TA重置；统一回传复用原表，无019空迁移。剩余范围为ZIP/目录递归、跨通道多轮自动路由、交易日历/秒级调度、未支持业务账务、关系表达式/完整语义证明、真实TA网络及物理重置。不得把协议目录或最低结构校验视为这些能力已实现。
+
+模型调用失败保留待完成回合，重试同一输入：超时返回MODEL_TIMEOUT/504，连接、限流或服务临时故障返回MODEL_UNAVAILABLE/503；上游拒绝请求返回MODEL_PROVIDER_REJECTED/502供检查服务配置。模型空回复、三行格式或Plan格式未通过返回明确502错误码；不回传provider原始错误消息、headers或凭据。错误提示不把失败调用当作已完成讨论/Plan。
