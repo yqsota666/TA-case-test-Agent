@@ -1,3 +1,4 @@
+import {readPredecessorContext} from './predecessor-context.js';
 import { isDeepStrictEqual } from 'node:util';
 import { validPlanContract } from '../../platform-protocol/src/plan-contract.js';
 import crypto from 'node:crypto';
@@ -89,6 +90,25 @@ export function createCaseRepository({ transaction }) {
     });
   }
 
+  async function assertCaseWritable(token,chatPublicId,casePublicId,{discussion=false}={}){
+    chatPublicId=requiredUuid(chatPublicId,'Chat');casePublicId=requiredUuid(casePublicId,'Case');
+    return transaction(async db=>{
+      const auth=await authenticateSession(db,token);
+      const [[owner]]=await db.execute(`SELECT c.status AS chat_status,k.status AS case_status FROM case_chats c JOIN cases k ON k.workspace_id=c.workspace_id AND k.chat_id=c.id WHERE c.workspace_id=? AND c.public_id=? AND k.public_id=? FOR UPDATE`,[auth.workspace_id,chatPublicId,casePublicId]);
+      if(!owner)throw storeError('CASE_NOT_FOUND',404,'Case不存在');
+      if(owner.chat_status!=='ACTIVE'||['PASS','FAIL'].includes(owner.case_status)||(discussion&&!['DISCUSSING','SOP_PENDING'].includes(owner.case_status)))throw storeError('CASE_NOT_WRITABLE',409,'Chat或Case已封存，不能继续Agent动作');
+      return {writable:true};
+    });
+  }
+
+  async function listChats(token) {
+    return transaction(async db=>{
+      const auth=await authenticateSession(db,token);
+      const [chats]=await db.execute('SELECT public_id,title,status,close_reason,closed_at,created_at FROM case_chats WHERE workspace_id=? ORDER BY id DESC LIMIT 200',[auth.workspace_id]);
+      return {chats};
+    });
+  }
+
   async function createCase(token, chatPublicId, title) {
     chatPublicId = requiredUuid(chatPublicId, 'Chat');
     const cleanTitle = titleText(title);
@@ -98,6 +118,8 @@ export function createCaseRepository({ transaction }) {
         WHERE workspace_id=? AND public_id=? FOR UPDATE`, [auth.workspace_id, chatPublicId]);
       if (!chat) throw storeError('CHAT_NOT_FOUND', 404, 'Chat 不存在');
       if (chat.status !== 'ACTIVE') throw storeError('CHAT_CLOSED', 409, 'Chat 已结束');
+      const [[batch]]=await db.execute('SELECT id FROM exchange_batches WHERE workspace_id=? AND chat_id=? LIMIT 1 FOR UPDATE',[auth.workspace_id,chat.id]);
+      if(batch?.id) throw storeError('CHAT_EXECUTION_STARTED',409,'Chat已建立发文批次；新增业务请另开Chat，失败后续请使用关联复测');
       const publicId = crypto.randomUUID();
       const [result] = await db.execute(`INSERT INTO cases
         (public_id,workspace_id,chat_id,title) VALUES (?,?,?,?)`,
@@ -285,7 +307,7 @@ export function createCaseRepository({ transaction }) {
       const [[chat]] = await db.execute(`SELECT id,status FROM case_chats
         WHERE workspace_id=? AND public_id=?`, [auth.workspace_id, chatPublicId]);
       if (!chat) throw storeError('CHAT_NOT_FOUND', 404, 'Chat 不存在');
-      const [[caseRow]] = await db.execute(`SELECT id,status FROM cases
+      const [[caseRow]] = await db.execute(`SELECT id,status,predecessor_case_id FROM cases
         WHERE workspace_id=? AND chat_id=? AND public_id=?`,
       [auth.workspace_id, chat.id, casePublicId]);
       if (!caseRow) throw storeError('CASE_NOT_FOUND', 404, 'Case 不存在');
@@ -307,7 +329,8 @@ export function createCaseRepository({ transaction }) {
           throw storeError('CORRUPT_HISTORY', 500, 'Case 讨论记录状态无效');
         }
       }
-      return { revision: rows.length, turns, pending };
+      const sourceContext=await readPredecessorContext(db,[auth.workspace_id,chat.id],caseRow.predecessor_case_id);
+      return { revision: rows.length, turns, pending,...(sourceContext?{sourceContext}:{}) };
     });
   }
 
@@ -776,7 +799,7 @@ export function createCaseRepository({ transaction }) {
     });
   }
 
-  return Object.freeze({ createChat, createCase, listCases, saveSopProposal,
+  return Object.freeze({ createChat, listChats, assertCaseWritable, createCase, listCases, saveSopProposal,
     getLatestSopProposal, confirmSopProposal, readCaseDiscussion, beginCaseDiscussionTurn,
     finishCaseDiscussionTurn, abandonCaseDiscussionTurn, finishCasePlanProposal,
     generatedData, generatedDataCatalog, executeGeneratedData, editGeneratedData,

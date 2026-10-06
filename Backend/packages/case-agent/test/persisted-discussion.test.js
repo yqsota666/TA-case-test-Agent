@@ -141,6 +141,24 @@ test('premature proposal is rejected before creating a pending turn', async () =
   assert.equal(rounds.length, 0);
 });
 
+
+test('linked retest supplies read-only failure context to model without copying prior confirmations',async()=>{
+ const sourceContext={casePublicId:'source',status:'FAIL',originalPlan:{objective:'原目标'},humanFailureReason:'实际持仓不一致',evidence:[{id:'holding:1',values:{totalVolume:'90.00'}}],contextIsReadOnly:true};
+ const calls=[];let saved;
+ const repository={readCaseDiscussion:async()=>({revision:0,turns:[],pending:null,sourceContext}),beginCaseDiscussionTurn:async()=>({turnNumber:1}),finishCaseDiscussionTurn:async(...args)=>{saved=args.at(-1);return{revision:1};},finishCasePlanProposal:async()=>{},abandonCaseDiscussionTurn:async()=>{}};
+ const service=createPersistedDiscussionService({repository,complete:async request=>{calls.push(request);return firstReply;}});
+ await service.discuss({...scope,userInput:'先讨论修复后怎样重新测'});
+ assert.equal(calls.length,1);assert.match(calls[0].system,/实际持仓不一致/);assert.match(calls[0].system,/只读证据/);assert.match(calls[0].system,/不继承原Plan确认/);assert.equal(calls[0].user,'先讨论修复后怎样重新测');assert.equal(saved.turnNumber,1);
+});
+
+
+test('sealed Chat rejects a pending-turn retry before any model call',async()=>{
+ let calls=0;
+ const repository={assertCaseWritable:async()=>{throw Object.assign(new Error('已封存'),{code:'CASE_NOT_WRITABLE'});},readCaseDiscussion:async()=>({revision:1,turns:[],pending:{turnNumber:1,userInput:'重试',kind:'DISCUSS'}}),beginCaseDiscussionTurn:async()=>{},finishCaseDiscussionTurn:async()=>{},finishCasePlanProposal:async()=>{},abandonCaseDiscussionTurn:async()=>{}};
+ const service=createPersistedDiscussionService({repository,complete:async()=>{calls++;return firstReply;}});
+ await assert.rejects(service.discuss({...scope,userInput:'重试'}),{code:'CASE_NOT_WRITABLE'});assert.equal(calls,0);
+});
+
 for (const invalidStage of ['DATA_SPEC_INVALID', 'INVALID_PLAN_CONTRACT']) {
   test(`${invalidStage} releases proposal intent so the user can correct the request`, async () => {
     const { service, repository, rounds } = fixture();

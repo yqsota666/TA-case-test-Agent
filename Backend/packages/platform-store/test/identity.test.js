@@ -14,6 +14,7 @@ function fixture({ chat, cases = [] } = {}) {
     if (sql.includes('FROM platform_sessions')) return [[auth]];
     if (sql.includes('FROM case_chats')) return [[chat]];
     if (sql.includes('FROM cases')) return [cases];
+    if (sql.includes('FROM exchange_batches')) return [[]];
     if (sql.includes('INSERT INTO case_chats')) return [{ insertId: 41 }];
     if (sql.includes('INSERT INTO cases')) return [{ insertId: 51 }];
     return [{}];
