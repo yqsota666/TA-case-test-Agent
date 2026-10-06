@@ -32,7 +32,7 @@ test('confirmed typed expectations match the exact account/round; ambiguity, mis
 test('numeric expected values require an exact decimal literal in the quoted scenario, not inferred initial conditions',()=>{
  const quotedPlan={...plan,scenarios:[{expected:'确认成功，CONFIRMED；确认金额100.00元；最终总份额100份；无其他交易，不产生初始模拟持仓'}]};
  const c=planContract(quotedPlan),numeric={...c.expectations[0],expectedQuote:'确认金额100.00元',field:'confirmedAmount',expectedValue:'100'};
- c.expectations.push(numeric);assert.equal(validPlanContract(c,quotedPlan),true);
+ c.expectations.push(numeric,{...numeric,source:'CURRENT_FORMAL_HOLDING',field:'totalVolume',expectedQuote:'最终总份额100份',selector:{...numeric.selector,fundCode:'000001',shareClass:'0',fileType:null,businessDate:null}});assert.equal(validPlanContract(c,quotedPlan),true);
  numeric.expectedValue='100.00000001';assert.equal(validPlanContract(c,quotedPlan),false);
  numeric.expectedValue='100.00';numeric.expectedQuote='无其他交易，不产生初始模拟持仓';assert.equal(validPlanContract(c,quotedPlan),false);
  numeric.expectedValue='0';assert.equal(validPlanContract(c,quotedPlan),false);
@@ -70,8 +70,67 @@ test('numeric quote tokens reject exponent/thousands fragments and preserve Unic
  assert.equal(make('确认金额−100.00元','100'),false);assert.equal(make('确认金额−100.00元','-100'),true);
  assert.equal(make('确认金额－100.00元','-100'),true);assert.equal(make('确认金额+100.00元','100'),true);
  assert.equal(make('确认金额100元,无需其他结果','100'),true);
- for(const field of ['confirmedAmount','confirmedVolume']){assert.equal(make('明确结果100.00','100',field),true);assert.equal(make('未明确数字','100',field),false);}
- for(const field of ['totalVolume','availableVolume','frozenVolume']){assert.equal(make('明确结果100.00','100',field,'CURRENT_FORMAL_HOLDING'),true);assert.equal(make('未明确数字','100',field,'CURRENT_FORMAL_HOLDING'),false);}
+ for(const field of ['confirmedAmount','confirmedVolume']){assert.equal(make(field+'100.00','100',field),true);assert.equal(make('明确结果100.00','100',field),false);assert.equal(make('未明确数字','100',field),false);}
+ for(const field of ['totalVolume','availableVolume','frozenVolume']){assert.equal(make(field+'100.00','100',field,'CURRENT_FORMAL_HOLDING'),true);assert.equal(make('明确结果100.00','100',field,'CURRENT_FORMAL_HOLDING'),false);assert.equal(make('未明确数字','100',field,'CURRENT_FORMAL_HOLDING'),false);}
+});
+test('typed quantities bind each field in a shared Chinese quote and reject swapped or identifier values',()=>{
+ const quote='场景1，基金代码000001：总份额100.00份、可用90.00份、冻结10.00份';
+ const p={...plan,scenarios:[{expected:quote}]},c=planContract(p);
+ const fields=['totalVolume','availableVolume','frozenVolume'],values=['100','90','10'];
+ const base=c.expectations[0];
+ c.expectations=fields.map((field,i)=>({...base,field,source:'CURRENT_FORMAL_HOLDING',expectedQuote:quote,expectedValue:values[i],selector:{...base.selector,fundCode:'000001',shareClass:'0',fileType:null,businessDate:null}}));
+ assert.equal(validPlanContract(c,p),true);
+ for(const value of ['1','000001','90']){const invalid=structuredClone(c);invalid.expectations[0].expectedValue=value;assert.equal(validPlanContract(invalid,p),false);}
+ const swapped=structuredClone(c);swapped.expectations[1].expectedValue='10';swapped.expectations[2].expectedValue='90';assert.equal(validPlanContract(swapped,p),false);
+});
+
+test('typed nonnumeric tokens and field-local comparisons cannot invent PASS conditions',()=>{
+ for(const [quote,field,value] of [['状态FAILED','status','CONFIRMED'],['状态NOT_CONFIRMED','status','CONFIRMED'],['TA账户TA0001','taAccountId','TA000']]){
+  const p={...plan,scenarios:[{expected:quote}]},c=planContract(p);
+  Object.assign(c.expectations[0],{expectedQuote:quote,field,expectedValue:value});
+  assert.equal(validPlanContract(c,p),false,quote);
+ }
+ const quote='总份额至少100份、可用90份',p={...plan,scenarios:[{expected:quote}]},c=planContract(p);
+ const base=c.expectations[0];
+ c.expectations=[{...base,source:'CURRENT_FORMAL_HOLDING',field:'availableVolume',expectedValue:'90',expectedQuote:quote,operator:'gte',selector:{...base.selector,fundCode:'000001',shareClass:'0',fileType:null,businessDate:null}}];
+ assert.equal(validPlanContract(c,p),false);
+ c.expectations[0].operator='eq';c.expectations.push({...c.expectations[0],field:'totalVolume',expectedValue:'100',operator:'gte'});assert.equal(validPlanContract(c,p),true);
+});
+
+test('typed contracts cannot omit explicit numeric fields and silently PASS changed balances',async()=>{
+ const quote='总份额100份、可用90份、冻结10份',p={...plan,scenarios:[{expected:quote}]},c=planContract(p);
+ const base=c.expectations[0];
+ c.expectations=[{...base,source:'CURRENT_FORMAL_HOLDING',field:'totalVolume',expectedValue:'100',expectedQuote:quote,selector:{...base.selector,fundCode:'000001',shareClass:'0',fileType:null,businessDate:null}}];
+ assert.equal(validPlanContract(c,p),false);
+ const snapshot={plan:{...p,contract:c},preparedAccounts:[],pending:[],issues:[],evidence:[{id:'holding:1',source:{kind:'CURRENT_FORMAL_HOLDING',channelId:'7'},values:{transactionAccountId:'90000000000000001',fundCode:'000001',shareClass:'0',totalVolume:'100',availableVolume:'80',frozenVolume:'20'}}]};
+ const graph=createCaseResultGraph({collect:async()=>snapshot,complete:async()=>{throw Error('must not reinterpret a confirmed incomplete contract');}});
+ assert.equal((await graph.invoke({})).suggestion.outcome,'REVIEW');
+ c.missing=['可用和冻结尚未绑定明确核验条件'];assert.equal(validPlanContract(c,p),true);
+ assert.equal(compareConfirmedExpectations(snapshot).outcome,'REVIEW');
+ c.missing=[];c.expectations.push({...c.expectations[0],field:'availableVolume',expectedValue:'90'},{...c.expectations[0],field:'frozenVolume',expectedValue:'10'});
+ assert.equal(validPlanContract(c,p),true);assert.equal(compareConfirmedExpectations(snapshot).outcome,'FAIL');
+});
+
+test('typed nonnumeric literals cannot borrow another field or negate the quoted result',()=>{
+ for(const [quote,field,value] of [['基金代码000001','taAccountId','000001'],['状态不是CONFIRMED','status','CONFIRMED'],['状态不为CONFIRMED','status','CONFIRMED'],['status not CONFIRMED','status','CONFIRMED']]){
+  const p={...plan,scenarios:[{expected:quote}]},c=planContract(p);
+  Object.assign(c.expectations[0],{expectedQuote:quote,field,expectedValue:value});
+  assert.equal(validPlanContract(c,p),false,quote);
+ }
+});
+
+test('typed quote extraction cannot remove recognized negative scenario context',()=>{
+ for(const [expected,quote,field,value] of [['不要确认金额100','确认金额100','confirmedAmount','100'],['不期望状态CONFIRMED','状态CONFIRMED','status','CONFIRMED']]){
+  const p={...plan,scenarios:[{expected}]},c=planContract(p);Object.assign(c.expectations[0],{expectedQuote:quote,field,expectedValue:value});
+  assert.equal(validPlanContract(c,p),false);
+ }
+});
+
+test('typed status questions and alternatives remain invalid even in historical contracts',()=>{
+ for(const expected of ['开户状态为CONFIRMED吗？','开户状态为CONFIRMED或FAILED']){
+  const p={...plan,scenarios:[{expected}]},c=planContract(p);
+  assert.equal(validPlanContract(c,p),false,expected);
+ }
 });
 
 
