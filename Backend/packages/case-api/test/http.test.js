@@ -13,6 +13,10 @@ async function fixture(t) {
   const calls = [];
   const server = createCaseHttpServer({
     allowedOrigin,
+    returnParsing: {
+      read: async (token, scope) => { calls.push(['parsing-read', token, scope]); return { steps: [] }; },
+      parse: async (token, input) => { calls.push(['parsing-write', token, input]); return { phase: 'PARSED' }; },
+    },
     repository: { readCaseDiscussion: async (...args) => {
       calls.push(['read', ...args]); return { revision: 2, turns: [], pending: null };
     }, generatedData: async (...args) => {
@@ -262,4 +266,34 @@ test('discussion rejects malformed cookies and invalid message lengths', async t
     assert.deepEqual(await response.json(), { error: 'INVALID_INPUT' });
   }
   assert.equal(calls.length, 0);
+});
+
+
+test('02/04 have separate scoped parse-only routes and reject authorization/input bypasses', async t => {
+  const { base, calls } = await fixture(t);
+  const path = route.replace('/discussion', '/return-parsing');
+  const headers = { cookie: 'case_session=abcdefghijklmnopqrstuvwxyz012345', origin: allowedOrigin,
+    'content-type': 'application/json' };
+  assert.equal((await fetch(base + path)).status, 401);
+  assert.equal((await fetch(base + path, { headers })).status, 200);
+  for (const type of ['02', '04']) {
+    const response = await fetch(base + path + '/' + type, { method: 'POST', headers,
+      body: JSON.stringify({ batchPublicId: 'cccccccc-cccc-cccc-cccc-cccccccccccc', files: [] }) });
+    assert.equal(response.status, 200);
+    const input = calls.at(-1)[2];
+    assert.equal(input.expectedType, type);
+    assert.equal(input.chatPublicId, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+    assert.equal(input.casePublicId, 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
+  }
+  const payload = { batchPublicId: 'cccccccc-cccc-cccc-cccc-cccccccccccc', files: [] };
+  for (const [url, req, status] of [
+    [path + '/04', { method: 'POST', headers: { ...headers, origin: 'https://foreign.example' }, body: JSON.stringify(payload) }, 403],
+    [path + '/04', { method: 'POST', headers: { ...headers, 'content-type': 'text/plain' }, body: JSON.stringify(payload) }, 415],
+    [path + '/04', { method: 'POST', headers, body: JSON.stringify({ ...payload, workspaceId: '999' }) }, 400],
+    [path + '/04', { method: 'POST', headers, body: 'null' }, 400],
+    [path + '/04', { method: 'POST', headers, body: '{' }, 400],
+    [path + '/04', { headers }, 404],
+    [path + '/05', { method: 'POST', headers, body: JSON.stringify(payload) }, 404],
+  ]) assert.equal((await fetch(base + url, req)).status, status);
+  assert.equal(calls.length, 3);
 });

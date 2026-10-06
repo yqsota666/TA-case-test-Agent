@@ -9,6 +9,8 @@ import { createPersistedDiscussionService, createSophnetCompletion,
 import { createCaseHttpServer } from './http.js';
 import { createConfirmPlanWithData } from './confirm-plan-data.js';
 import { createApplicationPreparationService } from './prepare-applications.js';
+import { createReturnParsingRepository } from '../../platform-store/src/return-parsing.js';
+import { createReturnParsingService } from './return-parsing.js';
 
 const allowedOrigin = process.env.CASE_PUBLIC_ORIGIN;
 if (!allowedOrigin) throw new Error('CASE_PUBLIC_ORIGIN is required');
@@ -29,6 +31,7 @@ const transaction = async action => {
   } finally { connection.release(); }
 };
 const repository = createCaseRepository({ transaction });
+const returnParsing = createReturnParsingService({ repository: createReturnParsingRepository({ transaction }) });
 const exchangeRepository = createExchangeRepository({ transaction });
 const preparations = createApplicationPreparationRepository({ transaction });
 const discussionService = createPersistedDiscussionService({ repository,
@@ -92,5 +95,5 @@ const confirmData = async ({ token, chatPublicId, casePublicId, revision }) => {
   }
 };
 const server = createCaseHttpServer({ repository, discussionService, confirmPlan,
-  executeData, reviseData, exchangeRepository, applicationPreparation, confirmData, allowedOrigin });
+  executeData, reviseData, exchangeRepository, applicationPreparation, confirmData, returnParsing, allowedOrigin });
 server.listen(Number(process.env.CASE_API_PORT ?? 3100), '127.0.0.1');

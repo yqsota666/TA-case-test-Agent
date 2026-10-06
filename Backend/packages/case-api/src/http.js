@@ -7,6 +7,7 @@ const applicationPath = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\
 const bindingPath = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/ta-bindings$/i;
 const batchPath = /^\/api\/chats\/([0-9a-f-]{36})\/batches(?:\/([0-9a-f-]{36})\/generate)?$/i;
 const filesPath = /^\/api\/chats\/([0-9a-f-]{36})\/files(?:\/([1-9]\d*))?$/i;
+const parsingPath = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/return-parsing(?:\/(02|04))?$/i;
 
 function send(response, status, value) {
   response.writeHead(status, { 'content-type': 'application/json; charset=utf-8',
@@ -22,12 +23,12 @@ function cookieToken(header) {
   catch { return null; }
 }
 
-async function jsonBody(request) {
+async function jsonBody(request, limit = 256 * 1024) {
   const chunks = [];
   let bytes = 0;
   for await (const chunk of request) {
     bytes += chunk.length;
-    if (bytes > 256 * 1024) {
+    if (bytes > limit) {
       const error = new Error('请求内容过长');
       error.code = 'REQUEST_TOO_LARGE'; error.status = 413;
       throw error;
@@ -43,7 +44,7 @@ async function jsonBody(request) {
 }
 
 export function createCaseHttpHandler({ repository, discussionService, confirmPlan, executeData,
-  reviseData, exchangeRepository, applicationPreparation, confirmData, allowedOrigin }) {
+  reviseData, exchangeRepository, applicationPreparation, confirmData, returnParsing, allowedOrigin }) {
   if (!repository || !discussionService || !confirmPlan || !executeData || !reviseData || !allowedOrigin) {
     throw new TypeError('API dependencies required');
   }
@@ -55,6 +56,9 @@ export function createCaseHttpHandler({ repository, discussionService, confirmPl
     const bindings = bindingPath.exec(pathname);
     const batch = batchPath.exec(pathname);
     const files = filesPath.exec(pathname);
+    const parsing = parsingPath.exec(pathname);
+    const parsingRoute = Boolean(returnParsing && parsing &&
+      ((!parsing[3] && request.method === 'GET') || (parsing[3] && request.method === 'POST')));
     const channels = pathname === '/api/exchange/channels';
     const exchangeRoute = Boolean(exchangeRepository &&
       ((channels && request.method === 'GET') ||
@@ -62,7 +66,7 @@ export function createCaseHttpHandler({ repository, discussionService, confirmPl
         (application && ['GET', 'POST'].includes(request.method)) ||
         (batch && request.method === 'POST') ||
         (files && request.method === 'GET')));
-    if (!catalog && !exchangeRoute && (!match || !['GET', 'POST', 'PATCH'].includes(request.method) ||
+    if (!catalog && !exchangeRoute && !parsingRoute && (!match || !['GET', 'POST', 'PATCH'].includes(request.method) ||
         (request.method === 'PATCH' && match?.[3] !== 'data') ||
         (['plan/confirm', 'data/execute', 'data/confirm'].includes(match?.[3]) && request.method !== 'POST') ||
         (match?.[3] === 'data/review' && !['GET', 'POST'].includes(request.method)) ||
@@ -72,6 +76,23 @@ export function createCaseHttpHandler({ repository, discussionService, confirmPl
     try {
       const token = cookieToken(request.headers.cookie);
       if (!token) { send(response, 401, { error: 'UNAUTHENTICATED' }); return; }
+      if (parsingRoute) {
+        const scope = { chatPublicId: parsing[1], casePublicId: parsing[2] };
+        if (request.method === 'GET') {
+          send(response, 200, await returnParsing.read(token, scope)); return;
+        }
+        if (request.headers.origin !== allowedOrigin) { send(response, 403, { error: 'INVALID_ORIGIN' }); return; }
+        if (!/^application\/json(?:\s*;|$)/i.test(request.headers['content-type'] ?? '')) {
+          send(response, 415, { error: 'UNSUPPORTED_MEDIA_TYPE' }); return;
+        }
+        const body = await jsonBody(request, 12 * 1024 * 1024);
+        if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).length !== 2 ||
+            !Object.hasOwn(body, 'batchPublicId') || !Object.hasOwn(body, 'files') || !Array.isArray(body.files)) {
+          send(response, 400, { error: 'INVALID_INPUT' }); return;
+        }
+        send(response, 200, await returnParsing.parse(token, { ...scope, batchPublicId: body.batchPublicId,
+          files: body.files, expectedType: parsing[3] })); return;
+      }
       if (exchangeRoute && channels) {
         send(response, 200, await exchangeRepository.listChannels(token)); return;
       }
