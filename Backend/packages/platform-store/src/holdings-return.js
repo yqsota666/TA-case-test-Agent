@@ -123,7 +123,7 @@ export function createHoldingsReturnRepository({ transaction }) {
           const sameDate=holding?.snapshot_date===row.date;
           if(sameDate && (holding.snapshot_total!==row.total || holding.snapshot_available!==row.available || holding.snapshot_frozen!==row.frozen))reject('HOLDING_SNAPSHOT_CONFLICT','同日05账户余额不同，需要单独更正；整包未同步');
           const [[later]]=await db.execute(`SELECT COALESCE(SUM(confirmed_volume),0) AS volume,COUNT(*) AS n FROM sales_confirmed_transactions
-            WHERE workspace_id=? AND channel_id=? AND account_id=? AND fund_code=? AND share_class=? AND confirmation_date>STR_TO_DATE(?,'%Y%m%d')`,[...hk,row.date]);
+            WHERE workspace_id=? AND channel_id=? AND account_id=? AND fund_code=? AND share_class=? AND confirmation_date>STR_TO_DATE(?,'%Y%m%d') FOR UPDATE`,[...hk,row.date]);
           const total=volumeText(volumeUnits(row.total)+volumeUnits(String(later.volume)));
           if(!sameDate)await db.execute(`INSERT INTO sales_confirmed_holdings
             (workspace_id,channel_id,account_id,fund_code,share_class,total_volume,snapshot_date,snapshot_total,snapshot_available,snapshot_frozen,snapshot_parse_id,available_volume,frozen_volume)

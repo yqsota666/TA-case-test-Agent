@@ -1,3 +1,4 @@
+import {verifyHoldingsApplyRace} from './holdings-apply-race.js';
 import {verifyCaseResultReviews} from './case-result-reviews.js';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
@@ -73,7 +74,11 @@ export async function verifyHoldingsSync({db,transaction,token,workspaceId,chann
  const returnOptions={creator:'27',receiver:'306',date:'20261008',version:'22',fileType:'04',sequence:798};
  const futureParse=await createReturnParsingService({repository:createReturnParsingRepository({transaction})}).parse(token,{...future.scope,batchPublicId:futureBatch,expectedType:'04',exchangeStepId:'r04_1',files:[{
    fileName:dataFileName(returnOptions),base64:buildDataFile({...returnOptions,records:[{...returned04,...futureTrade,BusinessCode:'122',TransactionCfmDate:'20261008'}]}).toString('base64')}]});
- await confirmations.apply(token,{...future.scope,parseId:futureParse.parseId,recordIndexes:[0],exchangeStepId:'r04_1'});
+ if(process.env.CASE_DB_NAME?.startsWith('ta_case_agent_testholdingsrace')){
+  const racing05=await upload([record]);
+  await db.execute('UPDATE sales_confirmed_holdings SET snapshot_date=NULL,snapshot_total=NULL,snapshot_available=NULL,snapshot_frozen=NULL,snapshot_parse_id=NULL WHERE workspace_id=? AND fund_code=?',[workspaceId,trade.FundCode]);
+  await verifyHoldingsApplyRace({db,token,scope,parseId:racing05.result.parseId,channelId,confirmations,returnInput:{...future.scope,parseId:futureParse.parseId,recordIndexes:[0],exchangeStepId:'r04_1'}});
+ }else await confirmations.apply(token,{...future.scope,parseId:futureParse.parseId,recordIndexes:[0],exchangeStepId:'r04_1'});
  const advanced=await confirmations.salesData(token);
  assert.equal(advanced.holdings[0].totalVolume,'650.00');assert.equal(advanced.holdings[0].availableVolume,null);assert.equal(advanced.holdings[0].frozenVolume,null);
  const same=await upload([record]);
