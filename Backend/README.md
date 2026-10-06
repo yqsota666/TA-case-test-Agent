@@ -136,3 +136,6 @@ TotalVolOfDistributorInTA是余额，WholeFlag=0增量传输也按该账户基�
 新提案展示contract（V2.2准备数据、固定01/001与03/022申请字段、业务假设、结构化结果断言）。POST Case `/plan/confirm`必须提交 `{versionNumber,section:"DATA"}` 再 `{versionNumber,section:"EXPECTATIONS"}`，第二次确认才锁定并写草稿。GET Plan返回对应版本confirmations。执行重试使用保存数据；新严格Plan的草稿/申请业务字段冻结，修改需新Case；旧已锁定Plan保留兼容，旧待确认Plan需重新提案。
 
 错误包括PLAN_DATA_CONFIRMATION_REQUIRED、PLAN_CONTRACT_REQUIRED、PLAN_DATA_MISMATCH、PLAN_DATA_FROZEN、PLAN_PROTOCOL_UNSUPPORTED。结果核对消费已确认断言，证据缺失/多义要求核查；最终结论仍需人工确认。迁移018新增两处人工确认审计表。本地Frontend展示与测试，不纳入后端PR。
+
+严格Plan的金额/份额断言必须在该场景的expectedQuote原文中有同值数字，以BigInt的八位小数精度比较（100与100.00等价）。没有数字的初始条件不能推出最终可用/冻结余额；模型补充的无依据数值断言会阻止Plan确认，历史无效contract结果只能REVIEW。初始条件只列业务假设，用户明确要求但未提供数值的结果列missing待澄清；不能从实际结果反填期望。
+数字引用按完整十进制token提取，不能把1,000或1e3拆成1/0/3，字母标识中的数字不充当结果数值；Unicode负号保留负数含义。千位分隔与科学计数的结果须改成明确普通十进制再确认。词法相等并不证明数字属于哪个业务字段，字段/语义仍须用户审阅固定预期；系统不声称完成自由文本语义证明。
