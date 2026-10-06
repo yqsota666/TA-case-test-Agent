@@ -53,6 +53,20 @@ export async function verifyTerminalTaFailure({db,transaction,token,scope,channe
   await assert.rejects(capped.confirm(token,{...scope,reviewId:cappedReview.reviewId,verdict:'FAIL',reason:'截断REVIEW不能封存'}),{code:'RESULT_NOT_READY'});
   await db.query('ROLLBACK TO SAVEPOINT truncated_result_review');
  }
+ await db.query('SAVEPOINT legacy_binding_scope');
+ const legacyPlan=structuredClone(plan);delete legacyPlan.contract;legacyPlan.exchangePlan.steps.filter(s=>['03','04'].includes(s.fileType)).forEach(s=>s.required=false);
+ legacyPlan.scenarios[0].expected=`账号${snapshot.blockers[0].transactionAccountId}开户失败，日期20261006，通道${channelId}，返回码1001`;
+ await db.execute('UPDATE case_sop_versions SET plan_json=? WHERE workspace_id=? AND chat_id=? AND case_id=? AND version_number=1',[JSON.stringify(legacyPlan),...keys]);
+ const legacySnapshot=await results.snapshot(token,scope),opening=legacySnapshot.evidence.find(e=>e.source.fileType==='01');
+ const assertion=(field,value)=>({scenarioIndex:0,expectedQuote:legacyPlan.scenarios[0].expected,evidenceId:opening.id,field,operator:'eq',expectedValue:value});
+ const {compareCaseResults}=await import('../../../case-agent/src/case-result-graph.js');
+ const checks=[assertion('status','FAILED'),assertion('returnCode','1001')];
+ const legacyPass=compareCaseResults(legacySnapshot,{assertions:checks,uncertainties:[]});assert.equal(legacyPass.outcome,'PASS',JSON.stringify(legacyPass.issues));
+ const validLegacy=await results.save(token,scope,{snapshot:legacySnapshot,suggestion:legacyPass});assert.equal((await facts()).review.confirmable,true);
+ await db.execute('UPDATE case_result_reviews SET suggestion_json=? WHERE workspace_id=? AND chat_id=? AND case_id=? AND id=?',[JSON.stringify({...legacyPass,checks:[legacyPass.checks[0]]}),...keys,validLegacy.reviewId]);
+ assert.equal((await facts()).review.confirmable,false);assert.equal((await readNative()).stage,'EVALUATE_RESULT');
+ await assert.rejects(results.confirm(token,{...scope,reviewId:validLegacy.reviewId,verdict:'FAIL',reason:'旧建议遗漏返回码不得确认'}),{code:'RESULT_NOT_READY'});
+ await db.query('ROLLBACK TO SAVEPOINT legacy_binding_scope');
  for(const independent of [true,false]){
   await db.query('SAVEPOINT terminal_review_issue');
   const altered=structuredClone(plan);

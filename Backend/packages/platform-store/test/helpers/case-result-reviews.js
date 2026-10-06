@@ -19,6 +19,8 @@ export async function verifyCaseResultReviews({db,transaction,token,scope,worksp
  const repository=createCaseResultRepository({transaction:observedTransaction});const initial=await repository.snapshot(token,scope);
  assert.equal(initial.pending.length,0);assert.equal(initial.issues.length,0);
  const holding=initial.evidence.find(e=>e.values.fundCode==='000001' && e.values.totalVolume==='700.00');assert.ok(holding);
+ plan.scenarios[0].expected=`账号${holding.values.transactionAccountId}，基金代码000001，份额类别${holding.values.shareClass}，总份额700份`;
+ await db.execute('UPDATE case_sop_versions SET plan_json=? WHERE id=?',[JSON.stringify(plan),planRow.id]);
  // Missing source must never be silently accepted merely because remaining file hashes match.
  await db.query('SAVEPOINT missing_case_result_source');
  const [sourceFiles]=await db.execute('SELECT parse_id,file_name FROM case_holdings_return_files WHERE case_id=? LIMIT 1',[planRow.case_id]);
@@ -56,7 +58,7 @@ export async function verifyCaseResultReviews({db,transaction,token,scope,worksp
  assert.ok((await repository.snapshot(token,scope)).issues.some(message=>message.includes('原始TA文件包缺失')));
  assert.equal((await incompleteService.evaluate(token,scope)).suggestion.outcome,'REVIEW');
  await db.query('ROLLBACK TO SAVEPOINT source_package_cases');
- const complete=async()=>JSON.stringify({assertions:[{scenarioIndex:0,expectedQuote:'总份额700份',evidenceId:holding.id,field:'totalVolume',operator:'eq',expectedValue:'700'}],uncertainties:[]});
+ const complete=async()=>JSON.stringify({assertions:[{scenarioIndex:0,expectedQuote:plan.scenarios[0].expected,evidenceId:holding.id,field:'totalVolume',operator:'eq',expectedValue:'700'}],uncertainties:[]});
  const changing=createCaseResultService({repository,complete:async()=>{
   await db.execute(`UPDATE sales_confirmed_holdings SET total_volume='699.00' WHERE workspace_id=? AND account_id=? AND fund_code='000001'`,[workspaceId,holding.values.accountId]);
   return complete();
