@@ -56,6 +56,9 @@ test('MySQL: close preserves statuses, requires human verdicts, freezes old writ
   const retryInput={chatPublicId:normal.publicId,casePublicId:c.publicId,requestId:crypto.randomUUID(),reason:'修复后复测'};
   const retry=await life.retest(token,retryInput);assert.ok(retry.casePublicId);assert.equal(retry.chatPublicId,normal.publicId);
   assert.equal((await life.retest(token,retryInput)).duplicate,true);
+  const discussion=await repo.readCaseDiscussion(token,retry.chatPublicId,retry.casePublicId);
+  assert.equal(discussion.sourceContext.casePublicId,c.publicId);assert.equal(discussion.sourceContext.humanFailureReason,'人工失败');assert.equal(discussion.sourceContext.contextIsReadOnly,true);assert.equal(discussion.turns.length,0);
+  await assert.rejects(repo.readCaseDiscussion(token,fresh.chatPublicId,retry.casePublicId),{code:'CASE_NOT_FOUND'});
   const target=await life.read(token,{chatPublicId:retry.chatPublicId});assert.equal(target.cases[1].status,'DISCUSSING');assert.equal(target.cases[1].predecessorCasePublicId,c.publicId);assert.equal(target.links[0].sourceCasePublicId,c.publicId);
   assert.equal((await life.read(token,{chatPublicId:normal.publicId})).cases[0].status,'FAIL');
   await assert.rejects(life.retest(token,{...retryInput,requestId:crypto.randomUUID()}),{code:'RETEST_ALREADY_EXISTS'});

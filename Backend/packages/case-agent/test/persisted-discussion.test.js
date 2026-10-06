@@ -140,3 +140,13 @@ test('premature proposal is rejected before creating a pending turn', async () =
   await assert.rejects(service.propose({ ...scope, userInput: '现在生成 Plan' }), /至少需要两轮/);
   assert.equal(rounds.length, 0);
 });
+
+
+test('linked retest supplies read-only failure context to model without copying prior confirmations',async()=>{
+ const sourceContext={casePublicId:'source',status:'FAIL',originalPlan:{objective:'原目标'},humanFailureReason:'实际持仓不一致',evidence:[{id:'holding:1',values:{totalVolume:'90.00'}}],contextIsReadOnly:true};
+ const calls=[];let saved;
+ const repository={readCaseDiscussion:async()=>({revision:0,turns:[],pending:null,sourceContext}),beginCaseDiscussionTurn:async()=>({turnNumber:1}),finishCaseDiscussionTurn:async(...args)=>{saved=args.at(-1);return{revision:1};},finishCasePlanProposal:async()=>{},abandonCaseDiscussionTurn:async()=>{}};
+ const service=createPersistedDiscussionService({repository,complete:async request=>{calls.push(request);return firstReply;}});
+ await service.discuss({...scope,userInput:'先讨论修复后怎样重新测'});
+ assert.equal(calls.length,1);assert.match(calls[0].system,/实际持仓不一致/);assert.match(calls[0].system,/只读证据/);assert.match(calls[0].system,/不继承原Plan确认/);assert.equal(calls[0].user,'先讨论修复后怎样重新测');assert.equal(saved.turnNumber,1);
+});

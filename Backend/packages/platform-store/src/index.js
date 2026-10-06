@@ -1,3 +1,4 @@
+import {readPredecessorContext} from './predecessor-context.js';
 import { isDeepStrictEqual } from 'node:util';
 import { validPlanContract } from '../../platform-protocol/src/plan-contract.js';
 import crypto from 'node:crypto';
@@ -106,6 +107,8 @@ export function createCaseRepository({ transaction }) {
         WHERE workspace_id=? AND public_id=? FOR UPDATE`, [auth.workspace_id, chatPublicId]);
       if (!chat) throw storeError('CHAT_NOT_FOUND', 404, 'Chat 不存在');
       if (chat.status !== 'ACTIVE') throw storeError('CHAT_CLOSED', 409, 'Chat 已结束');
+      const [[batch]]=await db.execute('SELECT id FROM exchange_batches WHERE workspace_id=? AND chat_id=? LIMIT 1 FOR UPDATE',[auth.workspace_id,chat.id]);
+      if(batch?.id) throw storeError('CHAT_EXECUTION_STARTED',409,'Chat已建立发文批次；新增业务请另开Chat，失败后续请使用关联复测');
       const publicId = crypto.randomUUID();
       const [result] = await db.execute(`INSERT INTO cases
         (public_id,workspace_id,chat_id,title) VALUES (?,?,?,?)`,
@@ -293,7 +296,7 @@ export function createCaseRepository({ transaction }) {
       const [[chat]] = await db.execute(`SELECT id,status FROM case_chats
         WHERE workspace_id=? AND public_id=?`, [auth.workspace_id, chatPublicId]);
       if (!chat) throw storeError('CHAT_NOT_FOUND', 404, 'Chat 不存在');
-      const [[caseRow]] = await db.execute(`SELECT id,status FROM cases
+      const [[caseRow]] = await db.execute(`SELECT id,status,predecessor_case_id FROM cases
         WHERE workspace_id=? AND chat_id=? AND public_id=?`,
       [auth.workspace_id, chat.id, casePublicId]);
       if (!caseRow) throw storeError('CASE_NOT_FOUND', 404, 'Case 不存在');
@@ -315,7 +318,8 @@ export function createCaseRepository({ transaction }) {
           throw storeError('CORRUPT_HISTORY', 500, 'Case 讨论记录状态无效');
         }
       }
-      return { revision: rows.length, turns, pending };
+      const sourceContext=await readPredecessorContext(db,[auth.workspace_id,chat.id],caseRow.predecessor_case_id);
+      return { revision: rows.length, turns, pending,...(sourceContext?{sourceContext}:{}) };
     });
   }
 

@@ -265,5 +265,6 @@ test('MySQL: draft -> delivered 01 -> confirmed 02 -> delivered 03 -> confirmed 
     assert.equal((await confirmations.salesData(foreignToken)).accounts.length,0);
     await assert.rejects(confirmations.apply(foreignToken,{ ...first.scope,parseId:parsed02.parseId,recordIndexes:[0] }),{ code:'CASE_NOT_FOUND' });
     await assert.rejects(confirmations.delivery(foreignToken,{ ...first.scope,batchPublicId:batch01 }),{ code:'CASE_NOT_FOUND' });
+    await assert.rejects(repository.createCase(token,mixedOpening.scope.chatPublicId,'执行中不能普通追加'),{code:'CHAT_EXECUTION_STARTED'});
   } finally { await db.rollback(); await db.end(); }
 });
