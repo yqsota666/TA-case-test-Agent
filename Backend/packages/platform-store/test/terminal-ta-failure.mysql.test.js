@@ -1,0 +1,19 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
+import {spawnSync} from 'node:child_process';
+import mysql from 'mysql2/promise';
+import {applyMigrations,migrationConfig} from '../src/migrate.js';
+test('MySQL: applied same-account 02 failure diagnoses FAIL, preserves TA truth and permits linked retest',
+ {skip:process.env.CASE_CONFIRMATION_MYSQL!=='1',timeout:60000},async()=>{
+ const config=migrationConfig(),database='ta_case_agent_testterminalfailure'+crypto.randomBytes(8).toString('hex');
+ const root=await mysql.createConnection({...config,database:undefined});let db;
+ try{
+  await root.query(`CREATE DATABASE ${database}`);db=await mysql.createConnection({...config,database});await applyMigrations(db);
+  const {NODE_TEST_CONTEXT,...env}=process.env;
+  for(const bridge of [false,true]){
+  const result=spawnSync(process.execPath,['--test','--test-reporter=tap',new URL('./confirmed-sales.mysql.test.js',import.meta.url).pathname],{env:{...env,CASE_DB_NAME:database,CASE_TERMINAL_FAILURE:'1',CASE_TERMINAL_BRIDGE:bridge?'1':'0'},encoding:'utf8',timeout:45000});
+  assert.equal(result.status,0,result.stdout+result.stderr);assert.match(result.stdout,/# pass 1\b/);
+  }
+ }finally{if(db)await db.end();await root.query(`DROP DATABASE IF EXISTS ${database}`);await root.end();}
+});

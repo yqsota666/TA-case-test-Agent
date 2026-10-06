@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import {authenticateSession,storeError} from './index.js';
 import {exchangeOrderContext} from './exchange-order.js';
+import {terminalTaFailures} from './terminal-ta-failure.js';
 const json=v=>typeof v==='string'?JSON.parse(v):v;
 const canonical=v=>Array.isArray(v)?v.map(canonical):v&&typeof v==='object'?Object.fromEntries(Object.keys(v).sort().map(k=>[k,canonical(v[k])])):v;
 const digest=v=>crypto.createHash('sha256').update(JSON.stringify(canonical(v))).digest('hex');
@@ -59,9 +60,25 @@ export function createCaseResultRepository({transaction}){
    for(const h of holdings.slice(0,500))evidence.push({id:['holding',h.accountId,h.fundCode,h.shareClass].join(':'),source:{kind:'CURRENT_FORMAL_HOLDING',accountId:h.accountId,channelId:h.channelId,snapshotParseId:h.snapshotParseId},values:{...h,transactionAccountId:accounts.find(a=>a.id===h.accountId)?.transactionAccountId}});
   }
   if(!Array.isArray(plan.scenarios)||!plan.scenarios.length)issues.push('当前Plan没有可核验场景');
+  let preparedAccounts;
+  if(plan.contract){
+   const [draftAccounts]=await db.execute(`SELECT account_no AS transactionAccountId FROM case_generated_accounts
+    WHERE workspace_id=? AND chat_id=? AND case_id=? ORDER BY id LIMIT 101${lock}`,keys);
+   preparedAccounts=draftAccounts;
+   if(draftAccounts.length!==plan.contract.dataSpecification.accounts.length)issues.push('准备账户与已确认数据定义数量不一致');
+  }
+  let blockers=[],unresolvedFailures=[],terminalFailuresTruncated=false;
   try{
    const order=await exchangeOrderContext(db,keys,write);
-   for(const s of order.plan.steps.filter(s=>s.required)){
+   ({blockers,unresolvedFailures,truncated:terminalFailuresTruncated}=await terminalTaFailures(db,keys,{plan,order,preparedAccounts,write}));
+   if(terminalFailuresTruncated)issues.push('TA失败或关联申请超过500项，无法完整核验依赖映射，请缩小Case范围后重新核查');
+   if(unresolvedFailures.length)issues.push('TA失败与后续申请账户映射不唯一，需要人工澄清，不能推断Case通过或封存所有账户');
+   const blocked=new Set(blockers.flatMap(b=>b.blockedStepIds));
+   const blockedApps=new Set(blockers.flatMap(b=>b.blockedApplicationIds));
+   for(const app of apps.filter(a=>blockedApps.has(a.id))){
+    const index=pending.indexOf(`申请${app.id}尚未完成TA确认并同步`);if(index!==-1)pending.splice(index,1);
+   }
+   for(const s of order.plan.steps.filter(s=>s.required && !blocked.has(s.stepId))){
     if(!order.events.some(e=>e.stepId===s.stepId && e.condition===(s.direction==='SEND'?'SENT':'PARSED')))pending.push(`步骤${s.stepId}尚未完成`);
     if(s.fileType==='05'){
      const accepted=order.events.filter(e=>e.stepId===s.stepId && e.holdingsParseId);
@@ -81,14 +98,8 @@ export function createCaseResultRepository({transaction}){
   });
   if(incomplete(returnPackages,returnSources) || incomplete(parses,holdingSources))issues.push('原始TA文件包缺失或摘要不一致，需要补齐完整原文件');
   if(returnSources.length>2000 || holdingSources.length>2000)issues.push('原始证据文件超过处理上限');
-  let preparedAccounts;
-  if(plan.contract){
-   const [draftAccounts]=await db.execute(`SELECT account_no AS transactionAccountId FROM case_generated_accounts
-    WHERE workspace_id=? AND chat_id=? AND case_id=? ORDER BY id LIMIT 101${lock}`,keys);
-   preparedAccounts=draftAccounts;
-   if(draftAccounts.length!==plan.contract.dataSpecification.accounts.length)issues.push('准备账户与已确认数据定义数量不一致');
-  }
-  const snapshot={...(preparedAccounts?{preparedAccounts}:{}),sources:{returns:returnSources,holdings:holdingSources},planVersion:planRow.version_number,plan,evidence,pending:[...new Set(pending)],issues};
+  for(const blocker of blockers)evidence.push({id:'dependency-failure:'+blocker.applicationId+':'+blocker.failedStepId,source:{kind:'TA_DEPENDENCY_FAILURE',...blocker},values:{status:'FAILED'}});
+  const snapshot={...(terminalFailuresTruncated?{terminalFailuresTruncated:true}:{}),...(unresolvedFailures.length?{unresolvedFailures}:{}),...(blockers.length?{blockers}:{}),...(preparedAccounts?{preparedAccounts}:{}),sources:{returns:returnSources,holdings:holdingSources},planVersion:planRow.version_number,plan,evidence,pending:[...new Set(pending)],issues};
   return {...snapshot,sha256:digest(snapshot)};
  }
  async function snapshot(token,input){return transaction(async db=>{const {keys,owner}=await context(db,token,input);if(owner.chat_status!=='ACTIVE'||['PASS','FAIL'].includes(owner.case_status))throw storeError('CASE_NOT_WRITABLE',409,'Chat或Case已结束');return collect(db,keys);});}
@@ -114,11 +125,12 @@ export function createCaseResultRepository({transaction}){
    if(!row)throw storeError('REVIEW_NOT_FOUND',404,'判断记录不存在');
    if(row.final_verdict){if(row.final_verdict!==input.verdict)throw storeError('VERDICT_CONFLICT',409,'最终结论已保存，不能覆盖');return {finalVerdict:row.final_verdict,duplicate:true};}
    if(owner.chat_status!=='ACTIVE'||['PASS','FAIL'].includes(owner.case_status))throw storeError('CASE_NOT_WRITABLE',409,'Chat或Case已结束');
-   const [[latest]]=await db.execute('SELECT CAST(id AS CHAR) AS id FROM case_result_reviews WHERE workspace_id=? AND chat_id=? AND case_id=? ORDER BY id DESC LIMIT 1 FOR UPDATE',keys);
+   const [[latest]]=await db.execute('SELECT CAST(id AS CHAR) AS id FROM case_result_reviews WHERE workspace_id=? AND chat_id=? AND case_id=? ORDER BY case_result_reviews.id DESC LIMIT 1 FOR UPDATE',keys);
    if(latest.id!==String(input.reviewId))throw storeError('REVIEW_SUPERSEDED',409,'请确认最新判断版本');
    await db.execute('SELECT id FROM exchange_channels WHERE workspace_id=? ORDER BY id FOR UPDATE',[keys[0]]);
    const current=await collect(db,keys,true);
    if(current.sha256!==row.evidence_sha256)throw storeError('CASE_RESULT_CHANGED',409,'证据或Plan已变化，请重新判断');
+   if(current.blockers?.length && input.verdict!=='FAIL')throw storeError('TERMINAL_TA_FAILURE_REQUIRES_FAIL',409,'必需步骤已被TA业务失败阻断，只能人工确认失败后关联新Case');
    const suggestion=json(row.suggestion_json);
    if(['WAITING','REVIEW'].includes(suggestion.outcome))throw storeError('RESULT_NOT_READY',409,'请先补齐结果或澄清预期，不能直接封存');
    await db.execute(`UPDATE case_result_reviews SET final_verdict=?,confirmation_reason=?,confirmed_by_user_id=?,confirmed_at=CURRENT_TIMESTAMP(3) WHERE workspace_id=? AND chat_id=? AND case_id=? AND id=?`,[input.verdict,input.reason.trim(),auth.user_id,...keys,input.reviewId]);

@@ -10,15 +10,19 @@ export function workflowPosition(facts) {
   if (!facts.draftConfirmed) return {stage:'CONFIRM_DRAFT',waiting:['DATA_CONFIRM']};
   if (!facts.order) return {stage:'DEFINE_EXCHANGE_ORDER',waiting:['EXCHANGE_PLAN_CONFIRM']};
   const completed = (id,condition) => facts.order.events.some(e=>e.stepId===id && e.condition===condition);
-  const outstanding = facts.order.plan.steps.filter(s=>!(s.direction==='SEND'?completed(s.stepId,'SENT'):(completed(s.stepId,'CONFIRMED') || completed(s.stepId,'APPLIED'))));
+  const blocked=new Set((facts.order.blockers??[]).flatMap(b=>b.blockedStepIds));
+  const outstanding = facts.order.plan.steps.filter(s=>!blocked.has(s.stepId) && !(s.direction==='SEND'?completed(s.stepId,'SENT'):(completed(s.stepId,'CONFIRMED') || completed(s.stepId,'APPLIED'))));
   if (outstanding.some(s=>s.required!==false)) {
     const waiting = outstanding.filter(s=>s.dependsOn.every(d=>completed(d.stepId,d.condition))).map(s=>({stepId:s.stepId,fileType:s.fileType,
       action:s.direction==='SEND'?'GENERATE_AND_DELIVER':completed(s.stepId,'PARSED')?'APPLY_RETURN':'UPLOAD_AND_PARSE'}));
+    const necessary=new Set(facts.order.plan.steps.filter(s=>s.required!==false).map(s=>s.stepId));
+    let changed=true;while(changed){changed=false;for(const s of facts.order.plan.steps.filter(s=>necessary.has(s.stepId)))for(const d of s.dependsOn)if(!necessary.has(d.stepId)){necessary.add(d.stepId);changed=true;}}
+    if(facts.order.reviewRequired && !waiting.some(s=>necessary.has(s.stepId)))return {stage:'EVALUATE_RESULT',waiting:['RESULT_EVALUATE'],reviewIssues:facts.order.reviewIssues,optionalActions:waiting};
     return {stage:'FILE_EXCHANGE',waiting};
   }
   const optionalActions=outstanding.filter(s=>s.required===false && s.dependsOn.every(d=>completed(d.stepId,d.condition))).map(s=>({stepId:s.stepId,fileType:s.fileType,action:s.direction==='SEND'?'GENERATE_AND_DELIVER':completed(s.stepId,'PARSED')?'APPLY_RETURN':'UPLOAD_AND_PARSE'}));
   const confirmable=facts.review?.confirmable===true;
-  return {stage:confirmable ? 'CONFIRM_RESULT':'EVALUATE_RESULT',waiting:[confirmable?'RESULT_CONFIRM':'RESULT_EVALUATE'],optionalActions};
+  return {stage:confirmable ? 'CONFIRM_RESULT':'EVALUATE_RESULT',waiting:[confirmable?'RESULT_CONFIRM':'RESULT_EVALUATE'],optionalActions,...(facts.order.blockers?.length?{blockers:facts.order.blockers}:{})};
 }
 
 // The graph observes committed business facts. Replayed interrupt nodes cannot

@@ -16,6 +16,7 @@ import { verifyExchangeOrderRace } from './helpers/exchange-order-race.js';
 import { verifyAccountSelectionRace } from './helpers/account-selection-race.js';
 import { buildDataFile, dataFileName } from '../../platform-protocol/src/index.js';
 
+import {verifyTerminalTaFailure} from './helpers/terminal-ta-failure.js';
 import {verifyUnifiedReceipts} from './helpers/unified-receipts.js';
 import {verifyHoldingsSync} from './helpers/holdings-sync.js';
 
@@ -154,11 +155,14 @@ test('MySQL: draft -> delivered 01 -> confirmed 02 -> delivered 03 -> confirmed 
     const failed02 = await parse(second.scope,failedBatch,'02',[{ ...failedOpening,BusinessCode:'101',ReturnCode:'1001',TransactionCfmDate:'20261007' }],904);
     await confirmations.delivery(token,{ ...second.scope,batchPublicId:failedBatch,exchangeStepId:stepIds.get(failedBatch) });
     await parse(second.scope,failedBatch,'02',[{ ...failedOpening,BusinessCode:'101',ReturnCode:'1001',TransactionCfmDate:'20261007' }],904);
-    const failed = await confirmations.apply(token,{ ...second.scope,parseId:failed02.parseId,recordIndexes:[0] });
+    const applyFailure=()=>confirmations.apply(token,{ ...second.scope,parseId:failed02.parseId,recordIndexes:[0] });
+    const failed = process.env.CASE_TERMINAL_FAILURE==='1'
+      ? await verifyTerminalTaFailure({db,transaction,token,scope:second.scope,channelId,parseId:failed02.parseId,applyFailure,confirmations,exchange})
+      : await applyFailure();
     assert.equal(failed.results[0].outcome,'FAILED');
     assert.deepEqual(await confirmations.salesData(token),sales);
     assert.equal((await exchange.listCaseBindings(token,second.scope)).bindings.length,0);
-    await assert.rejects(confirmations.apply(token,{ ...second.scope,parseId:parsed04.parseId,recordIndexes:[0] }),{ code:'PARSE_NOT_FOUND' });
+    await assert.rejects(confirmations.apply(token,{ ...second.scope,parseId:parsed04.parseId,recordIndexes:[0] }),{ code:process.env.CASE_TERMINAL_FAILURE==='1'?'CASE_NOT_WRITABLE':'PARSE_NOT_FOUND' });
     const reuse = await createCase(false);
     await confirmations.selectAccount(token,{ ...reuse.scope,accountPublicId:sales.accounts[0].publicId });
     const reuseData = await confirmations.applicationData(token,reuse.scope,reuse.data);

@@ -5,7 +5,15 @@ import { z } from 'zod';
 const Assertion=z.object({scenarioIndex:z.number().int().nonnegative(),expectedQuote:z.string().min(1).max(1000),
  evidenceId:z.string().max(100),field:z.string().max(60),operator:z.enum(['eq','gte','lte']),expectedValue:z.string().min(1).max(100)}).strict();
 const Proposal=z.object({assertions:z.array(Assertion).max(300),uncertainties:z.array(z.string().max(500)).max(100)}).strict();
+export function terminalFailureSuggestion(snapshot) {
+ if(snapshot.terminalFailuresTruncated)return {outcome:'REVIEW',checks:[],issues:snapshot.issues,pending:snapshot.pending,explanation:'TA失败或关联申请超出本次完整处理上限，不使用部分映射判断通过或失败；请缩小Case范围后核查。'};
+ if(snapshot.unresolvedFailures?.length)return {outcome:'REVIEW',checks:[],issues:snapshot.issues,pending:snapshot.pending,unresolvedFailures:snapshot.unresolvedFailures,explanation:'TA失败账户与必需后续申请不能唯一关联，请澄清映射；未推断其他账户失败。'};
+ if(!snapshot.blockers?.length || snapshot.pending.length || snapshot.issues.length)return null;
+ return {outcome:'FAIL',checks:[],issues:[],pending:[],blockers:snapshot.blockers,
+  explanation:'已应用的TA业务失败使本Case的必需后续步骤无法执行；没有生成未来文件或修改正式数据。请核对阻断证据，人工确认失败后关联新Case重新规划。'};
+}
 export function compareCaseResults(snapshot,proposal){
+ const terminal=terminalFailureSuggestion(snapshot);if(terminal)return terminal;
  const checks=[],issues=[...proposal.uncertainties];
  for(const a of proposal.assertions){
   const scenario=(snapshot.plan.scenarios??[])[a.scenarioIndex],evidence=snapshot.evidence.find(e=>e.id===a.evidenceId);
@@ -32,11 +40,31 @@ export function compareCaseResults(snapshot,proposal){
  return {outcome,checks,issues,pending:snapshot.pending,
   explanation:outcome==='WAITING'?'必需回传或同步尚未完成。':outcome==='REVIEW'?'预期或证据不足，请澄清后重新判断。':outcome==='FAIL'?'实际结果与引用的Plan预期存在差异。':'所有已提取断言一致，请人工核对断言是否覆盖完整预期后确认。'};
 }
+function unavailableBecauseBlocked(snapshot,assertion,account) {
+ const c=snapshot.plan.contract,selector=assertion.selector,steps=snapshot.plan.exchangePlan.steps;
+ const accountFor=application=>application.transactionAccountId??snapshot.preparedAccounts?.[application.accountIndex]?.transactionAccountId;
+ return (snapshot.blockers??[]).some(b=>{
+  if(b.transactionAccountId!==account || (selector.channelId!==null && selector.channelId!==String(b.channelId)))return false;
+  const source=steps.find(s=>s.stepId===b.failedStepId);
+  if(assertion.source==='FORMAL_ACCOUNT'){
+   const openings=c.applications.filter(a=>a.businessCode==='001' && accountFor(a)===account);
+   return source?.fileType==='02' && openings.length===1 && steps.find(s=>s.stepId===openings[0].stepId)?.roundId===source.roundId;
+  }
+  const matched=c.applications.filter(application=>{
+   const step=steps.find(s=>s.stepId===application.stepId),fund=c.dataSpecification.funds[application.fundIndex];
+   return step?.fileType==='03' && accountFor(application)===account &&
+    (selector.fundCode===null || selector.fundCode===fund?.fundCode) && (selector.shareClass===null || selector.shareClass===fund?.shareClass) &&
+    (assertion.source==='CURRENT_FORMAL_HOLDING' || (assertion.source==='APPLICATION_CONFIRMATION' && selector.fileType==='03' && selector.businessDate===step.businessTime.value));
+  });
+  return (assertion.source==='CURRENT_FORMAL_HOLDING'?matched.length>0:matched.length===1) && matched.every(application=>b.blockedStepIds.includes(application.stepId));
+ });
+}
 export function compareConfirmedExpectations(snapshot) {
  const c=snapshot.plan.contract,checks=[],issues=[...snapshot.issues];
  if(!validPlanContract(c,snapshot.plan) || c.missing.length || c.dataSpecification.missing.length) {
   return {outcome:'REVIEW',checks,issues:['已确认Plan的结构化预期无效'],pending:snapshot.pending,explanation:'请核查Plan结构。'};
  }
+ const terminal=terminalFailureSuggestion(snapshot),unavailable=[];
  for(const a of c.expectations) {
   const selector=a.selector;
   const account=selector.transactionAccountId ?? snapshot.preparedAccounts?.[selector.accountIndex]?.transactionAccountId;
@@ -47,7 +75,11 @@ export function compareConfirmedExpectations(snapshot) {
    (selector.shareClass===null || e.values.shareClass===selector.shareClass) &&
    (selector.fileType===null || e.source.fileType===selector.fileType) &&
    (selector.businessDate===null || e.source.businessDate===selector.businessDate));
-  if(candidates.length!==1){issues.push(`场景${a.scenarioIndex+1}的${a.field}证据${candidates.length?'不唯一':'缺失'}，不能猜选`);continue;}
+  if(candidates.length!==1){
+   const message=`场景${a.scenarioIndex+1}的${a.field}证据${candidates.length?'不唯一':'缺失'}，不能猜选`;
+   if(!candidates.length && terminal?.outcome==='FAIL' && unavailableBecauseBlocked(snapshot,a,account))unavailable.push(message);else issues.push(message);
+   continue;
+  }
   const e=candidates[0],actualValue=e.values[a.field];
   const numerical=['confirmedAmount','confirmedVolume','totalVolume','availableVolume','frozenVolume'].includes(a.field);
   const expected=numerical?numeric(a.expectedValue):null,actual=numerical?numeric(actualValue):null;
@@ -55,6 +87,7 @@ export function compareConfirmedExpectations(snapshot) {
   const matched=numerical?(a.operator==='eq'?actual===expected:a.operator==='gte'?actual>=expected:actual<=expected):String(actualValue)===a.expectedValue;
   checks.push({...a,evidenceId:e.id,actualValue,matched,source:e.source});
  }
+ if(terminal)return {...terminal,...(terminal.outcome==='FAIL' && issues.length?{outcome:'REVIEW',issues,explanation:'独立预期证据缺失、不唯一或不可比较，请核查；不能仅依据另一分支的TA失败封存。'}:{}),checks,...(unavailable.length?{unavailableExpectations:unavailable}:{})};
  const outcome=snapshot.pending.length?'WAITING':issues.length?'REVIEW':checks.some(c=>!c.matched)?'FAIL':'PASS';
  return {outcome,checks,issues,pending:snapshot.pending,explanation:outcome==='PASS'?'已确认的结构化预期逐项一致，等待人工确认。':outcome==='FAIL'?'实际数据与已确认预期不符。':outcome==='WAITING'?'必需回传或同步尚未完成。':'证据缺失或不唯一，请核查。'};
 }
@@ -62,7 +95,7 @@ export function createCaseResultGraph({collect,complete}){
  const graph=new StateGraph(new StateSchema({snapshot:z.unknown().nullable().default(null),proposal:z.unknown().nullable().default(null),suggestion:z.unknown().nullable().default(null),phase:z.string().default('COLLECTING')}));
  graph.addNode('collect_case_results',async()=>({snapshot:await collect()}));
  graph.addNode('compare_case_expectations',async({snapshot})=>{
-  if(snapshot.plan.contract)return {proposal:null};
+  if(snapshot.plan.contract || terminalFailureSuggestion(snapshot))return {proposal:null};
   if(snapshot.pending.length || snapshot.issues.length)return {proposal:{assertions:[],uncertainties:snapshot.issues}};
   const input=JSON.stringify({plan:snapshot.plan,evidence:snapshot.evidence});
   if(Buffer.byteLength(input,'utf8')>128*1024)return {proposal:{assertions:[],uncertainties:['Plan或证据超过本次模型输入上限，请缩小Case范围']}};

@@ -19,7 +19,7 @@ export async function workflowFacts(db,{owner,keys},token,input) {
  const [[section]]=await db.execute(`SELECT COUNT(*) AS n FROM case_plan_section_confirmations WHERE workspace_id=? AND chat_id=? AND case_id=? AND version_number=? AND section='DATA'`,[...keys,plan?.version??0]);
  const [[draft]]=await db.execute(`SELECT EXISTS(SELECT 1 FROM case_data_executions WHERE workspace_id=? AND chat_id=? AND case_id=?) AS hasDraft,
  EXISTS(SELECT 1 FROM case_data_confirmations WHERE workspace_id=? AND chat_id=? AND case_id=?) AS confirmed`,[...keys,...keys]);
- const [[review]]=await db.execute(`SELECT CAST(id AS CHAR) AS id,evidence_sha256,plan_version,suggestion_json FROM case_result_reviews WHERE workspace_id=? AND chat_id=? AND case_id=? ORDER BY id DESC LIMIT 1`,keys);
+ const [[review]]=await db.execute(`SELECT CAST(id AS CHAR) AS id,evidence_sha256,plan_version,suggestion_json FROM case_result_reviews WHERE workspace_id=? AND chat_id=? AND case_id=? ORDER BY case_result_reviews.id DESC LIMIT 1`,keys);
  let order=null;
  if(plan?.status==='LOCKED')try {order=await exchangeOrderContext(db,keys,false);} catch(e) {if(e.code!=='EXCHANGE_PLAN_REQUIRED')throw e;}
  if(order) {
@@ -36,12 +36,18 @@ export async function workflowFacts(db,{owner,keys},token,input) {
 
  }
 
+ let resultSnapshot=null;
+ if(order && owner.chat_status==='ACTIVE' && !['PASS','FAIL'].includes(owner.case_status)) {
+  resultSnapshot=await createCaseResultRepository({transaction:action=>action(db)}).snapshot(token,input);
+  order.blockers=resultSnapshot.blockers??[];
+  if(resultSnapshot.unresolvedFailures?.length || resultSnapshot.terminalFailuresTruncated){order.reviewRequired=true;order.reviewIssues=resultSnapshot.issues;}
+ }
  let latestReview=null;
  if(review) {
   latestReview={id:review.id,confirmable:false};
   const suggestion=json(review.suggestion_json);
   if(['PASS','FAIL'].includes(suggestion?.outcome) && owner.chat_status==='ACTIVE' && !['PASS','FAIL'].includes(owner.case_status) && plan?.status==='LOCKED' && Number(review.plan_version)===Number(plan.version)) {
-   const current=await createCaseResultRepository({transaction:action=>action(db)}).snapshot(token,input);
+   const current=resultSnapshot??await createCaseResultRepository({transaction:action=>action(db)}).snapshot(token,input);
    latestReview.confirmable=current.sha256===review.evidence_sha256 && !current.pending.length && !current.issues.length;
    latestReview.currentEvidenceHash=current.sha256;
   }
