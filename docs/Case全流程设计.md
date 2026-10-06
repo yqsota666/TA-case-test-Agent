@@ -198,7 +198,8 @@ Plan固定字段为 `objective`、`preconditions`、`scenarios`、`openQuestions
 - dataSpecification包含customers、accounts、funds、holdings、missing：沿用草稿字段与索引规则；新增账户由系统分配交易账号，不能假装已经成功开户。正式状态仍只在TA回传成功且用户确认应用后改变。
 - applications逐项固定key、SEND stepId、businessCode、accountIndex或已有transactionAccountId、fundIndex与协议fields；当前固定开户001和申购022。金额、基金、证件及申请时间在确认前展示；日期来自明确DATE步骤。相对发文日期、关键字段缺失或不支持的业务必须先澄清。新账户03必须依赖该账户01对应的02成功CONFIRMED，已有正式账户允许直接03。
 - assumptions明确业务假设。净值、费用、舍入、初始状态或确认规则不明确时不得从申请金额猜TA确认结果，列入missing。
-- expectations包含scenarioIndex、expectedQuote、source、selector、field、operator、expectedValue。数值expectedValue必须在同项expectedQuote中有精确的数值字面依据，不能只因值出现在准备数据或申请金额中就作为预期；引用还须对应原场景expected。未明确要求的可用/冻结余额不能凭申请金额、净值或初始条件推导，缺目标须澄清，不仅依赖人工最后发现。source限申请确认、正式账户、当前正式持仓；selector精确指定新准备账户索引或已有交易账号，可指定通道；持仓必须指定基金与类别，申请确认必须指定文件类型与业务日期。operator支持eq/gte/lte；非数值仅eq。每个场景至少有一项断言，仍需人工检查语义是否完整覆盖，代码不宣称能证明自然语言完整性。
+- expectations包含scenarioIndex、expectedQuote、source、selector、field、operator、expectedValue。source限申请确认、正式账户、当前正式持仓；selector精确指定新准备账户索引或已有交易账号，可指定通道；持仓必须指定基金与类别，申请确认必须指定文件类型与业务日期。operator支持eq/gte/lte；非数值仅eq。用户已确定TA业务成功/失败时，基础提案把预期规范表达为状态为CONFIRMED（成功确认）/FAILED（业务失败），只规范表达、不猜测业务结果、不把Case结论替代TA状态；未知结果仍追问。基础提案解析仅在尚无contract时把独立短句“开户/申购成功/失败”确定性规范成相应申请状态供用户审阅，否定、疑问、复合含混句保持原文并追问；现有contract与锁定版本不改。formatter仅提取Plan已有明确状态，不重写原文。数值expectedValue必须在expectedQuote中明确对应本字段；场景/基金编号以及其他余额数值不构成依据，缺少明确对应时拒绝formatter输出。每个场景至少有一项断言，且显式识别的数量字段/值/比较方向必须逐项覆盖；缺项时只能记录missing进入澄清，不能以READY锁定。仍需人工检查其他语义是否完整覆盖，代码不宣称能证明自然语言完整性。 数值必须是本字段在同项expectedQuote内的完整字面值，不能从申请金额或初始条件推导未知可用/冻结；没有明确目标须澄清，不能只靠最后人工发现。非数值expectedValue同样须在引用中完整对应本字段，疑问、二选一、否定、未支持倍率/算式均不能当作确定预期。
+
 - missing是预期或申请中的待澄清条件。准备数据缺条件不能确认DATA；全部待澄清项、文件时序和场景问题清空后才能确认EXPECTATIONS。
 
 `POST .../plan/confirm`请求必须为 `{versionNumber,section:"DATA"或"EXPECTATIONS"}`。DATA同事务核验最新版并保存actor/时间，保持SOP_PENDING且不写草稿。EXPECTATIONS要求同版本已有DATA确认，再保存第二次确认并锁定。`case_plan_section_confirmations`以Workspace/Chat/Case/版本/section为主键，重复DATA幂等；新版不继承旧版确认，旧版确认保留审计。GET Plan返回本版本confirmations。
@@ -231,9 +232,9 @@ Plan固定字段为 `objective`、`preconditions`、`scenarios`、`openQuestions
 
 该结果判断PR最初只读取已同步数据并给出建议，不修改销售数据。后续本地Plan补丁已扩展为直接消费已确认contract，详见上文。LangGraph为 collect_case_results → compare_case_expectations → explain_case_result → wait_case_result_confirmation。收集当前锁定Plan、当前Case申请/TA确认、05接收/同步状态，以及该Case引用的正式账户和当前持仓；不把整个Workspace数据交给模型。证据带稳定id、原始申请/解析来源，并保存不可变快照与摘要。
 
-模型将scenario.expected原文解释为带原文引用、证据id、字段、比较运算符和预期字面值的断言。后端验证引用与值来源，再精确比较数值；模型不直接决定PASS/FAIL。每个场景必须有可核验断言，无法完整覆盖或语义模糊必须REVIEW。必需步骤、已生成申请或必需05同步未完成为WAITING；未接收的可选05不阻挡，但预期要求的证据缺失仍为REVIEW；有具体差异是FAIL；全部断言一致仅为PASS建议，人工仍须核对断言是否完整覆盖自然语言预期。旧自由文本Plan无法自动证明完整语义；新严格contract固定断言和值，仍需人工核对是否覆盖业务意图。
+旧自由文本Plan由模型将scenario.expected原文解释为带原文引用、证据id、字段、比较运算符和预期字面值的断言；新严格Plan直接消费已确认contract的固定断言，不再让模型重新猜测。后端验证引用与值来源：数值、非数值字面值和运算符必须完整绑定本字段，不能借用其他余额、状态、编号或字段；完整场景原文参与否定、疑问、二选一及未支持倍率/算式校验。非法数值不能退回字符串比较，该保守语法仍不构成完整自然语言语义证明。后端精确比较数值，模型不直接决定PASS/FAIL。每个场景必须有可核验断言，无法完整覆盖或语义模糊必须REVIEW。必需步骤、已生成申请或必需05同步未完成为WAITING；未接收的可选05不阻挡，但预期要求的证据缺失仍为REVIEW；有具体差异是FAIL；全部断言一致仅为PASS建议，人工仍须核对断言是否完整覆盖自然语言预期。旧自由文本Plan无法自动证明完整语义；新严格contract固定断言和值，仍需人工核对是否覆盖业务意图。
 
-建议持久化，不自动改变Case状态。人工确认需reviewId、PASS/FAIL和核对说明；只能确认最新且证据未变的版本，WAITING/REVIEW不可封存。模型调用在事务之外；保存和最终确认重新读取并核对证据摘要，确认持锁读取以避免并发销售数据变化。最终结论和确认人/时间/说明持久化，Case进入PASS/FAIL，重复同一确认幂等且不能覆盖。
+建议持久化，不自动改变Case状态。人工确认需reviewId、PASS/FAIL和核对说明；只能确认最新且证据未变的版本，WAITING/REVIEW不可封存。模型调用在事务之外；保存和最终确认重新读取并核对证据摘要，确认持锁读取以避免并发销售数据变化。本轮补齐05原件source查询的FOR UPDATE，避免鉴权旧REPEATABLE READ快照漏读已提交原件变化。最终结论和确认人/时间/说明持久化，Case进入PASS/FAIL，重复同一确认幂等且不能覆盖。
 
 ## 完整流程图：讨论循环、文件DAG、结果与生命周期
 
@@ -349,3 +350,4 @@ GET `/api/chats/:chat/lifecycle` 汇总全部Case、最终人工结论、关联�
 `/api/exchange/channels/:channel/ta-reset/confirm` 只记录用户明确确认已在外部真实TA完成重置。要求当前Workspace全部Chat先封存，按通道递增epoch并记录当时正式账户截止ID；旧账户/绑定被视为失效，禁止新选择、03复用及04/05同步。全部历史账户、交易、持仓、绑定、文件和结果保留；新01/02重新开户须新销售交易账号。平台响应明示 `physicalResetPerformedByPlatform:false`，不能宣称已经替用户物理清空TA。
 
 迁移020保存生命周期请求与关联，021保存耐久等待，022保存外部TA重置审计；不清空旧数据。详细契约见 [Chat生命周期](../Backend/docs/chat-lifecycle.md)、[耐久编排](../Backend/docs/durable-workflow.md)、[TA重置声明](../Backend/docs/ta-reset.md) 及 [统一回传](./统一TA回传接收.md)。
+
