@@ -46,8 +46,20 @@ export async function verifyTerminalTaFailure({db,transaction,token,scope,channe
   const capped=createCaseResultRepository({transaction:action=>action(cappedDb)}),partial=await capped.snapshot(token,scope);
   assert.equal(partial.terminalFailuresTruncated,true);assert.equal(partial.blockers,undefined);assert.ok(partial.pending.includes('步骤r04_1尚未完成'));assert.ok(partial.issues.some(x=>x.includes('超过500项')));
   const review=await createCaseResultGraph({collect:async()=>partial,complete:async()=>{throw Error('oversized mappings must not reach the model');}}).invoke({});assert.equal(review.suggestion.outcome,'REVIEW');
-  const cappedFacts=await workflowFacts(cappedDb,{owner:row,keys},token,scope);assert.equal(cappedFacts.review.confirmable,false);assert.equal(workflowPosition(cappedFacts).stage,'FILE_EXCHANGE');
+  const cappedFacts=await workflowFacts(cappedDb,{owner:row,keys},token,scope);assert.equal(cappedFacts.review.confirmable,false);assert.equal(workflowPosition(cappedFacts).stage,'EVALUATE_RESULT');
   await assert.rejects(capped.confirm(token,{...scope,reviewId:saved.reviewId,verdict:'FAIL',reason:'部分映射不能封存'}),{code:'CASE_RESULT_CHANGED'});
+ }
+ for(const independent of [true,false]){
+  await db.query('SAVEPOINT terminal_review_issue');
+  const altered=structuredClone(plan);
+  if(independent){const holding=altered.contract.expectations.find(a=>a.source==='CURRENT_FORMAL_HOLDING');altered.contract.expectations.push({...holding,selector:{...holding.selector,fundCode:'000002'}});assert.equal(validPlanContract(altered.contract,altered),true);}else delete altered.contract;
+  await db.execute('UPDATE case_sop_versions SET plan_json=? WHERE workspace_id=? AND chat_id=? AND case_id=? AND version_number=1',[JSON.stringify(altered),...keys]);
+  const incomplete=await results.snapshot(token,scope);
+  const review=await createCaseResultGraph({collect:async()=>incomplete,complete:async()=>{throw Error('diagnostics should not invent independent results');}}).invoke({});assert.equal(review.suggestion.outcome,'REVIEW');
+  if(!independent){assert.ok(incomplete.unresolvedFailures.length);assert.equal(workflowPosition(await facts()).stage,'EVALUATE_RESULT');assert.equal((await readNative()).stage,'EVALUATE_RESULT');}
+  const pendingReview=await results.save(token,scope,review);assert.equal((await facts()).review.confirmable,false);
+  await assert.rejects(results.confirm(token,{...scope,reviewId:pendingReview.reviewId,verdict:'FAIL',reason:'独立缺证据或映射歧义不可封存'}),{code:'RESULT_NOT_READY'});
+  await db.query('ROLLBACK TO SAVEPOINT terminal_review_issue');
  }
  await assert.rejects(results.confirm(token,{...scope,reviewId:stale.reviewId,verdict:'FAIL',reason:'合成旧9版不能覆盖新版11'}),{code:'REVIEW_SUPERSEDED'});
  await assert.rejects(results.confirm(token,{...scope,reviewId:saved.reviewId,verdict:'PASS',reason:'合成禁止假通过'}),{code:'TERMINAL_TA_FAILURE_REQUIRES_FAIL'});
