@@ -40,6 +40,7 @@ export async function workflowFacts(db,{owner,keys},token,input) {
  if(order && owner.chat_status==='ACTIVE' && !['PASS','FAIL'].includes(owner.case_status)) {
   resultSnapshot=await createCaseResultRepository({transaction:action=>action(db)}).snapshot(token,input);
   order.blockers=resultSnapshot.blockers??[];
+  if(resultSnapshot.unresolvedFailures?.length || resultSnapshot.terminalFailuresTruncated){order.reviewRequired=true;order.reviewIssues=resultSnapshot.issues;}
  }
  let latestReview=null;
  if(review) {

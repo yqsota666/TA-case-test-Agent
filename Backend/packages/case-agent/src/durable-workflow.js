@@ -15,6 +15,9 @@ export function workflowPosition(facts) {
   if (outstanding.some(s=>s.required!==false)) {
     const waiting = outstanding.filter(s=>s.dependsOn.every(d=>completed(d.stepId,d.condition))).map(s=>({stepId:s.stepId,fileType:s.fileType,
       action:s.direction==='SEND'?'GENERATE_AND_DELIVER':completed(s.stepId,'PARSED')?'APPLY_RETURN':'UPLOAD_AND_PARSE'}));
+    const necessary=new Set(facts.order.plan.steps.filter(s=>s.required!==false).map(s=>s.stepId));
+    let changed=true;while(changed){changed=false;for(const s of facts.order.plan.steps.filter(s=>necessary.has(s.stepId)))for(const d of s.dependsOn)if(!necessary.has(d.stepId)){necessary.add(d.stepId);changed=true;}}
+    if(facts.order.reviewRequired && !waiting.some(s=>necessary.has(s.stepId)))return {stage:'EVALUATE_RESULT',waiting:['RESULT_EVALUATE'],reviewIssues:facts.order.reviewIssues,optionalActions:waiting};
     return {stage:'FILE_EXCHANGE',waiting};
   }
   const optionalActions=outstanding.filter(s=>s.required===false && s.dependsOn.every(d=>completed(d.stepId,d.condition))).map(s=>({stepId:s.stepId,fileType:s.fileType,action:s.direction==='SEND'?'GENERATE_AND_DELIVER':completed(s.stepId,'PARSED')?'APPLY_RETURN':'UPLOAD_AND_PARSE'}));
