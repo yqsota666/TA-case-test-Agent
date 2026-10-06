@@ -24,6 +24,8 @@ test('comparison directions belong to the named field; unsupported multipliers a
 });
 
 test('literal values belong to their stated field and positive comparison',()=>{
+ assert.equal(hasLiteralExpectation('FAILED','确认成功，FAILED','status'),false);
+ assert.equal(hasLiteralExpectation('CONFIRMED','确认成功，CONFIRMED','status'),true);
  assert.equal(hasLiteralExpectation('CONFIRMED','01/02开户申请与03/04申购申请最终状态均为CONFIRMED','status'),true);
  assert.equal(hasLiteralExpectation('000001','基金代码000001','fundCode'),true);
  assert.equal(hasLiteralExpectation('TA000','TA账户号TA000','taAccountId'),true);

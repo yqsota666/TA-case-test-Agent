@@ -61,6 +61,7 @@ export function hasLiteralExpectation(value, quote, field) {
   const matches = [...String(quote).matchAll(literalMarker)];
   return matches.some((match, i) => {
     const alias = literalAliases.find(alias => alias.name.toLowerCase() === match[0].toLowerCase());
+    if (alias.name === '确认成功' && value !== 'CONFIRMED') return false;
     if (alias.field !== field || negatedPrefix(fieldPrefix(quote, match.index))) return false;
     const segment = quote.slice(match.index + match[0].length, matches[i + 1]?.index);
     return positive.test(segment);
