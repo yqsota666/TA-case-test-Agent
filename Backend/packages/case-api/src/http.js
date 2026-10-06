@@ -2,6 +2,7 @@ import { createServer } from 'node:http';
 import { DataEditSchema } from '../../case-agent/src/index.js';
 import { parseDataFile } from '../../platform-protocol/src/index.js';
 
+const taResetPath=/^\/api\/exchange\/channels\/([1-9]\d*)\/ta-reset(?:\/(confirm))?$/i;
 const chatCollectionPath=/^\/api\/chats(?:\/([0-9a-f-]{36})\/cases)?$/i;
 const lifecyclePath=/^\/api\/chats\/([0-9a-f-]{36})\/lifecycle(?:\/(close|retest|new-run))?$/i;
 const pathPattern = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/(discussion|plan|plan\/confirm|data|data\/execute|data\/review|data\/confirm|application-preparation)$/i;
@@ -50,12 +51,14 @@ async function jsonBody(request, limit = 256 * 1024) {
 }
 
 export function createCaseHttpHandler({ repository, discussionService, confirmPlan, executeData,
-  reviseData, exchangeRepository, applicationPreparation, confirmData, returnParsing, returnConfirmation, holdingsReturn, caseResult, exchangePlanSupplement, chatLifecycle, allowedOrigin }) {
+  reviseData, exchangeRepository, applicationPreparation, confirmData, returnParsing, returnConfirmation, holdingsReturn, caseResult, exchangePlanSupplement, chatLifecycle, taReset, allowedOrigin }) {
   if (!repository || !discussionService || !confirmPlan || !executeData || !reviseData || !allowedOrigin) {
     throw new TypeError('API dependencies required');
   }
   return async (request, response) => {
     const pathname = new URL(request.url, 'http://localhost').pathname;
+    const reset=taReset && taResetPath.exec(pathname);
+    const resetRoute=Boolean(reset && ((!reset[2] && request.method==='GET') || (reset[2] && request.method==='POST')));
     const collection=chatCollectionPath.exec(pathname);
     const collectionRoute=Boolean(collection && ['GET','POST'].includes(request.method));
     const lifecycle=chatLifecycle && lifecyclePath.exec(pathname);
@@ -86,7 +89,7 @@ export function createCaseHttpHandler({ repository, discussionService, confirmPl
         (application && ['GET', 'POST'].includes(request.method)) ||
         (batch && request.method === 'POST') ||
         (files && request.method === 'GET')));
-    if (!collectionRoute && !lifecycleRoute && !resultRoute && !holdingsRoute && !supplementRoute && !catalog && !salesRoute && !confirmationRoute && !exchangeRoute && !parsingRoute && (!match || !['GET', 'POST', 'PATCH'].includes(request.method) ||
+    if (!resetRoute && !collectionRoute && !lifecycleRoute && !resultRoute && !holdingsRoute && !supplementRoute && !catalog && !salesRoute && !confirmationRoute && !exchangeRoute && !parsingRoute && (!match || !['GET', 'POST', 'PATCH'].includes(request.method) ||
         (request.method === 'PATCH' && match?.[3] !== 'data') ||
         (['plan/confirm', 'data/execute', 'data/confirm'].includes(match?.[3]) && request.method !== 'POST') ||
         (match?.[3] === 'data/review' && !['GET', 'POST'].includes(request.method)) ||
@@ -98,6 +101,14 @@ export function createCaseHttpHandler({ repository, discussionService, confirmPl
       if (!token) { send(response, 401, { error: 'UNAUTHENTICATED' }); return; }
       if(repository.assertCaseWritable && match && request.method==='POST' && ['discussion','plan','data/execute','data/review','application-preparation'].includes(match[3])){
         await repository.assertCaseWritable(token,match[1],match[2],{discussion:['discussion','plan'].includes(match[3])});
+      }
+      if(resetRoute){
+        if(!reset[2]){send(response,200,await taReset.read(token,{channelId:reset[1]}));return;}
+        if(request.headers.origin!==allowedOrigin){send(response,403,{error:'INVALID_ORIGIN'});return;}
+        if(!/^application\/json(?:\s*;|$)/i.test(request.headers['content-type']??'')){send(response,415,{error:'UNSUPPORTED_MEDIA_TYPE'});return;}
+        const body=await jsonBody(request);
+        if(!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).length!==3||!['requestId','reason','confirmation'].every(k=>Object.hasOwn(body,k))){send(response,400,{error:'INVALID_INPUT'});return;}
+        send(response,200,await taReset.confirm(token,{channelId:reset[1],...body}));return;
       }
       if(collectionRoute){
         if(request.method==='GET'){send(response,200,collection[1]?await repository.listCases(token,collection[1]):await repository.listChats(token));return;}

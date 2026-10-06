@@ -1,3 +1,4 @@
+import {assertTaAccountActive} from './ta-reset.js';
 import crypto from 'node:crypto';
 import { authenticateSession, storeError } from './index.js';
 import { exchangeOrderContext } from './exchange-order.js';
@@ -114,6 +115,7 @@ export function createHoldingsReturnRepository({ transaction }) {
           const [[account]]=await db.execute(`SELECT id FROM sales_confirmed_accounts WHERE workspace_id=? AND channel_id=?
             AND transaction_account_id=? AND ta_account_id=? AND branch_code=? FOR UPDATE`,[keys[0],p.channel_id,r.TransactionAccountID,r.TAAccountID,r.BranchCode]);
           if(!account)reject('SALES_ACCOUNT_UNCONFIRMED','05账户或网点没有匹配的正式开户确认；整包未同步');
+          await assertTaAccountActive(db,keys[0],p.channel_id,account.id);
           const hk=[keys[0],p.channel_id,account.id,r.FundCode,r.ShareClass];
           const [[holding]]=await db.execute(`SELECT DATE_FORMAT(snapshot_date,'%Y%m%d') AS snapshot_date,snapshot_total,snapshot_available,snapshot_frozen
             FROM sales_confirmed_holdings WHERE workspace_id=? AND channel_id=? AND account_id=? AND fund_code=? AND share_class=? FOR UPDATE`,hk);

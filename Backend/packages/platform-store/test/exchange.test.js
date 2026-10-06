@@ -21,6 +21,7 @@ function fixture({ existing, sameBytes, returnItem, application, batchApplicatio
   const calls = [];
   const db = { async execute(sql, values) {
     calls.push({ sql, values });
+    if (sql.includes('FROM ta_reset_events')) return [[{cutoff:'0'}]];
     if (sql.includes('FROM platform_sessions')) return [[{ user_id: 7, workspace_id: 31 }]];
     if (sql.includes('FROM case_generated_accounts a')) return [[sourceAccount]];
     if (sql.includes('FROM case_generated_funds')) return [[values.includes('000002') ? targetFund : sourceFund]];
@@ -48,7 +49,7 @@ function fixture({ existing, sameBytes, returnItem, application, batchApplicatio
       id: 71, ta_code: '27', distributor_code: '306', protocol_version: '22'
     }]];
     if (sql.includes('FROM exchange_files')) return [[sql.includes('content_sha256=?') ? sameBytes : existing]];
-    if (sql.includes('FROM ta_account_bindings')) return [[binding]];
+    if (sql.includes('FROM ta_account_bindings')) return [[binding?{...binding,account_id:1}:undefined]];
     if (sql.includes('FROM return_records')) return [[returnItem]];
     if (sql.includes('FROM applications')) return [[application]];
     if (sql.includes('INSERT INTO exchange_files')) return [{ insertId: 81 }];

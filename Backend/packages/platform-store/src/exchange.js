@@ -1,3 +1,4 @@
+import {assertTaAccountActive} from './ta-reset.js';
 import crypto from 'node:crypto';
 import { buildDataFile, dataFileName, encodeRecord, FIELD_REQUIREMENTS, parseDataFile } from '../../platform-protocol/src/index.js';
 import { authenticateSession, storeError } from './index.js';
@@ -102,6 +103,7 @@ export function createExchangeRepository({ transaction }) {
           AND b.transaction_account_id=a.account_no
         JOIN sales_confirmed_accounts sc ON sc.workspace_id=b.workspace_id AND sc.channel_id=b.channel_id
           AND sc.transaction_account_id=b.transaction_account_id AND sc.ta_account_id=b.ta_account_id
+          AND sc.id>COALESCE((SELECT MAX(e.account_id_cutoff) FROM ta_reset_events e WHERE e.workspace_id=sc.workspace_id AND e.channel_id=sc.channel_id),0)
         WHERE c.workspace_id=? AND c.public_id=? AND k.public_id=? ORDER BY a.id,b.channel_id`,
       [auth.workspace_id, chatPublicId, casePublicId]);
       const [reused] = await db.execute(`SELECT sc.transaction_account_id AS account_no,sc.channel_id,
@@ -111,6 +113,7 @@ export function createExchangeRepository({ transaction }) {
         JOIN sales_confirmed_accounts sc ON sc.workspace_id=r.workspace_id AND sc.channel_id=r.channel_id AND sc.id=r.account_id
         JOIN ta_account_bindings b ON b.workspace_id=sc.workspace_id AND b.channel_id=sc.channel_id
           AND b.transaction_account_id=sc.transaction_account_id AND b.ta_account_id=sc.ta_account_id
+          AND sc.id>COALESCE((SELECT MAX(e.account_id_cutoff) FROM ta_reset_events e WHERE e.workspace_id=sc.workspace_id AND e.channel_id=sc.channel_id),0)
         WHERE c.workspace_id=? AND c.public_id=? AND k.public_id=?`, [auth.workspace_id, chatPublicId, casePublicId]);
       return { bindings: [...rows,...reused].map(row => ({ transactionAccountId: row.account_no,
         channelId: String(row.channel_id), taAccountId: row.ta_account_id,
@@ -181,12 +184,13 @@ export function createExchangeRepository({ transaction }) {
         if (!targetFund) throw storeError('APPLICATION_DATA_MISMATCH', 409, '转入基金与已确认数据不一致');
       }
       if (fileType === '03' || record.BusinessCode !== '001') {
-        const [[binding]] = await db.execute(`SELECT b.id FROM ta_account_bindings b JOIN sales_confirmed_accounts sc
+        const [[binding]] = await db.execute(`SELECT b.id,sc.id AS account_id FROM ta_account_bindings b JOIN sales_confirmed_accounts sc
           ON sc.workspace_id=b.workspace_id AND sc.channel_id=b.channel_id
             AND sc.transaction_account_id=b.transaction_account_id AND sc.ta_account_id=b.ta_account_id
           WHERE b.workspace_id=? AND b.channel_id=? AND b.transaction_account_id=? AND b.ta_account_id=?`,
         [auth.workspace_id, scope.channel_id, record.TransactionAccountID, record.TAAccountID]);
         if (!binding) throw storeError('TA_ACCOUNT_UNVERIFIED', 409, 'TA 账号尚无已确认来源');
+        await assertTaAccountActive(db,auth.workspace_id,scope.channel_id,binding.account_id);
       }
       const [[prior]] = await db.execute(`SELECT public_id,chat_id,case_id,sop_version_id,
         snapshot_hash FROM applications WHERE workspace_id=? AND channel_id=? AND app_no=? FOR UPDATE`,

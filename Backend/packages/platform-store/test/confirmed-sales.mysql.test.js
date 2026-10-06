@@ -1,3 +1,4 @@
+import {createTaResetRepository,assertTaAccountActive} from '../src/ta-reset.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
@@ -266,5 +267,26 @@ test('MySQL: draft -> delivered 01 -> confirmed 02 -> delivered 03 -> confirmed 
     await assert.rejects(confirmations.apply(foreignToken,{ ...first.scope,parseId:parsed02.parseId,recordIndexes:[0] }),{ code:'CASE_NOT_FOUND' });
     await assert.rejects(confirmations.delivery(foreignToken,{ ...first.scope,batchPublicId:batch01 }),{ code:'CASE_NOT_FOUND' });
     await assert.rejects(repository.createCase(token,mixedOpening.scope.chatPublicId,'执行中不能普通追加'),{code:'CHAT_EXECUTION_STARTED'});
+    const reset=createTaResetRepository({transaction});
+    const resetInput={channelId,requestId:crypto.randomUUID(),reason:'合成TA已经清空',confirmation:'TA_RESET_CONFIRMED'};
+    await assert.rejects(reset.confirm(token,resetInput),{code:'TA_RESET_ACTIVE_CHATS'});
+    const beforeReset=await confirmations.salesData(token);
+    const [[oldAccount]]=await db.execute('SELECT id FROM sales_confirmed_accounts WHERE workspace_id=? AND channel_id=? ORDER BY id LIMIT 1',[workspaceId,channelId]);
+    await assertTaAccountActive(db,workspaceId,channelId,oldAccount.id);
+    await db.execute("UPDATE case_chats SET status='FORCE_CLOSED',close_reason='合成重置前封存',closed_at=NOW() WHERE workspace_id=?",[workspaceId]);
+    assert.equal((await reset.confirm(token,resetInput)).epoch,1);
+    assert.equal((await reset.confirm(token,resetInput)).duplicate,true);
+    await assert.rejects(reset.confirm(token,{...resetInput,reason:'变化'}),{code:'TA_RESET_REQUEST_CONFLICT'});
+    await assert.rejects(reset.read(foreignToken,{channelId}),{code:'CHANNEL_NOT_FOUND'});
+    await assert.rejects(assertTaAccountActive(db,workspaceId,channelId,oldAccount.id),{code:'TA_ACCOUNT_RESET'});
+    const afterReset=await confirmations.salesData(token);
+    assert.equal(afterReset.accounts.length,beforeReset.accounts.length);
+    assert.ok(afterReset.accounts.filter(a=>a.channelId===channelId).every(a=>!Number(a.taBindingActive)));
+    assert.deepEqual(afterReset.transactions,beforeReset.transactions);assert.deepEqual(afterReset.holdings,beforeReset.holdings);
+    const [freshAccount]=await db.execute(`INSERT INTO sales_confirmed_accounts(public_id,workspace_id,channel_id,transaction_account_id,ta_account_id,investor_name,investor_type,certificate_type,certificate_no,branch_code,source_confirmation_id)
+      SELECT ?,workspace_id,channel_id,'NEWRESET123456789','NEWTA123','重置后合成','0','0','SYNRESET','306',source_confirmation_id FROM sales_confirmed_accounts WHERE id=?`,[crypto.randomUUID(),oldAccount.id]);
+    await assertTaAccountActive(db,workspaceId,channelId,freshAccount.insertId);
+    assert.equal((await reset.read(token,{channelId})).epoch,1);
+
   } finally { await db.rollback(); await db.end(); }
 });
