@@ -40,6 +40,15 @@ export async function verifyTerminalTaFailure({db,transaction,token,scope,channe
  if(process.env.CASE_TERMINAL_BRIDGE!=='1'){assert.ok(reviews.some(r=>r.reviewId==='9'));assert.ok(reviews.some(r=>r.reviewId==='10'));assert.equal(saved.reviewId,'11');}
  assert.equal((await results.read(token,scope)).reviewId,saved.reviewId);
  const latestFacts=await facts();assert.equal(latestFacts.review.id,saved.reviewId);assert.equal(workflowPosition(latestFacts).stage,'CONFIRM_RESULT');const native=await readNative();assert.equal(native.stage,'CONFIRM_RESULT');assert.equal(native.revision,latestFacts.revision);
+ // Inject an oversized query result over real scoped rows; every other collector/auth/locking query remains real MySQL.
+ for(const oversized of ['failure','application']){
+  const cappedDb={execute:async(sql,args)=>{const result=await db.execute(sql,args);if(sql.includes('LIMIT 501') && (oversized==='failure'?sql.includes('JOIN sales_return_confirmations r ON'):sql.includes('b.step_id AS stepId,CAST(a.id AS CHAR) AS applicationId')))return [Array.from({length:501},()=>result[0][0]),result[1]];return result;}};
+  const capped=createCaseResultRepository({transaction:action=>action(cappedDb)}),partial=await capped.snapshot(token,scope);
+  assert.equal(partial.terminalFailuresTruncated,true);assert.equal(partial.blockers,undefined);assert.ok(partial.pending.includes('步骤r04_1尚未完成'));assert.ok(partial.issues.some(x=>x.includes('超过500项')));
+  const review=await createCaseResultGraph({collect:async()=>partial,complete:async()=>{throw Error('oversized mappings must not reach the model');}}).invoke({});assert.equal(review.suggestion.outcome,'REVIEW');
+  const cappedFacts=await workflowFacts(cappedDb,{owner:row,keys},token,scope);assert.equal(cappedFacts.review.confirmable,false);assert.equal(workflowPosition(cappedFacts).stage,'FILE_EXCHANGE');
+  await assert.rejects(capped.confirm(token,{...scope,reviewId:saved.reviewId,verdict:'FAIL',reason:'部分映射不能封存'}),{code:'CASE_RESULT_CHANGED'});
+ }
  await assert.rejects(results.confirm(token,{...scope,reviewId:stale.reviewId,verdict:'FAIL',reason:'合成旧9版不能覆盖新版11'}),{code:'REVIEW_SUPERSEDED'});
  await assert.rejects(results.confirm(token,{...scope,reviewId:saved.reviewId,verdict:'PASS',reason:'合成禁止假通过'}),{code:'TERMINAL_TA_FAILURE_REQUIRES_FAIL'});
  await db.query('SAVEPOINT terminal_source');await db.execute('UPDATE case_return_parse_files SET raw_bytes=CONCAT(raw_bytes,?) WHERE workspace_id=? AND chat_id=? AND case_id=? AND parse_id=?',[Buffer.from('x'),...keys,parseId]);

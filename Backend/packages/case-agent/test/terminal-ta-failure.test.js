@@ -12,3 +12,8 @@ test('unaffected pending operations and corrupt evidence prevent diagnostic FAIL
  assert.equal(terminalFailureSuggestion({...snapshot,issues:['原件摘要不一致']}),null);
  assert.equal(terminalFailureSuggestion({...snapshot,blockers:[]}),null);
 });
+
+test('truncated dependency candidates require REVIEW even with pending files, and never call the model',async()=>{
+ const snapshot={plan:{scenarios:[{expected:'状态CONFIRMED'}]},evidence:[],pending:['必需03/04尚未完成'],issues:['TA失败或关联申请超过500项'],terminalFailuresTruncated:true};
+ const result=await createCaseResultGraph({collect:async()=>snapshot,complete:async()=>{throw Error('partial mapping must not be interpreted by a model');}}).invoke({});assert.equal(result.suggestion.outcome,'REVIEW');assert.deepEqual(result.suggestion.issues,snapshot.issues);assert.equal(result.suggestion.blockers,undefined);
+});

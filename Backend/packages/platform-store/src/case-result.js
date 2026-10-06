@@ -67,10 +67,11 @@ export function createCaseResultRepository({transaction}){
    preparedAccounts=draftAccounts;
    if(draftAccounts.length!==plan.contract.dataSpecification.accounts.length)issues.push('准备账户与已确认数据定义数量不一致');
   }
-  let blockers=[],unresolvedFailures=[];
+  let blockers=[],unresolvedFailures=[],terminalFailuresTruncated=false;
   try{
    const order=await exchangeOrderContext(db,keys,write);
-   ({blockers,unresolvedFailures}=await terminalTaFailures(db,keys,{plan,order,preparedAccounts,write}));
+   ({blockers,unresolvedFailures,truncated:terminalFailuresTruncated}=await terminalTaFailures(db,keys,{plan,order,preparedAccounts,write}));
+   if(terminalFailuresTruncated)issues.push('TA失败或关联申请超过500项，无法完整核验依赖映射，请缩小Case范围后重新核查');
    if(unresolvedFailures.length)issues.push('TA失败与后续申请账户映射不唯一，需要人工澄清，不能推断Case通过或封存所有账户');
    const blocked=new Set(blockers.flatMap(b=>b.blockedStepIds));
    const blockedApps=new Set(blockers.flatMap(b=>b.blockedApplicationIds));
@@ -98,7 +99,7 @@ export function createCaseResultRepository({transaction}){
   if(incomplete(returnPackages,returnSources) || incomplete(parses,holdingSources))issues.push('原始TA文件包缺失或摘要不一致，需要补齐完整原文件');
   if(returnSources.length>2000 || holdingSources.length>2000)issues.push('原始证据文件超过处理上限');
   for(const blocker of blockers)evidence.push({id:'dependency-failure:'+blocker.applicationId+':'+blocker.failedStepId,source:{kind:'TA_DEPENDENCY_FAILURE',...blocker},values:{status:'FAILED'}});
-  const snapshot={...(unresolvedFailures.length?{unresolvedFailures}:{}),...(blockers.length?{blockers}:{}),...(preparedAccounts?{preparedAccounts}:{}),sources:{returns:returnSources,holdings:holdingSources},planVersion:planRow.version_number,plan,evidence,pending:[...new Set(pending)],issues};
+  const snapshot={...(terminalFailuresTruncated?{terminalFailuresTruncated:true}:{}),...(unresolvedFailures.length?{unresolvedFailures}:{}),...(blockers.length?{blockers}:{}),...(preparedAccounts?{preparedAccounts}:{}),sources:{returns:returnSources,holdings:holdingSources},planVersion:planRow.version_number,plan,evidence,pending:[...new Set(pending)],issues};
   return {...snapshot,sha256:digest(snapshot)};
  }
  async function snapshot(token,input){return transaction(async db=>{const {keys,owner}=await context(db,token,input);if(owner.chat_status!=='ACTIVE'||['PASS','FAIL'].includes(owner.case_status))throw storeError('CASE_NOT_WRITABLE',409,'Chat或Case已结束');return collect(db,keys);});}

@@ -73,10 +73,12 @@ export async function terminalTaFailures(db,keys,{plan,order,preparedAccounts=[]
   JOIN sales_return_confirmations r ON r.workspace_id=a.workspace_id AND r.chat_id=a.chat_id AND r.case_id=a.case_id AND r.application_id=a.id AND r.parse_id=p.parse_id
   WHERE b.workspace_id=? AND b.chat_id=? AND b.case_id=? AND b.plan_version=?
    AND a.status='FAILED' AND r.outcome='FAILED' AND ((b.file_type='02' AND a.file_type='01') OR (b.file_type='04' AND a.file_type='03')) LIMIT 501${lock}`,[...keys,order.version]);
+ if(failures.length>500)return {blockers:[],unresolvedFailures:[],truncated:true};
  const [applications]=await db.execute(`SELECT b.step_id AS stepId,CAST(a.id AS CHAR) AS applicationId,a.file_type AS fileType,a.record_json AS record
   FROM case_exchange_plan_bindings b JOIN batch_applications ba ON ba.workspace_id=b.workspace_id AND ba.chat_id=b.chat_id AND ba.batch_id=b.batch_id
   JOIN applications a ON a.workspace_id=ba.workspace_id AND a.chat_id=ba.chat_id AND a.id=ba.application_id AND a.case_id=b.case_id
   WHERE b.workspace_id=? AND b.chat_id=? AND b.case_id=? AND b.plan_version=? AND b.file_type=a.file_type LIMIT 501${lock}`,[...keys,order.version]);
+ if(applications.length>500)return {blockers:[],unresolvedFailures:[],truncated:true};
  const context={plan,order,applications,preparedAccounts,failures};
- return {blockers:deriveTerminalTaFailures(context),unresolvedFailures:unresolvedTerminalTaFailures(context)};
+ return {blockers:deriveTerminalTaFailures(context),unresolvedFailures:unresolvedTerminalTaFailures(context),truncated:false};
 }
