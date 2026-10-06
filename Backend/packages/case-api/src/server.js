@@ -1,5 +1,6 @@
 import {createTaResetRepository} from '../../platform-store/src/ta-reset.js';
 import {createChatLifecycleRepository} from '../../platform-store/src/chat-lifecycle.js';
+import { createDurableWorkflowRepository } from '../../platform-store/src/durable-workflow.js';
 import mysql from 'mysql2/promise';
 import { createCaseRepository } from '../../platform-store/src/index.js';
 import { createExchangeRepository } from '../../platform-store/src/exchange.js';
@@ -44,6 +45,7 @@ const transaction = async action => {
 };
 const taReset=createTaResetRepository({transaction});
 const chatLifecycle=createChatLifecycleRepository({transaction});
+const durableWorkflow = createDurableWorkflowRepository({pool});
 const repository = createCaseRepository({ transaction });
 const returnParsing = createReturnParsingService({ repository: createReturnParsingRepository({ transaction }) });
 const exchangePlanSupplement=createExchangePlanSupplementRepository({transaction});
@@ -107,5 +109,5 @@ const applicationPreparation = createApplicationPreparationService({ repository,
 const confirmData = ({ token, chatPublicId, casePublicId, revision }) =>
   repository.confirmGeneratedData(token, chatPublicId, casePublicId, revision);
 const server = createCaseHttpServer({ repository, discussionService, confirmPlan,
-  executeData, reviseData, exchangeRepository, applicationPreparation, confirmData, returnParsing, returnConfirmation, holdingsReturn, taReceipts, caseResult, exchangePlanSupplement, chatLifecycle, taReset, allowedOrigin });
+  executeData, reviseData, exchangeRepository, applicationPreparation, confirmData, returnParsing, returnConfirmation, holdingsReturn, taReceipts, caseResult, exchangePlanSupplement, chatLifecycle, durableWorkflow, taReset, allowedOrigin });
 server.listen(Number(process.env.CASE_API_PORT ?? 3100), '127.0.0.1');

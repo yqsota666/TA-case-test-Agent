@@ -13,6 +13,7 @@ async function fixture(t, {orderRejected=false}={}) {
   const calls = [];
   const server = createCaseHttpServer({
     allowedOrigin,
+    durableWorkflow:{read:async(token,input)=>{calls.push(['workflow-read',token,input]);return {stage:'DISCUSSION'};},resume:async(token,input)=>{calls.push(['workflow-resume',token,input]);return {stage:'FILE_EXCHANGE'};}},
     exchangePlanSupplement:{confirm:async(token,input)=>{calls.push(['supplement',token,input]);return{versionNumber:2,status:'LOCKED',supplemented:true};}},
     returnConfirmation: Object.fromEntries(['read','delivery','apply','salesData','selectAccount'].map(method =>
       [method,async (token,input) => { calls.push(['confirmation-'+method,token,input]); return { ok:true }; }])),
@@ -393,3 +394,14 @@ test('Plan confirmation requires an explicit data or expectation section and rej
  assert.equal((await fetch(base+path+'/parse',{method:'POST',headers,body:JSON.stringify({...body,workspaceId:'other'})})).status,400);
  assert.equal((await fetch(base+path+'/parse',{method:'POST',headers:{...headers,origin:'http://evil.invalid'},body:JSON.stringify(body)})).status,403);
  });
+test('durable workflow route authenticates and accepts notification only',async t=>{
+ const {base,calls}=await fixture(t);const path=route.replace('/discussion','/workflow');
+ const headers={cookie:'case_session=abcdefghijklmnopqrstuvwxyz012345',origin:allowedOrigin,'content-type':'application/json'};
+ assert.equal((await fetch(base+path)).status,401);
+ assert.equal((await fetch(base+path,{headers})).status,200);
+ const input={eventId:'cccccccc-cccc-cccc-cccc-cccccccccccc',expectedStage:'DISCUSSION'};
+ assert.equal((await fetch(base+path+'/resume',{method:'POST',headers,body:JSON.stringify(input)})).status,200);
+ assert.equal(calls.at(-1)[2].eventId,input.eventId);
+ assert.equal((await fetch(base+path+'/resume',{method:'POST',headers,body:JSON.stringify({...input,stage:'PASS'})})).status,400);
+ assert.equal((await fetch(base+path+'/resume',{method:'POST',headers:{...headers,origin:'https://invalid.example'},body:JSON.stringify(input)})).status,403);
+});
