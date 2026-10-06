@@ -24,7 +24,7 @@ export function createCaseResultRepository({transaction}){
    r.outcome,r.return_code AS returnCode,r.record_json AS confirmation,CAST(r.parse_id AS CHAR) AS parseId
    FROM applications a LEFT JOIN sales_return_confirmations r ON r.workspace_id=a.workspace_id AND r.application_id=a.id
    WHERE a.workspace_id=? AND a.chat_id=? AND a.case_id=? ORDER BY a.id LIMIT 501${lock}`,keys);
-  const [parses]=await db.execute(`SELECT CAST(id AS CHAR) AS id,CAST(channel_id AS CHAR) AS channelId,parsed_json,applied_json FROM case_holdings_return_parses
+  const [parses]=await db.execute(`SELECT CAST(id AS CHAR) AS id,CAST(channel_id AS CHAR) AS channelId,content_sha256,parsed_json,applied_json FROM case_holdings_return_parses
    WHERE workspace_id=? AND chat_id=? AND case_id=? ORDER BY id LIMIT 101${lock}`,keys);
   if(apps.length>500 || parses.length>100)issues.push('Case证据超过本次处理上限，需要人工缩小范围');
   const targets=new Map();
@@ -72,6 +72,14 @@ export function createCaseResultRepository({transaction}){
   const [returnSources]=await db.execute(`SELECT CAST(parse_id AS CHAR) AS parseId,file_name AS fileName,content_sha256 AS expectedHash,SHA2(raw_bytes,256) AS actualHash FROM case_return_parse_files WHERE workspace_id=? AND chat_id=? AND case_id=? ORDER BY parse_id,file_name LIMIT 2001${lock}`,keys);
   const [holdingSources]=await db.execute(`SELECT CAST(parse_id AS CHAR) AS parseId,file_name AS fileName,content_sha256 AS expectedHash,SHA2(raw_bytes,256) AS actualHash FROM case_holdings_return_files WHERE workspace_id=? AND chat_id=? AND case_id=? ORDER BY parse_id,file_name LIMIT 2001`,keys);
   if([...returnSources,...holdingSources].some(s=>s.expectedHash!==s.actualHash))issues.push('原始TA文件摘要不一致，需要人工核查');
+  const [returnPackages]=await db.execute(`SELECT CAST(id AS CHAR) AS id,content_sha256 FROM case_return_parses
+   WHERE workspace_id=? AND chat_id=? AND case_id=? ORDER BY id LIMIT 501${lock}`,keys);
+  if(returnPackages.length>500)issues.push('回传包超过处理上限');
+  const incomplete=(packages,sources)=>packages.some(p=>{
+   const entries=sources.filter(file=>file.parseId===p.id).map(file=>[file.fileName,file.actualHash]).sort((a,b)=>a[0].localeCompare(b[0]));
+   return crypto.createHash('sha256').update(JSON.stringify(entries)).digest('hex')!==p.content_sha256;
+  });
+  if(incomplete(returnPackages,returnSources) || incomplete(parses,holdingSources))issues.push('原始TA文件包缺失或摘要不一致，需要补齐完整原文件');
   if(returnSources.length>2000 || holdingSources.length>2000)issues.push('原始证据文件超过处理上限');
   let preparedAccounts;
   if(plan.contract){
