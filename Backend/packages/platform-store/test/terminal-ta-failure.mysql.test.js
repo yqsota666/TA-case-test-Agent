@@ -11,7 +11,9 @@ test('MySQL: applied same-account 02 failure diagnoses FAIL, preserves TA truth 
  try{
   await root.query(`CREATE DATABASE ${database}`);db=await mysql.createConnection({...config,database});await applyMigrations(db);
   const {NODE_TEST_CONTEXT,...env}=process.env;
-  const result=spawnSync(process.execPath,['--test','--test-reporter=tap',new URL('./confirmed-sales.mysql.test.js',import.meta.url).pathname],{env:{...env,CASE_DB_NAME:database,CASE_TERMINAL_FAILURE:'1'},encoding:'utf8',timeout:45000});
+  for(const bridge of [false,true]){
+  const result=spawnSync(process.execPath,['--test','--test-reporter=tap',new URL('./confirmed-sales.mysql.test.js',import.meta.url).pathname],{env:{...env,CASE_DB_NAME:database,CASE_TERMINAL_FAILURE:'1',CASE_TERMINAL_BRIDGE:bridge?'1':'0'},encoding:'utf8',timeout:45000});
   assert.equal(result.status,0,result.stdout+result.stderr);assert.match(result.stdout,/# pass 1\b/);
+  }
  }finally{if(db)await db.end();await root.query(`DROP DATABASE IF EXISTS ${database}`);await root.end();}
 });

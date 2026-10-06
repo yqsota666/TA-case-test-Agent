@@ -22,6 +22,7 @@ export async function verifyTerminalTaFailure({db,transaction,token,scope,channe
  {scenarioIndex:0,expectedQuote:'申购申请状态为CONFIRMED',source:'APPLICATION_CONFIRMATION',selector:selector('03','20261007','000001','0'),field:'status',operator:'eq',expectedValue:'CONFIRMED'},
  ...[['confirmedAmount','确认金额100元'],['confirmedVolume','确认份额100份']].map(([field,expectedQuote])=>({scenarioIndex:0,expectedQuote,source:'APPLICATION_CONFIRMATION',selector:selector('03','20261007','000001','0'),field,operator:'eq',expectedValue:'100'})),
  {scenarioIndex:0,expectedQuote:'总份额100份',source:'CURRENT_FORMAL_HOLDING',selector:selector(null,null,'000001','0'),field:'totalVolume',operator:'eq',expectedValue:'100'}]};
+ if(process.env.CASE_TERMINAL_BRIDGE==='1'){plan.exchangePlan.steps.find(s=>s.stepId==='r02_1').required=false;plan.exchangePlan.steps.find(s=>s.stepId==='s03_1').required=false;}
  assert.equal(validPlanContract(plan.contract,plan),true);
  // Convert this isolated fixture's equivalent already-locked schedule to the strict shape before receiving its terminal business effect.
  await db.execute('UPDATE case_sop_versions SET plan_json=? WHERE workspace_id=? AND chat_id=? AND case_id=? AND version_number=1',[JSON.stringify(plan),...keys]);
