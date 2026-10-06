@@ -48,7 +48,7 @@ Case 的 `case_generated_*` 四张表是申请准备草稿和测试条件。确�
 
 正式销售查询为 `GET /api/sales-data`，只读取 `sales_confirmed_accounts`、`sales_confirmed_transactions`、`sales_confirmed_holdings`，并标记 `source: TA_CONFIRMED`。生成的模拟余额、模拟持有、净值和旧 TA 绑定均不会自动复制到正式表。此次不定义资金账户的现金会计；正式视图没有把模拟余额当现金余额。
 
-当前应用范围明确为开户 `01/001 → 02/101` 和申购 `03/022 → 04/122`。其他业务码仍可作为协议测试申请/解析结果，但不能通过确认生效接口修改正式数据。赎回、冻结/解冻、销户、05 快照同步及 Case 成败判定需另行实现，不推断它们的会计含义。
+当前应用范围明确为开户 `01/001 → 02/101` 和申购 `03/022 → 04/122`。其他业务码仍可作为协议测试申请/解析结果，但不能通过确认生效接口修改正式数据。赎回、冻结/解冻、销户、Case 成败判定需另行实现；05 账户余额快照同步已在本地实现（见下文），不推断它们的会计含义。
 
 流程：
 
@@ -72,7 +72,7 @@ TA 业务失败不是解析错误：有效匹配的非 `0000` 返回码把申请
 | `verify_transaction_return` | 用户选择已解析的 04 记录，已交付 03 快照 | 验证账户、基金、份额类别、币种、日期和精确确认量 | 不支持业务、非最终确认、无效金额/份额不生效 |
 | `apply_transaction_confirmation` | 已核验的申购确认计划和已有正式账户 | 按确认量写正式交易和持仓；业务失败仅将申请标失败 | SQL 错误回滚；重复记录不重复增加份额；不同确认不能覆盖旧结果 |
 
-这些节点与上一阶段等待/解析节点通过持久化业务数据和 API 事件衔接。图本身没有宣称具备 LangGraph 原生 checkpoint/interrupt；服务重启后的等待状态来自批次、申请、解析包及确认表。未来 05 属于独立输入事件与节点。
+这些节点与上一阶段等待/解析节点通过持久化业务数据和 API 事件衔接。图本身没有宣称具备 LangGraph 原生 checkpoint/interrupt；服务重启后的等待状态来自批次、申请、解析包及确认表。05 使用独立输入事件与节点，见下文。
 
 迁移 012/013 新建正式数据与 Case 账户引用表，并兼容 V2.2 的 40 位证件字段。迁移不把旧测试数据追认为正式业务；历史 `CONFIRMED` 申请、旧绑定不会被自动提升，也没有提供无提示补账入口。验收使用新 Case，真实历史补账应单独核验来源。旧 `matchReturnRecord` 直接建绑定旁路返回 `CONFIRMATION_SERVICE_REQUIRED`。
 
@@ -104,5 +104,18 @@ DATE 使用 YYYYMMDD：发送检查批次业务日期，接收检查文件头日
 
 历史 Plan 缺 exchangePlan 仍可读取、原件保留，GET 明示 UNPLANNED。通过 `POST /api/chats/:chat/cases/:case/exchange-plan/confirm` 显式补充 `{baseVersionNumber,exchangePlan,mappings:[{stepId,batchPublicId,parseIds}]}`，生成不可变的新锁定版本；业务目标/场景、旧申请与草稿引用均保留，不解锁重建 Case。映射必须属于当前 Case/批次/文件类型，仅真实发送、解析和全部成功确认能继承完成状态，记录操作者及映射。已完整计划不能重复补充；模型和上传不猜测或改写顺序。
 
-05 在本 PR 只支持 Plan 描述与校验框架；没有05上传、协议解析或持仓同步入口。现有协议/确认前置条件仍独立强制，用户确认的测试顺序不能允许未确认账户先产生正式交易。
+PR22时05只支持Plan描述。本地新增05独立上传、解析和显式账户余额同步入口，见下文。现有协议/确认前置条件仍独立强制，用户确认的测试顺序不能允许未确认账户先产生正式交易。
 受控解析先短事务读取目标，释放数据库连接后做协议解析，再锁定 Case 重新核验目标并保存原件/时序状态。写路径计划、绑定、回执与幂等查询使用当前锁定读，避免等待锁之前的 RR 快照遗漏刚提交的发送或重复包。
+
+
+## 05 独立回传与正式持仓同步（本地实现）
+
+- GET /api/chats/:chatId/cases/:caseId/holdings-return：已锁定Plan中的05步骤和本Case解析/应用历史。
+- POST 同路径 /parse：{channelId, files:[{fileName,base64}], exchangeStepId?}。不依赖发文批次；校验Workspace/通道、GB18030原始字节、V2.1/2.2文件头和字段、可选原始OFI完整清单、已锁定Plan时序；原件持久化，登记PARSED，不修改持仓。
+- POST 同路径 /apply：{parseId, exchangeStepId?}。用户显式确认，重新核验原文件和当前Plan，整包原子应用。只对已有正式账户、匹配网点的DetailFlag=0账户余额生效；DetailFlag=1/A保留并返回DETAIL_ONLY/FUND_SUMMARY_ONLY，不创建账户、交易或Case结论。
+
+TotalVolOfDistributorInTA是余额，WholeFlag=0增量传输也按该账户基金余额覆盖；不是增加份额。重复余额键、旧日期、同日不同快照、未知账户均拒绝整包。空包或未出现持仓不清零其他记录。05基准加基准日期之后已确认申购，后到且日期不晚于基准的04仍记录交易，但不重复增加持仓。04晚于基准时增加总余额，可用/冻结置空以免展示过期数值。两种应用共用通道行锁。
+
+新增LangGraph节点：wait_holdings_return → parse_holdings_return；verify_holdings_return → sync_holdings_snapshot。节点通过持久化API事件衔接，不宣称整个Case已经接成checkpoint/interrupt大图。销售查询新增availableVolume、frozenVolume、snapshotDate、snapshotTotal、snapshotParseId；原始完整字段可通过05解析历史查看。没有Case自动判断，也没有Plan严格数据定义补丁。
+
+迁移016新增05解析/原文件/独立Plan收件表及持仓基准列。常规测试外，CASE_CONFIRMATION_MYSQL=1的确认业务测试覆盖05独立同步、重放、错误回滚、旧日/同日冲突、同日后到04不重复计入、零余额与未出现基金不清零。

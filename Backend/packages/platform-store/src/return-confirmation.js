@@ -209,8 +209,13 @@ export function createReturnConfirmationRepository({ transaction }) {
                 effect.transactionEffect.confirmationDate]);
               await db.execute(`INSERT INTO sales_confirmed_holdings
                 (workspace_id,channel_id,account_id,fund_code,share_class,total_volume) VALUES (?,?,?,?,?,?)
-                ON DUPLICATE KEY UPDATE total_volume=total_volume+?`, [keys[0], parsed.channel_id, account.id,
-                effect.holdingEffect.fundCode, effect.holdingEffect.shareClass, effect.holdingEffect.volumeDelta, effect.holdingEffect.volumeDelta]);
+                ON DUPLICATE KEY UPDATE
+                  total_volume=total_volume+IF(snapshot_date IS NULL OR snapshot_date<STR_TO_DATE(?,'%Y%m%d'),?,0),
+                  available_volume=IF(snapshot_date IS NULL OR snapshot_date<STR_TO_DATE(?,'%Y%m%d'),NULL,available_volume),
+                  frozen_volume=IF(snapshot_date IS NULL OR snapshot_date<STR_TO_DATE(?,'%Y%m%d'),NULL,frozen_volume)`, [keys[0], parsed.channel_id, account.id,
+                effect.holdingEffect.fundCode, effect.holdingEffect.shareClass, effect.holdingEffect.volumeDelta,
+                effect.transactionEffect.confirmationDate.replaceAll('-',''), effect.holdingEffect.volumeDelta,
+                effect.transactionEffect.confirmationDate.replaceAll('-',''), effect.transactionEffect.confirmationDate.replaceAll('-','')]);
             }
             await db.execute(`UPDATE applications SET status=? WHERE workspace_id=? AND id=?`, [effect.outcome, keys[0], app.id]);
             return { applicationPublicId: app.public_id, outcome: effect.outcome, duplicate: false };
@@ -277,7 +282,10 @@ export function createReturnConfirmationRepository({ transaction }) {
         JOIN sales_confirmed_accounts s ON s.workspace_id=t.workspace_id AND s.channel_id=t.channel_id AND s.id=t.account_id
         WHERE t.workspace_id=? ORDER BY t.id`, [auth.workspace_id]);
       const [holdings] = await db.execute(`SELECT CAST(h.channel_id AS CHAR) AS channelId,s.transaction_account_id AS transactionAccountId,
-        s.ta_account_id AS taAccountId,h.fund_code AS fundCode,h.share_class AS shareClass,h.total_volume AS totalVolume
+        s.ta_account_id AS taAccountId,h.fund_code AS fundCode,h.share_class AS shareClass,h.total_volume AS totalVolume,
+        h.available_volume AS availableVolume,h.frozen_volume AS frozenVolume,
+        DATE_FORMAT(h.snapshot_date,'%Y%m%d') AS snapshotDate,h.snapshot_total AS snapshotTotal,
+        CAST(h.snapshot_parse_id AS CHAR) AS snapshotParseId
         FROM sales_confirmed_holdings h JOIN sales_confirmed_accounts s ON s.workspace_id=h.workspace_id AND s.channel_id=h.channel_id AND s.id=h.account_id
         WHERE h.workspace_id=? ORDER BY h.channel_id,h.account_id,h.fund_code,h.share_class`, [auth.workspace_id]);
       return { source: 'TA_CONFIRMED', accounts, transactions, holdings };

@@ -16,6 +16,8 @@ import { createReturnConfirmationRepository } from '../../platform-store/src/ret
 import { createExchangePlanSupplementRepository } from '../../platform-store/src/exchange-plan-supplement.js';
 import { createReturnConfirmationService } from './return-confirmation.js';
 
+import { createHoldingsReturnRepository } from '../../platform-store/src/holdings-return.js';
+
 const allowedOrigin = process.env.CASE_PUBLIC_ORIGIN;
 if (!allowedOrigin) throw new Error('CASE_PUBLIC_ORIGIN is required');
 const pool = mysql.createPool({ ...migrationConfig(), connectionLimit: 8 });
@@ -38,6 +40,7 @@ const repository = createCaseRepository({ transaction });
 const returnParsing = createReturnParsingService({ repository: createReturnParsingRepository({ transaction }) });
 const exchangePlanSupplement=createExchangePlanSupplementRepository({transaction});
 const returnConfirmation = createReturnConfirmationService({ repository: createReturnConfirmationRepository({ transaction }) });
+const holdingsReturn = createHoldingsReturnRepository({transaction});
 const exchangeRepository = createExchangeRepository({ transaction });
 const preparations = createApplicationPreparationRepository({ transaction });
 const discussionService = createPersistedDiscussionService({ repository,
@@ -94,5 +97,5 @@ const applicationPreparation = createApplicationPreparationService({ repository,
 const confirmData = ({ token, chatPublicId, casePublicId, revision }) =>
   repository.confirmGeneratedData(token, chatPublicId, casePublicId, revision);
 const server = createCaseHttpServer({ repository, discussionService, confirmPlan,
-  executeData, reviseData, exchangeRepository, applicationPreparation, confirmData, returnParsing, returnConfirmation, exchangePlanSupplement, allowedOrigin });
+  executeData, reviseData, exchangeRepository, applicationPreparation, confirmData, returnParsing, returnConfirmation, holdingsReturn, exchangePlanSupplement, allowedOrigin });
 server.listen(Number(process.env.CASE_API_PORT ?? 3100), '127.0.0.1');

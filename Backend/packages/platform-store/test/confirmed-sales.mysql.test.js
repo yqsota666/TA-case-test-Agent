@@ -15,6 +15,8 @@ import { verifyExchangeOrderRace } from './helpers/exchange-order-race.js';
 import { verifyAccountSelectionRace } from './helpers/account-selection-race.js';
 import { buildDataFile, dataFileName } from '../../platform-protocol/src/index.js';
 
+import {verifyHoldingsSync} from './helpers/holdings-sync.js';
+
 const jsonValue=value=>typeof value==='string'?JSON.parse(value):value;
 
 // Opt-in against a migrated MySQL database. Every fixture and business write is rolled back.
@@ -58,7 +60,7 @@ test('MySQL: draft -> delivered 01 -> confirmed 02 -> delivered 03 -> confirmed 
         VALUES (?,?,?,1,?,'LOCKED',CURRENT_TIMESTAMP(3))`,[workspaceId,chat.insertId,c.insertId,JSON.stringify({test:'synthetic',exchangePlan:{status:'READY',openQuestions:[],steps:withAccount? [planStep('s01_1','01','open1'),planStep('r02_1','02','open1',[{stepId:'s01_1',condition:'SENT'}]),planStep('s03_1','03','trade1',[{stepId:'r02_1',condition:'CONFIRMED'}]),planStep('r04_1','04','trade1',[{stepId:'s03_1',condition:'SENT'}])] : [planStep('s03_1','03','trade1'),planStep('r04_1','04','trade1',[{stepId:'s03_1',condition:'SENT'}]),planStep('s03_2','03','trade2',[{stepId:'r04_1',condition:'CONFIRMED'}]),planStep('r04_2','04','trade2',[{stepId:'s03_2',condition:'SENT'}])]}})]);
       const spec = { customers: withAccount ? [{ name:'合成客户',investorType:'1',simulatedBalance:'999999.00' }] : [],
         accounts: withAccount ? [{ customerIndex:0,branchCode:'306' }] : [],
-        funds:[{ fundCode:'000001',fundName:'合成基金',shareClass:'A',nav:'1.00000000' }],
+        funds:[{ fundCode:'000001',fundName:'合成基金',shareClass:'0',nav:'1.00000000' }],
         holdings: withAccount ? [{ accountIndex:0,fundIndex:0,totalVolume:'888.00000000' }] : [],missing:[] };
       await repository.executeGeneratedData(token,scope.chatPublicId,scope.casePublicId,1,spec,(conn,keys,data)=>
         createDataGenerationGraph({ db:conn,scope:keys,specification:data }).invoke({}));
@@ -87,7 +89,7 @@ test('MySQL: draft -> delivered 01 -> confirmed 02 -> delivered 03 -> confirmed 
     const opening = { AppSheetSerialNo:'SYNOPEN01',BusinessCode:'001',DistributorCode:'306',TransactionDate:'20261006',TransactionTime:'120000',
       TransactionAccountID:first.data.accounts[0].account_no,BranchCode:'306',InvestorName:'合成客户',IndividualOrInstitution:'1',CertificateType:'0',CertificateNo:'S'.repeat(40) };
     const trade = { AppSheetSerialNo:'SYNTRADE01',BusinessCode:'022',DistributorCode:'306',TransactionDate:'20261007',TransactionTime:'120000',
-      TransactionAccountID:opening.TransactionAccountID,TAAccountID:'SYNTA01',BranchCode:'306',IndividualOrInstitution:'1',FundCode:'000001',ShareClass:'A',CurrencyType:'156',ApplicationAmount:'450.00',ChargeType:'0' };
+      TransactionAccountID:opening.TransactionAccountID,TAAccountID:'SYNTA01',BranchCode:'306',IndividualOrInstitution:'1',FundCode:'000001',ShareClass:'0',CurrencyType:'156',ApplicationAmount:'450.00',ChargeType:'0' };
     assert.deepEqual((await confirmations.salesData(token)).accounts,[]);
     assert.deepEqual((await confirmations.salesData(token)).holdings,[]); // 888 synthetic shares do not become sales holdings.
     await assert.rejects(stage(first.scope,first.data,'03',trade),{ code:'TA_ACCOUNT_UNVERIFIED' });
@@ -252,6 +254,7 @@ test('MySQL: draft -> delivered 01 -> confirmed 02 -> delivered 03 -> confirmed 
     assert.equal(sentMixed.steps.length,2);assert.equal(sentMixed.delivered,true);
     const [[sentBoth]]=await db.execute(`SELECT COUNT(*) AS n FROM applications WHERE public_id IN (?,?) AND status='WAITING_RETURN'`,mixedApps.map(app=>app.publicId));assert.equal(Number(sentBoth.n),2);
     assert.equal((await confirmations.delivery(token,{...mixedOpening.scope,batchPublicId:mixedBatch.publicId})).duplicate,true);
+    await verifyHoldingsSync({db,transaction,token,workspaceId,channelId,confirmations,trade,returned04,createCase,stage,generate,parse});
     const otherUserId = crypto.randomUUID();
     const [other] = await db.execute(`INSERT INTO platform_users(public_id,email,password_hash,display_name) VALUES (?,?,?,'隔离测试')`,
       [otherUserId,otherUserId+'@example.invalid','synthetic-test-only']);

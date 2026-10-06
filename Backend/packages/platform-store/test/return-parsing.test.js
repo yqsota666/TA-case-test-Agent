@@ -15,6 +15,7 @@ function fixture({ owner = { chat_id: 41, case_id: 51, chat_status: 'ACTIVE', ca
   const db = { async execute(sql, values) {
     calls.push({ sql, values });
     if(sql.includes('FROM case_sop_versions')) return [[{version_number:1,plan_json:legacy?{}:{exchangePlan}}]];
+    if(sql.includes('FROM case_holdings_plan_receipts'))return [[]];
     if(sql.includes('FROM case_exchange_plan_receipts'))return [[]];
     if(sql.includes('FROM case_exchange_plan_bindings'))return [prior?[{stepId:'receive04',batch_id:61,file_type:'04'}]:[]];
     if(sql.includes('INSERT INTO case_exchange_plan_bindings') || sql.includes('INSERT INTO case_exchange_plan_receipts'))return [{affectedRows:1}];

@@ -7,7 +7,8 @@ function dbFixture({plan=exchangePlan,version=7,events=[]}={}) {
  const calls=[];
  const db={async execute(sql,values){calls.push({sql,values});
   if(sql.includes('FROM case_sop_versions'))return [[{version_number:version,plan_json:{exchangePlan:plan}}]];
-  if(sql.includes('FROM case_exchange_plan_receipts'))return [[]];
+  if(sql.includes('FROM case_holdings_plan_receipts'))return [[]];
+    if(sql.includes('FROM case_exchange_plan_receipts'))return [[]];
   if(sql.includes('FROM case_exchange_plan_bindings'))return [events.map(e=>({stepId:e.stepId,batch_id:e.batch_id,file_type:e.stepId==='send03'?'03':'04'}))];
   if(sql.includes('INSERT INTO case_exchange_plan_bindings') || sql.includes('INSERT INTO case_exchange_plan_receipts'))return [{affectedRows:1}];
   if(sql.includes('FROM case_exchange_plan_events'))return [events];

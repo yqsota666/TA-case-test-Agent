@@ -16,9 +16,10 @@ export function migrationStatements(sql) {
     const addSopSource = /^ALTER TABLE case_sop_versions ADD COLUMN source_turn_number INT UNSIGNED NULL, ADD CONSTRAINT fk_sop_source_turn FOREIGN KEY \(workspace_id,chat_id,case_id,source_turn_number\) REFERENCES case_discussion_turns\(workspace_id,chat_id,case_id,turn_number\)$/i.test(compact);
     const widenReply = /^ALTER TABLE case_discussion_turns MODIFY COLUMN assistant_text MEDIUMTEXT NULL$/i.test(compact);
     const widenSalesCertificate = /^ALTER TABLE sales_confirmed_accounts MODIFY COLUMN certificate_no VARCHAR\(40\) CHARACTER SET ascii COLLATE ascii_bin NOT NULL$/i.test(compact);
-    if (!create && !widenSalesCertificate && !widenSopStatus && !addTurnKind && !addSopSource && !widenReply) throw new Error('迁移语句不在允许的范围内');
-    return { sql: statement, table: create?.[1] ?? (widenSalesCertificate ? 'sales_confirmed_accounts' : (addTurnKind || widenReply ? 'case_discussion_turns' : 'case_sop_versions')),
-      kind: widenSalesCertificate ? 'WIDEN_SALES_CERTIFICATE' : create ? 'CREATE' : addTurnKind ? 'ADD_TURN_KIND' : addSopSource ? 'ADD_SOP_SOURCE' :
+    const addHoldingsSnapshot = /^ALTER TABLE sales_confirmed_holdings ADD COLUMN snapshot_date DATE NULL, ADD COLUMN snapshot_total DECIMAL\(16,2\) NULL, ADD COLUMN snapshot_available DECIMAL\(16,2\) NULL, ADD COLUMN snapshot_frozen DECIMAL\(16,2\) NULL, ADD COLUMN snapshot_parse_id BIGINT UNSIGNED NULL, ADD COLUMN available_volume DECIMAL\(16,2\) NULL, ADD COLUMN frozen_volume DECIMAL\(16,2\) NULL$/i.test(compact);
+    if (!addHoldingsSnapshot && !create && !widenSalesCertificate && !widenSopStatus && !addTurnKind && !addSopSource && !widenReply) throw new Error('迁移语句不在允许的范围内');
+    return { sql: statement, table: addHoldingsSnapshot ? 'sales_confirmed_holdings' : create?.[1] ?? (widenSalesCertificate ? 'sales_confirmed_accounts' : (addTurnKind || widenReply ? 'case_discussion_turns' : 'case_sop_versions')),
+      kind: addHoldingsSnapshot ? 'ADD_HOLDINGS_SNAPSHOT' : widenSalesCertificate ? 'WIDEN_SALES_CERTIFICATE' : create ? 'CREATE' : addTurnKind ? 'ADD_TURN_KIND' : addSopSource ? 'ADD_SOP_SOURCE' :
         widenReply ? 'WIDEN_REPLY' : 'WIDEN_SOP_STATUS',
       checksum: crypto.createHash('sha256').update(statement).digest('hex') };
   });
@@ -38,6 +39,16 @@ async function stepApplied(db, step) {
     const [[row]] = await db.execute(`SELECT COUNT(*) AS count FROM information_schema.columns
       WHERE table_schema=DATABASE() AND table_name=? AND column_name=?`, [table, column]);
     return Number(row.count) === 1;
+  }
+  if (step.kind === 'ADD_HOLDINGS_SNAPSHOT') {
+    const [columns] = await db.execute(`SELECT column_name AS fieldName,data_type AS fieldType,numeric_precision AS fieldPrecision,numeric_scale AS fieldScale,is_nullable AS fieldNullable FROM information_schema.columns
+      WHERE table_schema=DATABASE() AND table_name='sales_confirmed_holdings' AND column_name IN
+      ('snapshot_date','snapshot_total','snapshot_available','snapshot_frozen','snapshot_parse_id','available_volume','frozen_volume')`);
+    if (!columns.length) return false;
+    if (columns.length !== 7 || columns.some(c=>c.fieldNullable!=='YES' ||
+      (c.fieldName==='snapshot_date' ? c.fieldType!=='date' : c.fieldName==='snapshot_parse_id' ? c.fieldType!=='bigint' :
+        c.fieldType!=='decimal' || Number(c.fieldPrecision)!==16 || Number(c.fieldScale)!==2))) throw new Error('持仓快照列结构不完整或不兼容');
+    return true;
   }
   if (step.kind === 'WIDEN_SALES_CERTIFICATE') {
     const [[row]] = await db.execute(`SELECT character_maximum_length AS width FROM information_schema.columns
