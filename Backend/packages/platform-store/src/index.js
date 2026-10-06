@@ -576,13 +576,13 @@ export function createCaseRepository({ transaction }) {
       if (!caseRow) throw storeError('CASE_NOT_FOUND', 404, 'Case 不存在');
       const keys = [auth.workspace_id, chat.id, caseRow.id];
       const [[prior]] = await db.execute(`SELECT sop_version_id FROM case_data_executions
-        WHERE workspace_id=? AND chat_id=? AND case_id=?`, keys);
+        WHERE workspace_id=? AND chat_id=? AND case_id=? FOR UPDATE`, keys);
       if (prior) return { ...await readGeneratedData(db, keys), replayed: true };
       if (caseRow.status !== 'SOP_LOCKED') {
         throw storeError('PLAN_NOT_CONFIRMED', 409, '须先确认 Plan');
       }
       const [[plan]] = await db.execute(`SELECT id,plan_json FROM case_sop_versions
-        WHERE workspace_id=? AND chat_id=? AND case_id=? AND version_number=? AND status='LOCKED'`,
+        WHERE workspace_id=? AND chat_id=? AND case_id=? AND version_number=? AND status='LOCKED' FOR UPDATE`,
       [...keys, versionNumber]);
       if (!plan) throw storeError('PLAN_VERSION_CONFLICT', 409, '已确认的 Plan 版本不匹配');
       const lockedPlan=typeof plan.plan_json==='string'?JSON.parse(plan.plan_json):plan.plan_json;
@@ -648,10 +648,10 @@ export function createCaseRepository({ transaction }) {
       const lockedPlan=typeof locked?.plan_json==='string'?JSON.parse(locked.plan_json):locked?.plan_json;
       if (lockedPlan?.contract) throw storeError('PLAN_DATA_FROZEN',409,'准备数据已在Plan中确认并锁定；请新建Case讨论修改后的方案');
       const [[confirmation]] = await db.execute(`SELECT revision FROM case_data_confirmations
-        WHERE workspace_id=? AND chat_id=? AND case_id=?`, keys);
+        WHERE workspace_id=? AND chat_id=? AND case_id=? FOR UPDATE`, keys);
       if (confirmation) throw storeError('DATA_ALREADY_CONFIRMED', 409, '数据已确认，不能继续修改');
       const [[latest]] = await db.execute(`SELECT COALESCE(MAX(revision),0) AS revision
-        FROM case_data_edit_events WHERE workspace_id=? AND chat_id=? AND case_id=?`, keys);
+        FROM case_data_edit_events WHERE workspace_id=? AND chat_id=? AND case_id=? FOR UPDATE`, keys);
       if (Number(latest.revision) !== edit.revision) {
         throw storeError('DATA_EDIT_CONFLICT', 409, '数据已被其他修改更新，请刷新后重试');
       }
@@ -722,7 +722,7 @@ export function createCaseRepository({ transaction }) {
       [...keys,afterRevision,JSON.stringify(edit.changes)]);
       if (reviewTurn) {
         const [[lastTurn]] = await db.execute(`SELECT COALESCE(MAX(turn_number),0) AS number
-          FROM case_data_review_turns WHERE workspace_id=? AND chat_id=? AND case_id=?`, keys);
+          FROM case_data_review_turns WHERE workspace_id=? AND chat_id=? AND case_id=? FOR UPDATE`, keys);
         await db.execute(`INSERT INTO case_data_review_turns
           (workspace_id,chat_id,case_id,turn_number,before_revision,after_revision,
            user_text,assistant_text,changes_json) VALUES (?,?,?,?,?,?,?,?,?)`,
@@ -777,10 +777,10 @@ export function createCaseRepository({ transaction }) {
         WHERE workspace_id=? AND chat_id=? AND case_id=? FOR UPDATE`, keys);
       if (!execution) throw storeError('DATA_NOT_STARTED', 409, '数据尚未生成');
       const [[prior]] = await db.execute(`SELECT revision FROM case_data_confirmations
-        WHERE workspace_id=? AND chat_id=? AND case_id=?`, keys);
+        WHERE workspace_id=? AND chat_id=? AND case_id=? FOR UPDATE`, keys);
       if (prior) throw storeError('DATA_ALREADY_CONFIRMED', 409, '数据已经确认');
       const [[latest]] = await db.execute(`SELECT COALESCE(MAX(revision),0) AS revision
-        FROM case_data_edit_events WHERE workspace_id=? AND chat_id=? AND case_id=?`, keys);
+        FROM case_data_edit_events WHERE workspace_id=? AND chat_id=? AND case_id=? FOR UPDATE`, keys);
       if (Number(latest.revision) !== revision) {
         throw storeError('DATA_EDIT_CONFLICT', 409, '数据已更新，请先查看最新版本');
       }
