@@ -18,6 +18,7 @@ export function createPersistedDiscussionService({ repository, complete }) {
     if (typeof userInput !== 'string' || !userInput.trim() || userInput.length > 4000) {
       throw new TypeError('userInput must contain 1–4000 characters');
     }
+    await repository.assertCaseWritable?.(token,chatPublicId,casePublicId,{discussion:true});
     const input = userInput.trim();
     const history = await repository.readCaseDiscussion(token, chatPublicId, casePublicId);
     if (history.pending && (history.pending.userInput !== input || history.pending.kind !== 'DISCUSS')) {
@@ -41,6 +42,7 @@ export function createPersistedDiscussionService({ repository, complete }) {
     if (typeof userInput !== 'string' || !userInput.trim() || userInput.length > 4000) {
       throw new TypeError('userInput must contain 1–4000 characters');
     }
+    await repository.assertCaseWritable?.(token,chatPublicId,casePublicId,{discussion:true});
     const input = userInput.trim();
     const history = await repository.readCaseDiscussion(token, chatPublicId, casePublicId);
     if (history.pending && (history.pending.userInput !== input || history.pending.kind !== 'PROPOSE_PLAN')) {

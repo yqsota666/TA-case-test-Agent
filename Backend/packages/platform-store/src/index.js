@@ -90,6 +90,17 @@ export function createCaseRepository({ transaction }) {
     });
   }
 
+  async function assertCaseWritable(token,chatPublicId,casePublicId,{discussion=false}={}){
+    chatPublicId=requiredUuid(chatPublicId,'Chat');casePublicId=requiredUuid(casePublicId,'Case');
+    return transaction(async db=>{
+      const auth=await authenticateSession(db,token);
+      const [[owner]]=await db.execute(`SELECT c.status AS chat_status,k.status AS case_status FROM case_chats c JOIN cases k ON k.workspace_id=c.workspace_id AND k.chat_id=c.id WHERE c.workspace_id=? AND c.public_id=? AND k.public_id=? FOR UPDATE`,[auth.workspace_id,chatPublicId,casePublicId]);
+      if(!owner)throw storeError('CASE_NOT_FOUND',404,'Case不存在');
+      if(owner.chat_status!=='ACTIVE'||['PASS','FAIL'].includes(owner.case_status)||(discussion&&!['DISCUSSING','SOP_PENDING'].includes(owner.case_status)))throw storeError('CASE_NOT_WRITABLE',409,'Chat或Case已封存，不能继续Agent动作');
+      return {writable:true};
+    });
+  }
+
   async function listChats(token) {
     return transaction(async db=>{
       const auth=await authenticateSession(db,token);
@@ -788,7 +799,7 @@ export function createCaseRepository({ transaction }) {
     });
   }
 
-  return Object.freeze({ createChat, listChats, createCase, listCases, saveSopProposal,
+  return Object.freeze({ createChat, listChats, assertCaseWritable, createCase, listCases, saveSopProposal,
     getLatestSopProposal, confirmSopProposal, readCaseDiscussion, beginCaseDiscussionTurn,
     finishCaseDiscussionTurn, abandonCaseDiscussionTurn, finishCasePlanProposal,
     generatedData, generatedDataCatalog, executeGeneratedData, editGeneratedData,

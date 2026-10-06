@@ -96,6 +96,9 @@ export function createCaseHttpHandler({ repository, discussionService, confirmPl
     try {
       const token = cookieToken(request.headers.cookie);
       if (!token) { send(response, 401, { error: 'UNAUTHENTICATED' }); return; }
+      if(repository.assertCaseWritable && match && request.method==='POST' && ['discussion','plan','data/execute','data/review','application-preparation'].includes(match[3])){
+        await repository.assertCaseWritable(token,match[1],match[2],{discussion:['discussion','plan'].includes(match[3])});
+      }
       if(collectionRoute){
         if(request.method==='GET'){send(response,200,collection[1]?await repository.listCases(token,collection[1]):await repository.listChats(token));return;}
         if(request.headers.origin!==allowedOrigin){send(response,403,{error:'INVALID_ORIGIN'});return;}

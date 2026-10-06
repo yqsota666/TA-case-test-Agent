@@ -150,3 +150,11 @@ test('linked retest supplies read-only failure context to model without copying 
  await service.discuss({...scope,userInput:'先讨论修复后怎样重新测'});
  assert.equal(calls.length,1);assert.match(calls[0].system,/实际持仓不一致/);assert.match(calls[0].system,/只读证据/);assert.match(calls[0].system,/不继承原Plan确认/);assert.equal(calls[0].user,'先讨论修复后怎样重新测');assert.equal(saved.turnNumber,1);
 });
+
+
+test('sealed Chat rejects a pending-turn retry before any model call',async()=>{
+ let calls=0;
+ const repository={assertCaseWritable:async()=>{throw Object.assign(new Error('已封存'),{code:'CASE_NOT_WRITABLE'});},readCaseDiscussion:async()=>({revision:1,turns:[],pending:{turnNumber:1,userInput:'重试',kind:'DISCUSS'}}),beginCaseDiscussionTurn:async()=>{},finishCaseDiscussionTurn:async()=>{},finishCasePlanProposal:async()=>{},abandonCaseDiscussionTurn:async()=>{}};
+ const service=createPersistedDiscussionService({repository,complete:async()=>{calls++;return firstReply;}});
+ await assert.rejects(service.discuss({...scope,userInput:'重试'}),{code:'CASE_NOT_WRITABLE'});assert.equal(calls,0);
+});

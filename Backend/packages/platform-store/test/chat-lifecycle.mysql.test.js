@@ -32,6 +32,7 @@ test('MySQL: close preserves statuses, requires human verdicts, freezes old writ
   assert.deepEqual((await life.read(token,input)).cases.map(c=>c.status),['DISCUSSING','DISCUSSING']);
   assert.equal((await repo.readCaseDiscussion(token,chat.publicId,a.publicId)).turns.length,0);
   await assert.rejects(repo.createCase(token,chat.publicId,'C'),{code:'CHAT_CLOSED'});
+  await assert.rejects(repo.assertCaseWritable(token,chat.publicId,a.publicId),{code:'CASE_NOT_WRITABLE'});
   await assert.rejects(repo.beginCaseDiscussionTurn(token,chat.publicId,a.publicId,{expectedRevision:0,userInput:'继续'}),{code:'CHAT_CLOSED'});
   const scoped={chatPublicId:chat.publicId,casePublicId:a.publicId};
   await assert.rejects(createApplicationPreparationRepository({transaction}).save(token,{...scoped,revision:0,state:{}}),{code:'DATA_NOT_CONFIRMED'});

@@ -19,3 +19,14 @@ test('lifecycle HTTP validates origin, exact intent and authenticated Chat scope
  assert.deepEqual(calls.map(c=>c.method),['read','close','retest','newRun']);
  assert.equal(calls[1].input.chatPublicId,'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
 });
+
+test('sealed Case model endpoints fail before executing discussion or preparation',async t=>{
+ let modelCalls=0,guards=0;
+ const server=createCaseHttpServer({repository:{assertCaseWritable:async()=>{guards++;throw Object.assign(new Error('封存'),{status:409,code:'CASE_NOT_WRITABLE'});}},discussionService:{discuss:async()=>{modelCalls++;}},confirmPlan:()=>{},executeData:()=>{modelCalls++;},reviseData:()=>{modelCalls++;},applicationPreparation:{prepare:async()=>{modelCalls++;}},allowedOrigin:'http://127.0.0.1:5188'});
+ server.listen(0,'127.0.0.1');await once(server,'listening');t.after(()=>{server.closeAllConnections();server.close();});
+ const url=`http://127.0.0.1:${server.address().port}/api/chats/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/cases/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/`;
+ for(const endpoint of ['discussion','plan','data/execute','data/review','application-preparation']){
+  const response=await fetch(url+endpoint,{method:'POST',headers:{origin:'http://127.0.0.1:5188',cookie:'case_session=synthetic','content-type':'application/json'},body:'{}'});assert.equal(response.status,409);assert.equal((await response.json()).error,'CASE_NOT_WRITABLE');
+ }
+ assert.equal(guards,5);assert.equal(modelCalls,0);
+});
