@@ -70,9 +70,10 @@ test('confirmed data generates 01 and waits for 02 before generating 03 once', a
   f.bindings.push({ channelId: '7', transactionAccountId: 'TESTACCOUNT1', taAccountId: 'TA000001' });
   const second = await f.service.prepare({ ...input, revision: first.revision });
   assert.equal(second.phase, 'GENERATED'); assert.deepEqual(f.files.map(file => file.fileType), ['01','03']);
+  assert.equal(f.calls.filter(call => call[0] === 'derive').length, 1); // Resume saved transaction intent after 02 without another model call.
   await f.service.prepare(input);
   assert.equal(f.files.length, 2); assert.equal(f.applications.length, 2);
-  assert.equal(f.calls.filter(call => call[0] === 'derive').length, 3);
+  assert.equal(f.calls.filter(call => call[0] === 'derive').length, 2);
 });
 
 test('continuing after 02 replans and recovers a 03 omitted from the earlier model reply', async () => {

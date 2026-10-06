@@ -2,15 +2,16 @@ import { isDeepStrictEqual } from 'node:util';
 import { compileApplicationIntents, preparationCatalog } from '../../case-agent/src/application-preparation.js';
 import { boundPreparationHistory } from '../../platform-store/src/application-preparation.js';
 
-export function createApplicationPreparationService({ repository, preparations, exchangeRepository, derive }) {
+export function createApplicationPreparationService({ repository, preparations, exchangeRepository, derive, confirmedSales }) {
   const error = (code, message) => Object.assign(new Error(message), { code, status: 409 });
   async function prepare({ token, chatPublicId, casePublicId, revision, userInput = '', channelId }) {
     const scope = { chatPublicId, casePublicId };
-    const [previous, data, plan, channelResult, bindingResult] = await Promise.all([
+    const [previous, draftData, plan, channelResult, bindingResult] = await Promise.all([
       preparations.read(token, scope), repository.generatedData(token, chatPublicId, casePublicId),
       repository.getLatestSopProposal(token, chatPublicId, casePublicId),
       exchangeRepository.listChannels(token), exchangeRepository.listCaseBindings(token, scope),
     ]);
+    const data = confirmedSales ? await confirmedSales.applicationData(token, scope, draftData) : draftData;
     if (data.reviewStatus !== 'CONFIRMED' || plan?.status !== 'LOCKED') {
       throw error('DATA_NOT_CONFIRMED', '须先确认 Plan 和当前 Case 的四张数据表');
     }
@@ -32,7 +33,7 @@ export function createApplicationPreparationService({ repository, preparations, 
       throw error('APPLICATION_ALREADY_STAGED', '已有申请进入原通道，不能切换通道');
     }
     userInput = [previous.pendingUserInput, userInput].filter(Boolean).join('\n');
-    const recovering = ['PREPARING', 'WAITING_OPERATION'].includes(previous.phase) && previous.intents.length && !userInput;
+    const recovering = ['PREPARING', 'WAITING_OPERATION', 'WAITING_TA'].includes(previous.phase) && previous.intents.length && !userInput;
     const history = boundPreparationHistory(previous);
     const suggestion = recovering ?
       { intents: previous.intents, reply: previous.resumeReply ?? previous.reply, questions: previous.modelQuestions ?? [] } :
@@ -59,7 +60,7 @@ export function createApplicationPreparationService({ repository, preparations, 
       phase: 'PREPARING', channelId, pendingUserInput: '', intents: suggestion.intents, turns,
       turnsOmitted: history.turnsOmitted ?? 0, reply: suggestion.reply,
       modelQuestions: suggestion.questions, questions: compiled.questions,
-      stagedKeys: previous.stagedKeys, files: previous.files, waiting: compiled.waiting,
+      stagedKeys: previous.stagedKeys, files: previous.files, waiting: compiled.waiting, resumeReply: suggestion.reply,
     } });
     let waitingChat = false;
     try {

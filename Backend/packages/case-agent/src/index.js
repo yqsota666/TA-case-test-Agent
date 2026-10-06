@@ -22,6 +22,7 @@ export {
   displayPlanProposal,
 } from './plan-proposal.js';
 export { createPlanConfirmationGraph, stagePlanProposal, decidePlan } from './plan-confirmation.js';
+export { createReturnParsingGraph } from './return-parsing-graph.js';
 export { createPersistedDiscussionService } from './persisted-discussion.js';
 export { DataSpecificationSchema, DataEditSchema, DATA_GENERATION_PROMPT, parseDataSpecification,
   deriveDataSpecification, createDataGenerationGraph } from './data-generation.js';

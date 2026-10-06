@@ -66,7 +66,11 @@ test('stages an encoded 01 snapshot under a locked SOP and server-side scope', a
     fileType: '01', record
   });
   assert.match(result.snapshotHash, /^[a-f0-9]{64}$/);
-  const scope = calls.find(call => call.sql.includes('FROM case_chats'));
+  const lock = calls.find(call => call.sql.includes('SELECT k.id AS case_id'));
+  assert.match(lock.sql, /FOR UPDATE/);
+  assert.deepEqual(lock.values, [31, chatPublicId, casePublicId]);
+  const scope = calls.find(call => call.sql.includes("s.status='LOCKED'"));
+  assert.ok(calls.indexOf(lock) < calls.indexOf(scope));
   assert.match(scope.sql, /s\.status='LOCKED'/);
   assert.match(scope.sql, /AND EXISTS \(SELECT 1 FROM case_data_confirmations d/);
   assert.deepEqual(scope.values, [31, chatPublicId, casePublicId, '61', '71']);
@@ -117,34 +121,11 @@ test('foreign headers are rejected before storing any file bytes', async () => {
   assert.equal(calls.some(call => call.sql.includes('INSERT INTO exchange_files')), false);
 });
 
-test('matching uses the application number, mapped code, key fields and delivery state', async () => {
-  const returnItem = { id: 91, channel_id: 71, file_type: '02', record_json: returned, match_status: 'UNMATCHED' };
-  const application = { id: 101, chat_id: 41, case_id: 51, app_no: record.AppSheetSerialNo,
-    business_code: '001', file_type: '01', record_json: record, status: 'DELIVERED' };
-  const { repository, calls } = fixture({ returnItem, application });
-  assert.deepEqual(await repository.matchReturnRecord(token, { returnRecordId: '91', applicationPublicId }), { matched: true });
-  assert.deepEqual(calls.find(call => call.sql.includes('UPDATE return_records')).values,
-    [41, 51, 101, 31, 91]);
-  assert.deepEqual(calls.find(call => call.sql.includes('INSERT INTO ta_account_bindings')).values,
-    [31, 71, '123456', 'TA123', 91]);
-  const wrong = fixture({ returnItem, application: { ...application, status: 'READY' } });
-  await assert.rejects(wrong.repository.matchReturnRecord(token, { returnRecordId: '91', applicationPublicId }),
-    { code: 'RETURN_MISMATCH' });
-  const foreign = fixture({ returnItem: { ...returnItem, record_json: { ...returned, DistributorCode: '999' } }, application });
-  await assert.rejects(foreign.repository.matchReturnRecord(token, { returnRecordId: '91', applicationPublicId }),
-    { code: 'RETURN_MISMATCH' });
-});
-
-test('02 matching rejects a changed TA account for an existing account application', async () => {
-  const source = { ...record, BusinessCode: '002', TAAccountID: 'TA123' };
-  const application = { id: 101, chat_id: 41, case_id: 51, app_no: source.AppSheetSerialNo,
-    business_code: '002', file_type: '01', record_json: source, status: 'DELIVERED' };
-  const returnItem = { id: 91, channel_id: 71, file_type: '02', match_status: 'UNMATCHED',
-    record_json: { ...returned, BusinessCode: '102', TAAccountID: 'TA999' } };
-  const { repository, calls } = fixture({ returnItem, application });
-  await assert.rejects(repository.matchReturnRecord(token, { returnRecordId: '91', applicationPublicId }),
-    { code: 'RETURN_MISMATCH' });
-  assert.equal(calls.some(call => call.sql.includes('UPDATE return_records')), false);
+test('legacy matching cannot bypass the confirmation graph or write a TA binding', async () => {
+  const { repository,calls } = fixture();
+  await assert.rejects(repository.matchReturnRecord(token,{ returnRecordId: '91',applicationPublicId }),
+    { code: 'CONFIRMATION_SERVICE_REQUIRED' });
+  assert.equal(calls.some(call => /UPDATE|INSERT/.test(call.sql)),false);
 });
 
 test('03 staging requires a TA account confirmed by a matched successful 02', async () => {
@@ -212,18 +193,6 @@ test('03 conversion requires a confirmed target fund and share class', async () 
     call.values.includes('000002'));
   assert.deepEqual(targetLookup.values.slice(-2), ['000002', 'B']);
   assert.equal(accepted.calls.some(call => call.sql.includes('INSERT INTO applications')), true);
-});
-
-test('04 matching uses the mapped confirmation code', async () => {
-  const source = { AppSheetSerialNo: '202610030022', BusinessCode: '022', DistributorCode: '306',
-    TransactionDate: '20261003', TransactionAccountID: '123456', TAAccountID: 'TA123',
-    FundCode: '000001', ShareClass: 'A' };
-  const returnItem = { id: 91, channel_id: 71, file_type: '04',
-    record_json: { ...source, BusinessCode: '122' }, match_status: 'UNMATCHED' };
-  const application = { id: 101, chat_id: 41, case_id: 51, app_no: source.AppSheetSerialNo,
-    business_code: '022', file_type: '03', record_json: source, status: 'WAITING_RETURN' };
-  const { repository } = fixture({ returnItem, application });
-  assert.deepEqual(await repository.matchReturnRecord(token, { returnRecordId: '91', applicationPublicId }), { matched: true });
 });
 
 test('incomplete 01 application never becomes READY', async () => {

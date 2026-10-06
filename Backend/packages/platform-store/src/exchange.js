@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { buildDataFile, confirmationCodeFor, dataFileName, encodeRecord, FIELD_REQUIREMENTS, parseDataFile } from '../../platform-protocol/src/index.js';
+import { buildDataFile, dataFileName, encodeRecord, FIELD_REQUIREMENTS, parseDataFile } from '../../platform-protocol/src/index.js';
 import { authenticateSession, storeError } from './index.js';
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -100,9 +100,19 @@ export function createExchangeRepository({ transaction }) {
           AND a.chat_id=k.chat_id AND a.case_id=k.id
         JOIN ta_account_bindings b ON b.workspace_id=a.workspace_id
           AND b.transaction_account_id=a.account_no
+        JOIN sales_confirmed_accounts sc ON sc.workspace_id=b.workspace_id AND sc.channel_id=b.channel_id
+          AND sc.transaction_account_id=b.transaction_account_id AND sc.ta_account_id=b.ta_account_id
         WHERE c.workspace_id=? AND c.public_id=? AND k.public_id=? ORDER BY a.id,b.channel_id`,
       [auth.workspace_id, chatPublicId, casePublicId]);
-      return { bindings: rows.map(row => ({ transactionAccountId: row.account_no,
+      const [reused] = await db.execute(`SELECT sc.transaction_account_id AS account_no,sc.channel_id,
+        sc.ta_account_id,b.source_return_record_id FROM case_chats c
+        JOIN cases k ON k.workspace_id=c.workspace_id AND k.chat_id=c.id
+        JOIN case_sales_account_refs r ON r.workspace_id=k.workspace_id AND r.chat_id=k.chat_id AND r.case_id=k.id
+        JOIN sales_confirmed_accounts sc ON sc.workspace_id=r.workspace_id AND sc.channel_id=r.channel_id AND sc.id=r.account_id
+        JOIN ta_account_bindings b ON b.workspace_id=sc.workspace_id AND b.channel_id=sc.channel_id
+          AND b.transaction_account_id=sc.transaction_account_id AND b.ta_account_id=sc.ta_account_id
+        WHERE c.workspace_id=? AND c.public_id=? AND k.public_id=?`, [auth.workspace_id, chatPublicId, casePublicId]);
+      return { bindings: [...rows,...reused].map(row => ({ transactionAccountId: row.account_no,
         channelId: String(row.channel_id), taAccountId: row.ta_account_id,
         sourceReturnRecordId: String(row.source_return_record_id) })) };
     });
@@ -114,6 +124,11 @@ export function createExchangeRepository({ transaction }) {
     const date = validDate(businessDate);
     return transaction(async db => {
       const auth = await authenticateSession(db, token);
+      const [[owner]] = await db.execute(`SELECT k.id AS case_id,c.id AS chat_id
+        FROM case_chats c JOIN cases k ON k.workspace_id=c.workspace_id AND k.chat_id=c.id
+        WHERE c.workspace_id=? AND c.public_id=? AND k.public_id=? FOR UPDATE`,
+      [auth.workspace_id, chatPublicId, casePublicId]);
+      if (!owner) throw storeError('APPLICATION_SCOPE', 409, 'Case、SOP 或通道不可用于申请');
       const [[scope]] = await db.execute(`SELECT c.id AS chat_id,k.id AS case_id,s.id AS sop_id,
         h.id AS channel_id,h.distributor_code,h.protocol_version
         FROM case_chats c
@@ -125,16 +140,23 @@ export function createExchangeRepository({ transaction }) {
           AND k.public_id=? AND k.status IN ('SOP_LOCKED','EXECUTING')
           AND EXISTS (SELECT 1 FROM case_data_confirmations d
             WHERE d.workspace_id=k.workspace_id AND d.chat_id=k.chat_id AND d.case_id=k.id)
-          AND s.id=? AND h.id=?`,
+          AND s.id=? AND h.id=? FOR UPDATE`,
       [auth.workspace_id, chatPublicId, casePublicId, sopVersionId, channelId]);
       if (!scope) throw storeError('APPLICATION_SCOPE', 409, 'Case、SOP 或通道不可用于申请');
       const { snapshot, hash } = validSnapshot(fileType, record, scope.protocol_version, scope, businessDate);
-      const [[sourceAccount]] = await db.execute(`SELECT a.id,a.branch_code,c.name,c.investor_type
+      let [[sourceAccount]] = await db.execute(`SELECT a.id,a.branch_code,c.name,c.investor_type
         FROM case_generated_accounts a JOIN case_generated_customers c
           ON c.workspace_id=a.workspace_id AND c.chat_id=a.chat_id
           AND c.case_id=a.case_id AND c.id=a.customer_id
-        WHERE a.workspace_id=? AND a.chat_id=? AND a.case_id=? AND a.account_no=?`,
+        WHERE a.workspace_id=? AND a.chat_id=? AND a.case_id=? AND a.account_no=? FOR UPDATE`,
       [auth.workspace_id, scope.chat_id, scope.case_id, record.TransactionAccountID]);
+      if (!sourceAccount && fileType === '03') {
+        [[sourceAccount]] = await db.execute(`SELECT sc.id,sc.branch_code,sc.investor_name AS name,sc.investor_type
+          FROM case_sales_account_refs r JOIN sales_confirmed_accounts sc ON sc.workspace_id=r.workspace_id
+            AND sc.channel_id=r.channel_id AND sc.id=r.account_id
+          WHERE r.workspace_id=? AND r.chat_id=? AND r.case_id=? AND r.channel_id=? AND sc.transaction_account_id=? FOR UPDATE`,
+        [auth.workspace_id,scope.chat_id,scope.case_id,scope.channel_id,record.TransactionAccountID]);
+      }
       if (!sourceAccount || (record.BranchCode && sourceAccount.branch_code !== record.BranchCode) ||
           (record.IndividualOrInstitution &&
             sourceAccount.investor_type !== record.IndividualOrInstitution) ||
@@ -159,8 +181,10 @@ export function createExchangeRepository({ transaction }) {
         if (!targetFund) throw storeError('APPLICATION_DATA_MISMATCH', 409, '转入基金与已确认数据不一致');
       }
       if (fileType === '03' || record.BusinessCode !== '001') {
-        const [[binding]] = await db.execute(`SELECT id FROM ta_account_bindings
-          WHERE workspace_id=? AND channel_id=? AND transaction_account_id=? AND ta_account_id=?`,
+        const [[binding]] = await db.execute(`SELECT b.id FROM ta_account_bindings b JOIN sales_confirmed_accounts sc
+          ON sc.workspace_id=b.workspace_id AND sc.channel_id=b.channel_id
+            AND sc.transaction_account_id=b.transaction_account_id AND sc.ta_account_id=b.ta_account_id
+          WHERE b.workspace_id=? AND b.channel_id=? AND b.transaction_account_id=? AND b.ta_account_id=?`,
         [auth.workspace_id, scope.channel_id, record.TransactionAccountID, record.TAAccountID]);
         if (!binding) throw storeError('TA_ACCOUNT_UNVERIFIED', 409, 'TA 账号尚无已确认来源');
       }
@@ -428,57 +452,9 @@ export function createExchangeRepository({ transaction }) {
   async function matchReturnRecord(token, { returnRecordId, applicationPublicId }) {
     validId(returnRecordId); validUuid(applicationPublicId);
     return transaction(async db => {
-      const auth = await authenticateSession(db, token);
-      const [[item]] = await db.execute(`SELECT id,channel_id,file_type,record_json,match_status
-        FROM return_records WHERE workspace_id=? AND id=? FOR UPDATE`,
-      [auth.workspace_id, returnRecordId]);
-      if (!item) throw storeError('RETURN_NOT_FOUND', 404, '回传记录不存在');
-      if (item.match_status !== 'UNMATCHED') throw storeError('RETURN_ALREADY_MATCHED', 409, '回传记录已处理');
-      if (!['02', '04'].includes(item.file_type)) throw storeError('RETURN_NOT_APPLICATION', 409, '该回传需单独对账');
-      const [[app]] = await db.execute(`SELECT id,chat_id,case_id,app_no,file_type,business_code,record_json,status
-        FROM applications WHERE workspace_id=? AND channel_id=? AND public_id=?`,
-      [auth.workspace_id, item.channel_id, applicationPublicId]);
-      const record = typeof item.record_json === 'string' ? JSON.parse(item.record_json) : item.record_json;
-      const source = app && (typeof app.record_json === 'string' ? JSON.parse(app.record_json) : app.record_json);
-      const expectedCode = app && (item.file_type === '02'
-        ? String(Number(app.business_code) + 100).padStart(3, '0') : confirmationCodeFor(app.business_code));
-      const commonFields = item.file_type === '02'
-        ? ['DistributorCode','TransactionDate','TransactionAccountID','TAAccountID','CertificateType','CertificateNo']
-        : ['DistributorCode','TransactionDate','TransactionAccountID','TAAccountID','FundCode','ShareClass'];
-      const keyMismatch = !source || commonFields.some(name => {
-        const original = source[name];
-        return original !== null && original !== undefined && String(original).trim() !== ''
-          && String(record[name] ?? '').trim() !== String(original).trim();
-      });
-      if (!app || app.app_no !== record.AppSheetSerialNo || expectedCode !== record.BusinessCode
-        || keyMismatch
-        || (item.file_type === '02' ? app.file_type !== '01' : app.file_type !== '03')
-        || !['DELIVERED', 'WAITING_RETURN'].includes(app.status)) {
-        throw storeError('RETURN_MISMATCH', 409, '回传与已交付申请不一致');
-      }
-      let createBinding = false;
-      if (item.file_type === '02' && record.ReturnCode === '0000') {
-        if (!record.TAAccountID || !record.TransactionAccountID) {
-          throw storeError('RETURN_MISMATCH', 409, '成功的 02 回传缺少真实 TA 账号');
-        }
-        const [[binding]] = await db.execute(`SELECT ta_account_id FROM ta_account_bindings
-          WHERE workspace_id=? AND channel_id=? AND transaction_account_id=? FOR UPDATE`,
-        [auth.workspace_id, item.channel_id, record.TransactionAccountID]);
-        if (binding && binding.ta_account_id !== record.TAAccountID) {
-          throw storeError('RETURN_MISMATCH', 409, '02 回传的 TA 账号与已确认账号冲突');
-        }
-        createBinding = !binding;
-      }
-      await db.execute(`UPDATE return_records SET chat_id=?,case_id=?,application_id=?,match_status='MATCHED'
-        WHERE workspace_id=? AND id=? AND match_status='UNMATCHED'`,
-      [app.chat_id, app.case_id, app.id, auth.workspace_id, item.id]);
-      if (createBinding) {
-        await db.execute(`INSERT INTO ta_account_bindings
-          (workspace_id,channel_id,transaction_account_id,ta_account_id,source_return_record_id)
-          VALUES (?,?,?,?,?)`,
-        [auth.workspace_id, item.channel_id, record.TransactionAccountID, record.TAAccountID, item.id]);
-      }
-      return { matched: true };
+      await authenticateSession(db, token);
+      throw storeError('CONFIRMATION_SERVICE_REQUIRED', 409,
+        '回传确认须经过独立核验与正式销售数据应用节点，请使用 return-confirmation 接口');
     });
   }
 

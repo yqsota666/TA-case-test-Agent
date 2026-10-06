@@ -9,6 +9,11 @@ import { createPersistedDiscussionService, createSophnetCompletion,
 import { createCaseHttpServer } from './http.js';
 import { createConfirmPlanWithData } from './confirm-plan-data.js';
 import { createApplicationPreparationService } from './prepare-applications.js';
+import { createReturnParsingRepository } from '../../platform-store/src/return-parsing.js';
+import { createReturnParsingService } from './return-parsing.js';
+
+import { createReturnConfirmationRepository } from '../../platform-store/src/return-confirmation.js';
+import { createReturnConfirmationService } from './return-confirmation.js';
 
 const allowedOrigin = process.env.CASE_PUBLIC_ORIGIN;
 if (!allowedOrigin) throw new Error('CASE_PUBLIC_ORIGIN is required');
@@ -29,6 +34,8 @@ const transaction = async action => {
   } finally { connection.release(); }
 };
 const repository = createCaseRepository({ transaction });
+const returnParsing = createReturnParsingService({ repository: createReturnParsingRepository({ transaction }) });
+const returnConfirmation = createReturnConfirmationService({ repository: createReturnConfirmationRepository({ transaction }) });
 const exchangeRepository = createExchangeRepository({ transaction });
 const preparations = createApplicationPreparationRepository({ transaction });
 const discussionService = createPersistedDiscussionService({ repository,
@@ -81,16 +88,9 @@ const reviseData = async ({ token, chatPublicId, casePublicId, revision, userInp
   return { reply: suggestion.reply, data: updated };
 };
 const applicationPreparation = createApplicationPreparationService({ repository, preparations,
-  exchangeRepository, derive: context => deriveApplicationPreparation(completeData, context) });
-const confirmData = async ({ token, chatPublicId, casePublicId, revision }) => {
-  const data = await repository.confirmGeneratedData(token, chatPublicId, casePublicId, revision);
-  try {
-    return { ...data, applicationPreparation: await applicationPreparation.prepare({ token, chatPublicId, casePublicId }) };
-  } catch (error) {
-    return { ...data, applicationPreparation: { phase: 'ERROR',
-      message: error.status ? error.message : '申请自动准备未完成，请点击继续生成重试。' } };
-  }
-};
+  exchangeRepository, confirmedSales: returnConfirmation, derive: context => deriveApplicationPreparation(completeData, context) });
+const confirmData = ({ token, chatPublicId, casePublicId, revision }) =>
+  repository.confirmGeneratedData(token, chatPublicId, casePublicId, revision);
 const server = createCaseHttpServer({ repository, discussionService, confirmPlan,
-  executeData, reviseData, exchangeRepository, applicationPreparation, confirmData, allowedOrigin });
+  executeData, reviseData, exchangeRepository, applicationPreparation, confirmData, returnParsing, returnConfirmation, allowedOrigin });
 server.listen(Number(process.env.CASE_API_PORT ?? 3100), '127.0.0.1');
