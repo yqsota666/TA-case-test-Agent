@@ -49,3 +49,14 @@ test('another field range cannot authorize an invented operator on this field',(
  assert.equal(compareCaseResults(state,{assertions:[a,b],uncertainties:[]}).outcome,'REVIEW');
  assert.equal(compareCaseResults(state,{assertions:[a,{...b,operator:'eq'}],uncertainties:[]}).outcome,'FAIL');
 });
+
+test('non-numeric expected values need complete literal tokens from the quoted plan',()=>{
+ for(const [quote,field,value] of [['状态FAILED','status','CONFIRMED'],['状态NOT_CONFIRMED','status','CONFIRMED'],['TA账户TA0001','taAccountId','TA000'],['日期20261006','snapshotDate','2026100']]){
+  const state={...snapshot,plan:{scenarios:[{expected:quote}]},evidence:[{...snapshot.evidence[0],values:{[field]:value}}]};
+  const assertion={...proposal.assertions[0],expectedQuote:quote,field,expectedValue:value};
+  assert.equal(compareCaseResults(state,{assertions:[assertion],uncertainties:[]}).outcome,'REVIEW',quote);
+ }
+ const quote='申请最终状态均为CONFIRMED';
+ const state={...snapshot,plan:{scenarios:[{expected:quote}]},evidence:[{...snapshot.evidence[0],values:{status:'CONFIRMED'}}]};
+ assert.equal(compareCaseResults(state,{assertions:[{...proposal.assertions[0],expectedQuote:quote,field:'status',expectedValue:'CONFIRMED'}],uncertainties:[]}).outcome,'PASS');
+});

@@ -33,3 +33,8 @@ export function hasNumericFieldExpectation(field, value, quote, operator) {
   const expected = preciseDecimal(value);
   return expected !== null && numericQuoteBindings(quote).some(binding => binding.field === field && preciseDecimal(binding.value) === expected && (operator === undefined || binding.operator === operator));
 }
+export function hasLiteralExpectation(value, quote) {
+  if (typeof value !== 'string' || !value.length) return false;
+  const escaped = value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(?<![A-Za-z0-9_.+-])${escaped}(?![A-Za-z0-9_.+-])`).test(quote);
+}
