@@ -73,3 +73,18 @@ test('numeric quote tokens reject exponent/thousands fragments and preserve Unic
  for(const field of ['confirmedAmount','confirmedVolume']){assert.equal(make('明确结果100.00','100',field),true);assert.equal(make('未明确数字','100',field),false);}
  for(const field of ['totalVolume','availableVolume','frozenVolume']){assert.equal(make('明确结果100.00','100',field,'CURRENT_FORMAL_HOLDING'),true);assert.equal(make('未明确数字','100',field,'CURRENT_FORMAL_HOLDING'),false);}
 });
+
+
+test('independent 05 preparation prompt keeps existing formal identity and final balances out of initial drafts',async()=>{
+ const p={objective:'独立05核对',preconditions:['沿用已有正式交易账号97252314162040660','客户、账户、持仓草稿为空'],scenarios:[{expected:'最终总份额100.00、可用90.00、冻结10.00'}],exchangePlan:{status:'READY',openQuestions:[],steps:[{stepId:'receive05',roundId:'holding',direction:'RECEIVE',fileType:'05',required:true,businessTime:{kind:'DATE',value:'20261011'},dependsOn:[]}]}};
+ const data={customers:[],accounts:[],funds:[{fundCode:'000007',fundName:'合成基金',shareClass:'0',nav:'1.00000000'}],holdings:[],missing:[]};
+ const requests=[];
+ const result=await definePlanContract(async request=>{
+  requests.push(request);
+  if(requests.length===1)return JSON.stringify(data);
+  return JSON.stringify({assumptions:['正式数据以显式同步05为准'],applications:[],missing:[],expectations:[['totalVolume','100.00'],['availableVolume','90.00'],['frozenVolume','10.00']].map(([field,expectedValue])=>({scenarioIndex:0,expectedQuote:p.scenarios[0].expected,source:'CURRENT_FORMAL_HOLDING',selector:{accountIndex:null,transactionAccountId:'97252314162040660',channelId:'2',fundCode:'000007',shareClass:'0',fileType:null,businessDate:null},field,operator:'eq',expectedValue}))});
+ },p);
+ assert.equal(requests.length,2);
+ assert.match(requests[0].system,/三个数组必须保持为空/);assert.match(requests[0].system,/不得倒填为初始模拟/);assert.match(requests[0].system,/不因为草稿schema没有availableVolume\/frozenVolume而列missing/);
+ assert.deepEqual(result.contract.dataSpecification,data);assert.equal(result.contract.applications.length,0);assert.equal(result.contract.expectations.length,3);assert.deepEqual(result.contract.missing,[]);
+});
