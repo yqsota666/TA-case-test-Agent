@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {hasNumericFieldExpectation,numericQuoteBindings} from '../src/numeric-expectations.js';
+import {hasNumericFieldExpectation,numericQuoteBindings,hasLiteralExpectation} from '../src/numeric-expectations.js';
 test('field grounding supports decimal quantities and rejects partial or unrelated numbers',()=>{
  assert.equal(hasNumericFieldExpectation('confirmedAmount','-100','确认金额−100.00元'),true);
  assert.equal(hasNumericFieldExpectation('confirmedVolume','100','confirmedVolume: 100.00'),true);
@@ -21,4 +21,12 @@ test('comparison directions belong to the named field; unsupported multipliers a
  assert.equal(hasNumericFieldExpectation('frozenVolume','10',quote,'lte'),true);
  assert.equal(hasNumericFieldExpectation('frozenVolume','10',quote,'eq'),false);
  for(const quote of ['确认金额100万元','总份额100%','总份额1/2','总份额1×100','总份额1 × 100'])assert.deepEqual(numericQuoteBindings(quote),[],quote);
+});
+
+test('literal values belong to their stated field and positive comparison',()=>{
+ assert.equal(hasLiteralExpectation('CONFIRMED','01/02开户申请与03/04申购申请最终状态均为CONFIRMED','status'),true);
+ assert.equal(hasLiteralExpectation('000001','基金代码000001','fundCode'),true);
+ assert.equal(hasLiteralExpectation('TA000','TA账户号TA000','taAccountId'),true);
+ assert.equal(hasLiteralExpectation('000001','基金代码000001','taAccountId'),false);
+ for(const quote of ['状态不是CONFIRMED','状态不为CONFIRMED','状态NOT_CONFIRMED','不是状态CONFIRMED','status not CONFIRMED'])assert.equal(hasLiteralExpectation('CONFIRMED',quote,'status'),false,quote);
 });
