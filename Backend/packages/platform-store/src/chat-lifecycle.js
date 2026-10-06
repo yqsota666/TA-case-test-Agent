@@ -57,11 +57,13 @@ export function createChatLifecycleRepository({transaction}){
   if(kind==='NEW_RUN'&&input.confirmPreserveFormalData!==true)fail('PRESERVATION_CONFIRMATION_REQUIRED','新轮次保留正式数据及历史，请显式确认',400);
   return transaction(async db=>{
    const {auth,chat,keys}=await context(db,token,input,true);
-   const [[prior]]=await db.execute(`SELECT l.kind,l.reason,k.public_id AS source_case_public_id,t.public_id AS chatPublicId,n.public_id AS casePublicId
+   const [matches]=await db.execute(`SELECT l.kind,l.reason,k.public_id AS source_case_public_id,t.public_id AS chatPublicId,n.public_id AS casePublicId
     FROM chat_run_links l JOIN case_chats t ON t.workspace_id=l.workspace_id AND t.id=l.target_chat_id
     LEFT JOIN cases k ON k.workspace_id=l.workspace_id AND k.chat_id=l.source_chat_id AND k.id=l.source_case_id
     LEFT JOIN cases n ON n.workspace_id=l.workspace_id AND n.chat_id=l.target_chat_id AND n.id=l.target_case_id
-    WHERE l.workspace_id=? AND l.source_chat_id=? AND LOWER(l.request_id)=? ORDER BY l.id LIMIT 1 FOR UPDATE`,[...keys,requestId]);
+    WHERE l.workspace_id=? AND l.source_chat_id=? AND LOWER(l.request_id)=? ORDER BY l.id LIMIT 2 FOR UPDATE`,[...keys,requestId]);
+   if(matches.length>1)fail('RUN_REQUEST_CONFLICT','历史请求标识有多个大小写变体，关联目标不唯一，请核查原关联记录');
+   const prior=matches[0];
    if(prior){if(prior.kind!==kind||prior.reason!==reason||(prior.source_case_public_id??null)!==sourceId)fail('RUN_REQUEST_CONFLICT','同一请求标识已用于其他操作');return {chatPublicId:prior.chatPublicId,casePublicId:prior.casePublicId,duplicate:true,formalDataPreserved:true};}
    const rows=await cases(db,keys,true);
    let source=null;

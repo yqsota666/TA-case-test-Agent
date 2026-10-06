@@ -6,7 +6,7 @@ import {applyMigrations,migrationConfig} from '../src/migrate.js';
 import {createCaseRepository,sessionTokenHash} from '../src/index.js';
 import {createChatLifecycleRepository} from '../src/chat-lifecycle.js';
 const deferred=()=>{let resolve;const promise=new Promise(r=>{resolve=r;});return {promise,resolve};};
-const requestId=()=>crypto.randomUUID().toUpperCase();
+const requestId=()=>('a'+crypto.randomUUID().slice(1)).toUpperCase();
 async function signal(gate){let timer;try{await Promise.race([gate.promise,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('expected transaction lock signal did not arrive')),8000);})]);}finally{clearTimeout(timer);}}
 
 test('MySQL: Chat run UUID casing serializes concurrent replays, accepts legacy uppercase and retains source/workspace scope',
@@ -75,6 +75,22 @@ test('MySQL: Chat run UUID casing serializes concurrent replays, accepts legacy 
   await assert.rejects(life.newRun(first.token,{...retryInput,requestId:retryInput.requestId.toLowerCase(),confirmPreserveFormalData:true}),{code:'RUN_REQUEST_CONFLICT'});
   await assert.rejects(life.retest(second.token,{...retryInput,requestId:retryInput.requestId.toLowerCase()}),{code:'CHAT_NOT_FOUND'});
   const [[children]]=await db.execute('SELECT COUNT(*) AS n FROM cases WHERE workspace_id=? AND predecessor_case_id=(SELECT id FROM cases WHERE public_id=?)',[first.workspaceId,scope.casePublicId]);assert.equal(Number(children.n),1);
+  // Preserve legacy collisions instead of choosing either target or creating a third run.
+  const historicTarget=await repo.createChat(first.token,'合成历史第二目标');
+  const [[targetId]]=await db.execute('SELECT id FROM case_chats WHERE public_id=?',[historicTarget.publicId]);
+  await db.execute("INSERT INTO chat_run_links(workspace_id,source_chat_id,target_chat_id,request_id,kind,reason,actor_user_id) VALUES (?,?,?,?,'NEW_RUN',?,?)",[first.workspaceId,link.source_chat_id,targetId.id,sharedId.toLowerCase(),newInput.reason,first.userId]);
+  const historicSource=await repo.createCase(first.token,scope.chatPublicId,'合成历史另一失败来源'),historicChild=await repo.createCase(first.token,scope.chatPublicId,'合成历史另一后续');
+  const [[oldSource]]=await db.execute('SELECT id,chat_id FROM cases WHERE public_id=?',[historicSource.publicId]);
+  const [[oldChild]]=await db.execute('SELECT id FROM cases WHERE public_id=?',[historicChild.publicId]);
+  await db.execute("UPDATE cases SET status='FAIL' WHERE id=?",[oldSource.id]);
+  await db.execute('UPDATE cases SET predecessor_case_id=? WHERE id=?',[oldSource.id,oldChild.id]);
+  await db.execute("INSERT INTO chat_run_links(workspace_id,source_chat_id,source_case_id,target_chat_id,target_case_id,request_id,kind,reason,actor_user_id) VALUES (?,?,?,?,?,?,'RETEST',?,?)",[first.workspaceId,oldSource.chat_id,oldSource.id,oldSource.chat_id,oldChild.id,retryInput.requestId.toLowerCase(),retryInput.reason,first.userId]);
+  const audit=async()=>{const [links]=await db.execute('SELECT * FROM chat_run_links ORDER BY id');const [[counts]]=await db.execute('SELECT (SELECT COUNT(*) FROM case_chats) AS chats,(SELECT COUNT(*) FROM cases) AS cases');return {links,counts};};
+  const beforeAmbiguous=await audit();
+  for(const id of [sharedId,sharedId.toLowerCase()])await assert.rejects(life.newRun(first.token,{...newInput,requestId:id}),{code:'RUN_REQUEST_CONFLICT',status:409});
+  for(const id of [retryInput.requestId,retryInput.requestId.toLowerCase()])await assert.rejects(life.retest(first.token,{...retryInput,requestId:id}),{code:'RUN_REQUEST_CONFLICT',status:409});
+  assert.deepEqual(await audit(),beforeAmbiguous);
+
  }finally{
   if(a)await a.end();if(b)await b.end();if(db)await db.end();await root.query(`DROP DATABASE IF EXISTS ${database}`);await root.end();
  }
