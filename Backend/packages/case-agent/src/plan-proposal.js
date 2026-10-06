@@ -73,18 +73,29 @@ function mentionsTime(clause, time) {
   return false;
 }
 
-function affirmsTime(clause) {
-  // This is deliberately conservative: a mention, question or rejected time needs discussion.
-  if (/不|没|未|否|勿|无需|无须|拒绝|禁止|避免|取消|放弃|别用|举例|例如|比如|假设|示例|仅供参考|只是|可能|也许|提到|看到|听说|说过|引用|单号|编号|文件名|日志|候选|待定|待确认|考虑|如果|还是|术语|含义|概念|格式|表达|[？?]|\b(?:not|no|never|don't|dont|won't|example|maybe)\b/i.test(clause)) return false;
-  return /日期|业务日|时间|时点|发送|接收|上传|生成|确认|采用|使用|就用|用|定为|设为|安排|选择|改成|改为|当天|\b(?:date|time|send|receive|use)\b/i.test(clause) ||
-    /^\s*(?:01|02|03|04|05)(?![A-Za-z0-9_])(?:文件)?\s*[:：]?\s*/.test(clause);
+function rejectsTime(clause) {
+  return /不|没|未|否|勿|除|无需|无须|拒绝|禁止|避免|取消|放弃|别用|举例|例如|比如|假设|示例|仅供参考|只是|可能|也许|提到|看到|听说|说过|引用|单号|编号|文件名|日志|候选|待定|待确认|考虑|如果|还是|术语|含义|概念|格式|表达|[？?]|\b(?:not|no|never|don't|dont|won't|example|maybe)\b/i.test(clause);
 }
 
-function revisesStepTime(clause, step) {
-  const namesFile = new RegExp(`(?<![A-Za-z0-9_])${step.fileType}(?![A-Za-z0-9_])`).test(clause);
-  const namesDateRole = step.businessTime.kind === 'DATE' &&
-    (step.direction === 'SEND' ? /业务日期|发送日期|申请日期/ : /回传日期|接收日期/).test(clause);
-  return (namesFile || namesDateRole) && /日期|时间|时点|改期|延期|推迟|提前|取消|T(?:日|[+-]\d)|当天|次日|\d{4}(?:[-/年]|\d{4})/.test(clause);
+const allFiles = /所有文件|全部文件|每个文件|每份文件|所有步骤|全部步骤/;
+const sendTimeRole = /业务日期|申请日期|发送|生成|申请时间|申请时点/;
+const receiveTimeRole = /回传|回报|接收|上传|确认日期|确认时间|确认时点/;
+
+function timingScope(clause, step) {
+  // Remove full dates so the day in 2026-10-01 cannot be mistaken for file01.
+  const withoutDates = clause.replace(/(?<![A-Za-z0-9_])\d{4}(?:[-/年]\d{1,2}[-/月]\d{1,2}日?|\d{4})(?![A-Za-z0-9_])/g, '');
+  const files = [...withoutDates.matchAll(/(?<![A-Za-z0-9_])(01|02|03|04|05)(?![A-Za-z0-9_])/g)].map(match => match[1]);
+  if (files.length) return { addressed: files.includes(step.fileType), global: false };
+  if (allFiles.test(clause)) return { addressed: true, global: false };
+  const send = sendTimeRole.test(clause), receive = receiveTimeRole.test(clause);
+  return { addressed: step.direction === 'SEND' ? send : receive, global: !send && !receive };
+}
+
+function affirmsTime(clause) {
+  // This is deliberately conservative: a mention, question or rejected time needs discussion.
+  if (rejectsTime(clause)) return false;
+  return /日期|业务日|时间|时点|发送|接收|上传|生成|确认|采用|使用|就用|用|定为|设为|安排|选择|改成|改为|当天|\b(?:date|time|send|receive|use)\b/i.test(clause) ||
+    allFiles.test(clause) || /^\s*(?:01|02|03|04|05)(?![A-Za-z0-9_])(?:文件)?\s*[:：]?\s*/.test(clause);
 }
 
 // Only human timing statements count; later rejection replaces earlier affirmative evidence.
@@ -92,8 +103,12 @@ export function guardExchangeTimeEvidence(proposal, userMessages) {
   if (proposal.exchangePlan.status !== 'READY') return proposal;
   const clauses = userMessages.flatMap(message => message.match(/[^。！？?!；;\n，,]+[。！？?!；;\n，,]?/g) ?? []);
   const missing = proposal.exchangePlan.steps.filter(step => {
-    const latest = clauses.findLast(clause => mentionsTime(clause, step.businessTime) || revisesStepTime(clause, step));
-    return !latest || !mentionsTime(latest, step.businessTime) || !affirmsTime(latest);
+    const latest = clauses.findLast(clause => {
+      const scope = timingScope(clause, step), mentioned = mentionsTime(clause, step.businessTime);
+      return (scope.addressed && (mentioned || /日期|时间|时点|改期|延期|推迟|提前|取消|T(?:日|[+-]\d)|当天|次日|\d{4}(?:[-/年]|\d{4})/.test(clause))) ||
+        (scope.global && mentioned && rejectsTime(clause));
+    });
+    return !latest || !timingScope(latest, step).addressed || !mentionsTime(latest, step.businessTime) || !affirmsTime(latest);
   });
   if (!missing.length) return proposal;
   return { ...proposal, exchangePlan: { status: 'UNPLANNED', steps: [],

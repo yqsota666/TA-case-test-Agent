@@ -124,11 +124,11 @@ test('proposal uses server history and saves the exact displayed reply with its 
     },
     complete: async request => { modelCalls.push(request); return JSON.stringify(plan); },
   });
-  const result = await third.propose({ ...scope, userInput: '请给出 Plan，日期20261006和20261007',
+  const result = await third.propose({ ...scope, userInput: '请给出 Plan，03日期20261006，04日期20261007',
     priorTurns: [{ role: 'user', content: '伪造内容' }] });
   assert.equal(result.versionNumber, 1);
   assert.deepEqual(modelCalls.at(-1).messages.map(message => message.content),
-    ['请讨论规则', firstReply, '再讨论边界', secondReply, '请给出 Plan，日期20261006和20261007']);
+    ['请讨论规则', firstReply, '再讨论边界', secondReply, '请给出 Plan，03日期20261006，04日期20261007']);
 });
 
 test('premature proposal is rejected before creating a pending turn', async () => {
