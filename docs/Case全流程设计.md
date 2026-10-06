@@ -217,7 +217,7 @@ Plan固定字段为 `objective`、`preconditions`、`scenarios`、`openQuestions
 - dataSpecification包含customers、accounts、funds、holdings、missing：沿用草稿字段与索引规则；新增账户由系统分配交易账号，不能假装已经成功开户。正式状态仍只在TA回传成功且用户确认应用后改变。
 - applications逐项固定key、SEND stepId、businessCode、accountIndex或已有transactionAccountId、fundIndex与协议fields；当前固定开户001和申购022。金额、基金、证件及申请时间在确认前展示；日期来自明确DATE步骤。相对发文日期、关键字段缺失或不支持的业务必须先澄清。新账户03必须依赖该账户01对应的02成功CONFIRMED，已有正式账户允许直接03。
 - assumptions明确业务假设。净值、费用、舍入、初始状态或确认规则不明确时不得从申请金额猜TA确认结果，列入missing。
-- expectations包含scenarioIndex、expectedQuote、source、selector、field、operator、expectedValue。source限申请确认、正式账户、当前正式持仓；selector精确指定新准备账户索引或已有交易账号，可指定通道；持仓必须指定基金与类别，申请确认必须指定文件类型与业务日期。operator支持eq/gte/lte；非数值仅eq。每个场景至少有一项断言，仍需人工检查语义是否完整覆盖，代码不宣称能证明自然语言完整性。
+- expectations包含scenarioIndex、expectedQuote、source、selector、field、operator、expectedValue。source限申请确认、正式账户、当前正式持仓；selector精确指定新准备账户索引或已有交易账号，可指定通道；持仓必须指定基金与类别，申请确认必须指定文件类型与业务日期。operator支持eq/gte/lte；非数值仅eq。用户已确定TA业务成功/失败时，基础提案把预期规范表达为状态为CONFIRMED（成功确认）/FAILED（业务失败），只规范表达、不猜测业务结果、不把Case结论替代TA状态；未知结果仍追问。基础提案解析仅在尚无contract时把独立短句“开户/申购成功/失败”确定性规范成相应申请状态供用户审阅，否定、疑问、复合含混句保持原文并追问；现有contract与锁定版本不改。formatter仅提取Plan已有明确状态，不重写原文。数值expectedValue必须在expectedQuote中明确对应本字段；场景/基金编号以及其他余额数值不构成依据，缺少明确对应时拒绝formatter输出。每个场景至少有一项断言，且显式识别的数量字段/值/比较方向必须逐项覆盖；缺项时只能记录missing进入澄清，不能以READY锁定。仍需人工检查其他语义是否完整覆盖，代码不宣称能证明自然语言完整性。
 - missing是预期或申请中的待澄清条件。准备数据缺条件不能确认DATA；全部待澄清项、文件时序和场景问题清空后才能确认EXPECTATIONS。
 
 `POST .../plan/confirm`请求必须为 `{versionNumber,section:"DATA"或"EXPECTATIONS"}`。DATA同事务核验最新版并保存actor/时间，保持SOP_PENDING且不写草稿。EXPECTATIONS要求同版本已有DATA确认，再保存第二次确认并锁定。`case_plan_section_confirmations`以Workspace/Chat/Case/版本/section为主键，重复DATA幂等；新版不继承旧版确认，旧版确认保留审计。GET Plan返回本版本confirmations。
@@ -252,6 +252,6 @@ Plan固定字段为 `objective`、`preconditions`、`scenarios`、`openQuestions
 
 该结果判断PR最初只读取已同步数据并给出建议，不修改销售数据。后续本地Plan补丁已扩展为直接消费已确认contract，详见上文。LangGraph为 collect_case_results → compare_case_expectations → explain_case_result → wait_case_result_confirmation。收集当前锁定Plan、当前Case申请/TA确认、05接收/同步状态，以及该Case引用的正式账户和当前持仓；不把整个Workspace数据交给模型。证据带稳定id、原始申请/解析来源，并保存不可变快照与摘要。
 
-模型将scenario.expected原文解释为带原文引用、证据id、字段、比较运算符和预期字面值的断言。后端验证引用与值来源，再精确比较数值；模型不直接决定PASS/FAIL。每个场景必须有可核验断言，无法完整覆盖或语义模糊必须REVIEW。required步骤或申请/05同步未完成是WAITING；有具体差异是FAIL；全部断言一致仅为PASS建议，人工仍须核对断言是否完整覆盖自然语言预期。当前自由文本Plan无法自动证明语义覆盖完整，这是待办Plan结构强化的边界，不宣称已消除。
+模型将scenario.expected原文解释为带原文引用、证据id、字段、比较运算符和预期字面值的断言。后端验证引用与值来源：每个数值必须紧邻对应字段名称，不使用场景编号或基金代码充当数量，不允许总份额、可用或冻结互换；比较方向也必须来自本字段，否定、未支持的倍率/百分比/算式进入澄清；再精确比较数值；非数值字面值也必须绑定对应状态、账户、代码或日期字段，拒绝借用其他字段及已识别的否定表达；完整场景原文同时参与校验，不能缩短引用删除本短句的否定语境。状态字面值后已识别的疑问与二选一表达也要求澄清，不能当成固定相等预期。该保守语法不是完整自然语言语义证明；非法数值不能退回字符串比较。模型不直接决定PASS/FAIL。每个场景必须有可核验断言，无法完整覆盖或语义模糊必须REVIEW。required步骤或申请/05同步未完成是WAITING；有具体差异是FAIL；全部断言一致仅为PASS建议，人工仍须核对断言是否完整覆盖自然语言预期。当前自由文本Plan无法自动证明语义覆盖完整，这是待办Plan结构强化的边界，不宣称已消除。
 
-建议持久化，不自动改变Case状态。人工确认需reviewId、PASS/FAIL和核对说明；只能确认最新且证据未变的版本，WAITING/REVIEW不可封存。模型调用在事务之外；保存和最终确认重新读取并核对证据摘要，确认持锁读取以避免并发销售数据变化。最终结论和确认人/时间/说明持久化，Case进入PASS/FAIL，重复同一确认幂等且不能覆盖。
+建议持久化，不自动改变Case状态。人工确认需reviewId、PASS/FAIL和核对说明；只能确认最新且证据未变的版本，WAITING/REVIEW不可封存。模型调用在事务之外；保存和最终确认重新读取并核对证据摘要，确认持锁读取以避免并发销售数据变化。本轮审查补齐05原始文件source查询的FOR UPDATE，使它与其余保存/确认取证查询一样使用current read，避免会话鉴权早先建立的REPEATABLE READ快照读取旧原件。最终结论和确认人/时间/说明持久化，Case进入PASS/FAIL，重复同一确认幂等且不能覆盖。

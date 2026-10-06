@@ -9,7 +9,7 @@ const chatPublicId = '9b039fda-601d-4f3c-b065-0f7bf0837ccc';
 const casePublicId = '15d68e0b-6ae6-4ced-9ad8-9b705c4744ef';
 const plan = { objective: '检查规则', preconditions: [],
   scenarios: [{ title: '边界场景', setup: '准备边界数据', action: '执行操作',
-    expected: '观察结果符合规则', evidence: '记录输入输出' }], openQuestions: [], exchangePlan };
+    expected: '确认状态CONFIRMED，观察结果符合规则', evidence: '记录输入输出' }], openQuestions: [], exchangePlan };
 
 function fixture({ chat = { id: 41, status: 'ACTIVE' }, caseRow = { id: 51, status: 'DISCUSSING' } } = {}) {
   const calls = [];
