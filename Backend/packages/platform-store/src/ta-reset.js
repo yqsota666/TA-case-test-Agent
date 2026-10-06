@@ -21,11 +21,11 @@ export function createTaResetRepository({transaction}){
    const [chats]=await db.execute('SELECT id,status FROM case_chats WHERE workspace_id=? ORDER BY id FOR UPDATE',[auth.workspace_id]);
    const [[channel]]=await db.execute('SELECT id FROM exchange_channels WHERE workspace_id=? AND id=? FOR UPDATE',[auth.workspace_id,input.channelId]);
    if(!channel)throw storeError('CHANNEL_NOT_FOUND',404,'通道不存在');
-   const [[prior]]=await db.execute('SELECT epoch,reason FROM ta_reset_events WHERE workspace_id=? AND channel_id=? AND request_id=?',[auth.workspace_id,input.channelId,input.requestId]);
+   const [[prior]]=await db.execute('SELECT epoch,reason FROM ta_reset_events WHERE workspace_id=? AND channel_id=? AND request_id=? FOR UPDATE',[auth.workspace_id,input.channelId,input.requestId]);
    if(prior){if(prior.reason!==input.reason.trim())throw storeError('TA_RESET_REQUEST_CONFLICT',409,'同一请求标识的重置说明不同');return {epoch:prior.epoch,duplicate:true,formalHistoryPreserved:true,physicalResetPerformedByPlatform:false};}
    if(chats.some(c=>c.status==='ACTIVE'))throw storeError('TA_RESET_ACTIVE_CHATS',409,'先封存当前Workspace全部Chat，再确认TA重置');
-   const [[last]]=await db.execute('SELECT COALESCE(MAX(epoch),0) AS epoch FROM ta_reset_events WHERE workspace_id=? AND channel_id=?',[auth.workspace_id,input.channelId]);
-   const [[account]]=await db.execute('SELECT CAST(COALESCE(MAX(id),0) AS CHAR) AS cutoff FROM sales_confirmed_accounts WHERE workspace_id=? AND channel_id=?',[auth.workspace_id,input.channelId]);
+   const [[last]]=await db.execute('SELECT COALESCE(MAX(epoch),0) AS epoch FROM ta_reset_events WHERE workspace_id=? AND channel_id=? FOR UPDATE',[auth.workspace_id,input.channelId]);
+   const [[account]]=await db.execute('SELECT CAST(COALESCE(MAX(id),0) AS CHAR) AS cutoff FROM sales_confirmed_accounts WHERE workspace_id=? AND channel_id=? FOR UPDATE',[auth.workspace_id,input.channelId]);
    const epoch=Number(last.epoch)+1;
    await db.execute('INSERT INTO ta_reset_events(workspace_id,channel_id,epoch,account_id_cutoff,request_id,reason,actor_user_id) VALUES (?,?,?,?,?,?,?)',[auth.workspace_id,input.channelId,epoch,account.cutoff,input.requestId,input.reason.trim(),auth.user_id]);
    return {epoch,duplicate:false,formalHistoryPreserved:true,physicalResetPerformedByPlatform:false};
