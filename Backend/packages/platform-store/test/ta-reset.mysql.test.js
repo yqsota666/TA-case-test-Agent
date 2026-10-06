@@ -41,7 +41,7 @@ test('MySQL: reset reads committed epochs and duplicate requests after waiting f
   await race({epoch:2,duplicate:false});
   const [[count]]=await db.execute('SELECT COUNT(*) AS n FROM ta_reset_events WHERE workspace_id=?',[workspaceId]);assert.equal(Number(count.n),3);
  }finally{
-  await worker.rollback();await db.rollback();
+  await db.rollback();await worker.rollback();
   if(workspaceId){await db.execute('DELETE FROM ta_reset_events WHERE workspace_id=?',[workspaceId]);await db.execute('DELETE FROM case_chats WHERE workspace_id=?',[workspaceId]);await db.execute('DELETE FROM exchange_channels WHERE workspace_id=?',[workspaceId]);await db.execute('DELETE FROM workspaces WHERE id=?',[workspaceId]);}
   if(userId){await db.execute('DELETE FROM platform_sessions WHERE user_id=?',[userId]);await db.execute('DELETE FROM platform_users WHERE id=?',[userId]);}
   await worker.end();await db.end();
