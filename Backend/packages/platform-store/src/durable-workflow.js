@@ -80,7 +80,6 @@ export function createDurableWorkflowRepository({pool,lockTimeout=5}) {
    const graph=createDurableWorkflowGraph({checkpointer:saver,readFacts:async()=>facts});
    const config={configurable:{thread_id:'case:'+scope.keys.join(':'),checkpoint_ns:''},recursionLimit:8};
    const prior=await graph.getState(config);
-   if(event && prior.values?.position && input.expectedStage!==prior.values.position.stage)throw storeError('WORKFLOW_STAGE_CONFLICT',409,'等待阶段已改变，请读取最新工作流');
    let result;
    if(prior.values?.revision===facts.revision) result={...prior.values.position,revision:facts.revision,checkpointId:prior.config.configurable.checkpoint_id,interrupted:prior.tasks.some(t=>t.interrupts?.length)};
    else if(facts.chatStatus!=='ACTIVE') result={...workflowPosition(facts),revision:facts.revision,checkpointId:prior.config.configurable.checkpoint_id??null,interrupted:false};

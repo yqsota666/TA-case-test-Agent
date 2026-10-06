@@ -46,6 +46,10 @@ test('MySQL durable workflow: restart, multi-instance event replay, rollback, is
  assert.equal((await repo.resume(token,failedEvent)).replayed,undefined);
  assert.equal((await repo.read(token,scope)).stage,'CONFIRM_PLAN_DATA');
  await business.confirmSopProposal(...args,1,'DATA');assert.equal((await restarted.read(token,scope)).stage,'CONFIRM_EXPECTATIONS');
+ const staleNotification={...scope,eventId:crypto.randomUUID(),expectedStage:'DISCUSSION'};
+ const reconciled=await repo.resume(token,staleNotification);assert.equal(reconciled.stage,'CONFIRM_EXPECTATIONS');
+ assert.equal((await restarted.resume(token,staleNotification)).replayed,true);
+ await assert.rejects(repo.resume(token,{...staleNotification,expectedStage:'PREPARE_DATA'}),{code:'WORKFLOW_EVENT_CONFLICT'});
  await business.confirmSopProposal(...args,1,'EXPECTATIONS');assert.equal((await repo.read(token,scope)).stage,'PREPARE_DATA');
  await business.executeGeneratedData(...args,1,plan.contract.dataSpecification,(db,scope,specification)=>createDataGenerationGraph({db,scope,specification}).invoke({}));
  assert.equal((await repo.read(token,scope)).stage,'CONFIRM_DRAFT');
