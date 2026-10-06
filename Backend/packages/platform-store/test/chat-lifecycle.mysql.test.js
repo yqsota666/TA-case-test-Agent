@@ -62,7 +62,14 @@ test('MySQL: close preserves statuses, requires human verdicts, freezes old writ
   const target=await life.read(token,{chatPublicId:retry.chatPublicId});assert.equal(target.cases[1].status,'DISCUSSING');assert.equal(target.cases[1].predecessorCasePublicId,c.publicId);assert.equal(target.links[0].sourceCasePublicId,c.publicId);
   assert.equal((await life.read(token,{chatPublicId:normal.publicId})).cases[0].status,'FAIL');
   await assert.rejects(life.retest(token,{...retryInput,requestId:crypto.randomUUID()}),{code:'RETEST_ALREADY_EXISTS'});
-  await life.close(token,{chatPublicId:normal.publicId,mode:'FORCE',reason:'后续未完成'});
+  const [[follow]]=await db.execute('SELECT id,chat_id FROM cases WHERE workspace_id=? AND public_id=?',[ws.insertId,retry.casePublicId]);
+  await db.execute("UPDATE cases SET status='PASS' WHERE id=?",[follow.id]);
+  await db.execute("INSERT INTO case_sop_versions(workspace_id,chat_id,case_id,version_number,plan_json) VALUES (?,?,?,1,'{}')",[ws.insertId,follow.chat_id,follow.id]);
+  await db.execute("INSERT INTO case_result_reviews(workspace_id,chat_id,case_id,plan_version,evidence_sha256,evidence_json,suggestion_json,actor_user_id,final_verdict,confirmation_reason,confirmed_by_user_id,confirmed_at) VALUES (?,?,?,1,?,'{}','{}',?,'PASS','人工通过',?,NOW())",[ws.insertId,follow.chat_id,follow.id,'1'.repeat(64),user.insertId,user.insertId]);
+  assert.equal((await life.read(token,{chatPublicId:normal.publicId})).canClose,true);
+  assert.equal((await life.close(token,{chatPublicId:normal.publicId,mode:'NORMAL'})).status,'CLOSED');
+  assert.equal((await life.close(token,{chatPublicId:normal.publicId,mode:'NORMAL'})).duplicate,true);
+  assert.deepEqual((await life.read(token,{chatPublicId:normal.publicId})).cases.map(c=>c.status),['FAIL','PASS']);
   await assert.rejects(life.retest(token,{...retryInput,requestId:crypto.randomUUID()}),{code:'CHAT_CLOSED'});
   const otherToken=crypto.randomBytes(32).toString('base64url'),otherId=crypto.randomUUID();
   const [other]=await db.execute(`INSERT INTO platform_users(public_id,email,password_hash,display_name) VALUES (?,?,?,'其他用户')`,[otherId,otherId+'@example.invalid','synthetic']);
