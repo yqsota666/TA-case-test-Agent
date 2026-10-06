@@ -1,0 +1,23 @@
+CREATE TABLE case_result_reviews (
+ id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+ workspace_id BIGINT UNSIGNED NOT NULL,
+ chat_id BIGINT UNSIGNED NOT NULL,
+ case_id BIGINT UNSIGNED NOT NULL,
+ plan_version INT UNSIGNED NOT NULL,
+ evidence_sha256 CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+ evidence_json JSON NOT NULL,
+ suggestion_json JSON NOT NULL,
+ actor_user_id BIGINT UNSIGNED NOT NULL,
+ final_verdict VARCHAR(8) NULL,
+ confirmation_reason VARCHAR(1000) NULL,
+ confirmed_by_user_id BIGINT UNSIGNED NULL,
+ confirmed_at DATETIME(3) NULL,
+ created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+ UNIQUE KEY uq_result_review_scope (workspace_id,chat_id,case_id,id),
+ CONSTRAINT fk_result_review_case FOREIGN KEY (workspace_id,chat_id,case_id) REFERENCES cases(workspace_id,chat_id,id),
+ CONSTRAINT fk_result_review_plan FOREIGN KEY (workspace_id,chat_id,case_id,plan_version) REFERENCES case_sop_versions(workspace_id,chat_id,case_id,version_number),
+ CONSTRAINT fk_result_review_actor FOREIGN KEY (workspace_id,actor_user_id) REFERENCES workspaces(id,owner_user_id),
+ CONSTRAINT fk_result_review_confirmer FOREIGN KEY (workspace_id,confirmed_by_user_id) REFERENCES workspaces(id,owner_user_id),
+ CONSTRAINT ck_result_review_final CHECK (final_verdict IS NULL OR final_verdict IN ('PASS','FAIL')),
+ CONSTRAINT ck_result_review_confirm CHECK ((final_verdict IS NULL)=(confirmed_at IS NULL))
+) ENGINE=InnoDB;

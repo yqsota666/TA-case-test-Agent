@@ -1,3 +1,4 @@
+import {verifyCaseResultReviews} from './case-result-reviews.js';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import {createHoldingsReturnRepository} from '../../src/holdings-return.js';
@@ -88,6 +89,7 @@ export async function verifyHoldingsSync({db,transaction,token,workspaceId,chann
  assert.equal(sales.holdings.find(h=>h.fundCode==='000002').totalVolume,'0.00');
  const empty=await upload([],'20261009');assert.equal((await holdings.apply(token,{...scope,parseId:empty.result.parseId})).businessApplied,false);
  assert.deepEqual(await confirmations.salesData(token),sales);
+ await verifyCaseResultReviews({db,transaction,token,scope,workspaceId});
  const [raw]=await db.execute('SELECT raw_bytes FROM case_holdings_return_files WHERE workspace_id=? AND parse_id=?',[workspaceId,zeros.result.parseId]);
  assert.ok(raw[0].raw_bytes.length>0);
  assert.equal((await holdings.read(token,scope)).steps.length,1);

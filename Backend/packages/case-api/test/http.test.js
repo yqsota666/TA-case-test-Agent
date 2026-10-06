@@ -16,6 +16,7 @@ async function fixture(t, {orderRejected=false}={}) {
     exchangePlanSupplement:{confirm:async(token,input)=>{calls.push(['supplement',token,input]);return{versionNumber:2,status:'LOCKED',supplemented:true};}},
     returnConfirmation: Object.fromEntries(['read','delivery','apply','salesData','selectAccount'].map(method =>
       [method,async (token,input) => { calls.push(['confirmation-'+method,token,input]); return { ok:true }; }])),
+    caseResult:{read:async(token,scope)=>{calls.push(['result-read',token,scope]);return {reviewId:null};},evaluate:async(token,scope)=>{calls.push(['result-evaluate',token,scope]);return {suggestion:{outcome:'REVIEW'}};},confirm:async(token,input)=>{calls.push(['result-confirm',token,input]);return {finalVerdict:'PASS'};}},
     holdingsReturn: {
       read: async (token,scope)=>{calls.push(['holdings-read',token,scope]);return {steps:[],parses:[]};},
       parse: async (token,input)=>{calls.push(['holdings-parse',token,input]);return {phase:'PARSED'};},
@@ -357,3 +358,15 @@ test('legacy schedule supplement is explicit, authenticated and accepts only tim
    assert.equal((await fetch(base+path+'/'+action,{method:'POST',headers,body:JSON.stringify({...body,workspaceId:'999'})})).status,400);
   }
  });
+
+test('result-review endpoints require authentication, origin and exact bodies',async t=>{
+ const {base,calls}=await fixture(t);const path=route.replace('/discussion','/result-review');
+ const headers={cookie:'case_session=abcdefghijklmnopqrstuvwxyz012345',origin:allowedOrigin,'content-type':'application/json'};
+ assert.equal((await fetch(base+path)).status,401);assert.equal((await fetch(base+path,{headers})).status,200);
+ for(const [action,body] of [['evaluate',{}],['confirm',{reviewId:'1',verdict:'PASS',reason:'人工核对'}]]){
+  assert.equal((await fetch(base+path+'/'+action,{method:'POST',headers,body:JSON.stringify(body)})).status,200);
+  assert.equal(calls.at(-1)[0],'result-'+action);
+  assert.equal((await fetch(base+path+'/'+action,{method:'POST',headers:{...headers,origin:'https://foreign.example'},body:JSON.stringify(body)})).status,403);
+  assert.equal((await fetch(base+path+'/'+action,{method:'POST',headers,body:JSON.stringify({...body,workspaceId:'99'})})).status,400);
+ }
+});

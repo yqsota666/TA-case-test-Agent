@@ -48,7 +48,7 @@ Case 的 `case_generated_*` 四张表是申请准备草稿和测试条件。确�
 
 正式销售查询为 `GET /api/sales-data`，只读取 `sales_confirmed_accounts`、`sales_confirmed_transactions`、`sales_confirmed_holdings`，并标记 `source: TA_CONFIRMED`。生成的模拟余额、模拟持有、净值和旧 TA 绑定均不会自动复制到正式表。此次不定义资金账户的现金会计；正式视图没有把模拟余额当现金余额。
 
-当前应用范围明确为开户 `01/001 → 02/101` 和申购 `03/022 → 04/122`。其他业务码仍可作为协议测试申请/解析结果，但不能通过确认生效接口修改正式数据。赎回、冻结/解冻、销户、Case 成败判定需另行实现；05 账户余额快照同步已在本地实现（见下文），不推断它们的会计含义。
+当前应用范围明确为开户 `01/001 → 02/101` 和申购 `03/022 → 04/122`。其他业务码仍可作为协议测试申请/解析结果，但不能通过确认生效接口修改正式数据。赎回、冻结/解冻、销户、Case 结果建议与人工确认已在本地实现（见下文）；05 账户余额快照同步已在本地实现（见下文），不推断它们的会计含义。
 
 流程：
 
@@ -119,3 +119,13 @@ TotalVolOfDistributorInTA是余额，WholeFlag=0增量传输也按该账户基�
 新增LangGraph节点：wait_holdings_return → parse_holdings_return；verify_holdings_return → sync_holdings_snapshot。节点通过持久化API事件衔接，不宣称整个Case已经接成checkpoint/interrupt大图。销售查询新增availableVolume、frozenVolume、snapshotDate、snapshotTotal、snapshotParseId；原始完整字段可通过05解析历史查看。没有Case自动判断，也没有Plan严格数据定义补丁。
 
 迁移016新增05解析/原文件/独立Plan收件表及持仓基准列。常规测试外，CASE_CONFIRMATION_MYSQL=1的确认业务测试覆盖05独立同步、重放、错误回滚、旧日/同日冲突、同日后到04不重复计入、零余额与未出现基金不清零。
+
+## Case结果建议与人工确认（本地实现）
+
+三个接口均使用当前Workspace的会话Cookie；写入校验Origin及JSON精确字段。
+
+- GET `/api/chats/:chatId/cases/:caseId/result-review`：最近判断及其证据快照、建议、人工结论。
+- POST 同路径 `/evaluate`，请求 `{}`：自动收集当前锁定Plan、申请确认、受控05状态、引用正式账户与持仓、原件摘要。LangGraph收集→解释预期→精确比较并说明→等待人工确认。模型调用事务之外，保存前重新核验证据未变；并发同Case返回409，每进程最多两个Case并行模型判断，超额429。
+- POST 同路径 `/confirm`，请求 `{reviewId,verdict:"PASS"或"FAIL",reason}`：人工核对完整断言后确认最新版本。WAITING/REVIEW返回409 RESULT_NOT_READY；证据变化409 CASE_RESULT_CHANGED；旧版本409 REVIEW_SUPERSEDED；其他结论覆盖409 VERDICT_CONFLICT。401会话无效，404非本Workspace/Chat的Case或不存在记录，400输入无效，403Origin无效。
+
+迁移017保存Plan版本、证据摘要与完整快照、建议、人工最终结论/说明/确认人/时间。AI建议不会改变销售数据或Case最终状态；最终确认才把Case状态设为PASS/FAIL。重复同一最终确认幂等。当前自由文本预期由模型解释为原文引用和字面值断言；引用不可信、证据不足、模型格式无效等为REVIEW，缺少必需回传或应用为WAITING。后端精确比较数量金额，不信任模型给出的PASS。自然语言完整语义覆盖仍需人工核对，不宣称Plan严格结构补丁已经完成。正式持仓是本次收集时引用账户的当前读数，证据明确标注来源，不能当作原TA文件的某行值。

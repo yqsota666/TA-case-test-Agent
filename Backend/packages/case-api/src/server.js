@@ -18,6 +18,9 @@ import { createReturnConfirmationService } from './return-confirmation.js';
 
 import { createHoldingsReturnRepository } from '../../platform-store/src/holdings-return.js';
 
+import { createCaseResultRepository } from '../../platform-store/src/case-result.js';
+import { createCaseResultService } from './case-result.js';
+
 const allowedOrigin = process.env.CASE_PUBLIC_ORIGIN;
 if (!allowedOrigin) throw new Error('CASE_PUBLIC_ORIGIN is required');
 const pool = mysql.createPool({ ...migrationConfig(), connectionLimit: 8 });
@@ -46,6 +49,7 @@ const preparations = createApplicationPreparationRepository({ transaction });
 const discussionService = createPersistedDiscussionService({ repository,
   complete: createSophnetCompletion() });
 const complete = createSophnetCompletion();
+const caseResult = createCaseResultService({repository:createCaseResultRepository({transaction}),complete});
 const completeData = async input => {
   try { return await complete(input); }
   catch (error) {
@@ -97,5 +101,5 @@ const applicationPreparation = createApplicationPreparationService({ repository,
 const confirmData = ({ token, chatPublicId, casePublicId, revision }) =>
   repository.confirmGeneratedData(token, chatPublicId, casePublicId, revision);
 const server = createCaseHttpServer({ repository, discussionService, confirmPlan,
-  executeData, reviseData, exchangeRepository, applicationPreparation, confirmData, returnParsing, returnConfirmation, holdingsReturn, exchangePlanSupplement, allowedOrigin });
+  executeData, reviseData, exchangeRepository, applicationPreparation, confirmData, returnParsing, returnConfirmation, holdingsReturn, caseResult, exchangePlanSupplement, allowedOrigin });
 server.listen(Number(process.env.CASE_API_PORT ?? 3100), '127.0.0.1');

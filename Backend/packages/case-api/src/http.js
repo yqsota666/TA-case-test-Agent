@@ -9,6 +9,7 @@ const batchPath = /^\/api\/chats\/([0-9a-f-]{36})\/batches(?:\/([0-9a-f-]{36})\/
 const filesPath = /^\/api\/chats\/([0-9a-f-]{36})\/files(?:\/([1-9]\d*))?$/i;
 const supplementPath = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/exchange-plan\/confirm$/i;
 const confirmationPath = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/return-confirmation(?:\/(delivery|apply|account))?$/i;
+const resultPath = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/result-review(?:\/(evaluate|confirm))?$/i;
 const holdingsPath = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/holdings-return(?:\/(parse|apply))?$/i;
 const parsingPath = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/return-parsing(?:\/(02|04))?$/i;
 
@@ -47,7 +48,7 @@ async function jsonBody(request, limit = 256 * 1024) {
 }
 
 export function createCaseHttpHandler({ repository, discussionService, confirmPlan, executeData,
-  reviseData, exchangeRepository, applicationPreparation, confirmData, returnParsing, returnConfirmation, holdingsReturn, exchangePlanSupplement, allowedOrigin }) {
+  reviseData, exchangeRepository, applicationPreparation, confirmData, returnParsing, returnConfirmation, holdingsReturn, caseResult, exchangePlanSupplement, allowedOrigin }) {
   if (!repository || !discussionService || !confirmPlan || !executeData || !reviseData || !allowedOrigin) {
     throw new TypeError('API dependencies required');
   }
@@ -61,6 +62,8 @@ export function createCaseHttpHandler({ repository, discussionService, confirmPl
     const files = filesPath.exec(pathname);
     const parsing = parsingPath.exec(pathname);
     const confirmation = confirmationPath.exec(pathname);
+    const resultReview=caseResult && resultPath.exec(pathname);
+    const resultRoute=Boolean(resultReview && ((!resultReview[3] && request.method==='GET') || (resultReview[3] && request.method==='POST')));
     const holdings = holdingsReturn && holdingsPath.exec(pathname);
     const holdingsRoute = Boolean(holdings && ((!holdings[3] && request.method==='GET') || (holdings[3] && request.method==='POST')));
     const supplement = exchangePlanSupplement && supplementPath.exec(pathname);
@@ -77,7 +80,7 @@ export function createCaseHttpHandler({ repository, discussionService, confirmPl
         (application && ['GET', 'POST'].includes(request.method)) ||
         (batch && request.method === 'POST') ||
         (files && request.method === 'GET')));
-    if (!holdingsRoute && !supplementRoute && !catalog && !salesRoute && !confirmationRoute && !exchangeRoute && !parsingRoute && (!match || !['GET', 'POST', 'PATCH'].includes(request.method) ||
+    if (!resultRoute && !holdingsRoute && !supplementRoute && !catalog && !salesRoute && !confirmationRoute && !exchangeRoute && !parsingRoute && (!match || !['GET', 'POST', 'PATCH'].includes(request.method) ||
         (request.method === 'PATCH' && match?.[3] !== 'data') ||
         (['plan/confirm', 'data/execute', 'data/confirm'].includes(match?.[3]) && request.method !== 'POST') ||
         (match?.[3] === 'data/review' && !['GET', 'POST'].includes(request.method)) ||
@@ -93,6 +96,15 @@ export function createCaseHttpHandler({ repository, discussionService, confirmPl
         const body=await jsonBody(request);
         if(!body || typeof body!=='object' || Array.isArray(body) || Object.keys(body).length!==3 || !['baseVersionNumber','exchangePlan','mappings'].every(key=>Object.hasOwn(body,key))){send(response,400,{error:'INVALID_INPUT'});return;}
         send(response,200,await exchangePlanSupplement.confirm(token,{chatPublicId:supplement[1],casePublicId:supplement[2],...body}));return;
+      }
+      if(resultRoute){
+        const scope={chatPublicId:resultReview[1],casePublicId:resultReview[2]};
+        if(request.method==='GET'){send(response,200,await caseResult.read(token,scope));return;}
+        if(request.headers.origin!==allowedOrigin){send(response,403,{error:'INVALID_ORIGIN'});return;}
+        if(!/^application\/json(?:\s*;|$)/i.test(request.headers['content-type']??'')){send(response,415,{error:'UNSUPPORTED_MEDIA_TYPE'});return;}
+        const body=await jsonBody(request,4096);const keys=resultReview[3]==='evaluate'?[]:['reviewId','verdict','reason'];
+        if(!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).length!==keys.length||!keys.every(k=>Object.hasOwn(body,k))){send(response,400,{error:'INVALID_INPUT'});return;}
+        send(response,200,await caseResult[resultReview[3]](token,{...scope,...body}));return;
       }
       if (holdingsRoute) {
         const scope={chatPublicId:holdings[1],casePublicId:holdings[2]};
