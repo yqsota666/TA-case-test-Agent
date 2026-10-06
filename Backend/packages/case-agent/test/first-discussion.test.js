@@ -83,3 +83,17 @@ test('explicit low effort is forwarded for structured Plan generation without ch
  assert.equal(calls[1].reasoning_effort,undefined);
  await assert.rejects(complete({system:'test',user:'test',thinkingMode:'invalid'}),TypeError);
 });
+
+
+test('Sophnet transport failures expose safe retryable codes without provider details',async()=>{
+ for(const [error,code,status] of [
+  [Object.assign(new Error('sensitive provider detail'),{name:'APIConnectionTimeoutError'}),'MODEL_TIMEOUT',504],
+  [Object.assign(new Error('sensitive provider detail'),{name:'APIConnectionError'}),'MODEL_UNAVAILABLE',503],
+  [Object.assign(new Error('sensitive provider detail'),{status:429}),'MODEL_UNAVAILABLE',503],
+  [Object.assign(new Error('sensitive provider detail'),{status:503}),'MODEL_UNAVAILABLE',503],
+  [Object.assign(new Error('sensitive provider detail'),{status:401}),'MODEL_PROVIDER_REJECTED',502]
+ ]){
+  const complete=createSophnetCompletion({client:{chat:{completions:{create:async()=>{throw error;}}}}});
+  await assert.rejects(complete({system:'test',user:'test'}),e=>e.code===code&&e.status===status&&!e.message.includes('sensitive'));
+ }
+});

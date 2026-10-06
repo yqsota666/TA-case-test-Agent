@@ -41,3 +41,15 @@ test('TA reset is an explicit scoped declaration and rejects payload drift',asyn
  const response=await fetch(url+'/confirm',{method:'POST',headers,body:JSON.stringify({requestId:'id',reason:'已重置',confirmation:'TA_RESET_CONFIRMED'})});
  assert.equal(response.status,200);assert.equal((await response.json()).physicalResetPerformedByPlatform,false);assert.equal(calls[1].channelId,'42');
 });
+
+
+test('model timeout and format failures retain actionable codes and do not expose upstream details',async t=>{
+ let failure=Object.assign(new Error('模型响应超时，请重试同一待完成回合'),{code:'MODEL_TIMEOUT',status:504});
+ const server=createCaseHttpServer({repository:{},discussionService:{discuss:async()=>{throw failure;}},confirmPlan:()=>{},executeData:()=>{},reviseData:()=>{},allowedOrigin:'http://127.0.0.1:5188'});
+ server.listen(0,'127.0.0.1');await once(server,'listening');t.after(()=>{server.closeAllConnections();server.close();});
+ const url=`http://127.0.0.1:${server.address().port}/api/chats/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/cases/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/discussion`;
+ const request=()=>fetch(url,{method:'POST',headers:{origin:'http://127.0.0.1:5188',cookie:'case_session=synthetic','content-type':'application/json'},body:JSON.stringify({userInput:'重试原输入'})});
+ let response=await request();assert.equal(response.status,504);assert.equal((await response.json()).error,'MODEL_TIMEOUT');
+ failure=Object.assign(new Error('sensitive output'),{code:'MODEL_OUTPUT_FORMAT'});
+ response=await request();assert.equal(response.status,502);const result=await response.json();assert.equal(result.error,'MODEL_OUTPUT_FORMAT');assert.ok(!result.message.includes('sensitive'));
+});

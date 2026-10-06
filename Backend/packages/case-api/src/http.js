@@ -366,7 +366,10 @@ export function createCaseHttpHandler({ repository, discussionService, confirmPl
           message: '记录重复，或客户、基金与持有记录的关联不正确。请检查表格内容。' });
         return;
       }
-      send(response, Number.isInteger(error.status) && error.status >= 400 && error.status < 500 ?
+      if(['MODEL_OUTPUT_FORMAT','MODEL_EMPTY_OUTPUT','INVALID_PLAN_CONTRACT'].includes(error.code)&&!error.status){
+        send(response,502,{error:error.code,message:'模型回复格式未通过校验，当前回合未完成，请重试原输入'});return;
+      }
+      send(response, Number.isInteger(error.status) && error.status >= 400 && error.status < 600 ?
         error.status : 500, { error: error.status ? error.code : 'INTERNAL_ERROR',
           ...(error.status ? { message: error.message } : {}) });
     }

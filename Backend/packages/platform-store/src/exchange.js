@@ -281,13 +281,13 @@ export function createExchangeRepository({ transaction }) {
       const [[pending]] = await db.execute(`SELECT COUNT(*) AS count FROM cases k
         WHERE k.workspace_id=? AND k.chat_id=? AND NOT EXISTS (
           SELECT 1 FROM case_sop_versions s WHERE s.workspace_id=k.workspace_id
-            AND s.chat_id=k.chat_id AND s.case_id=k.id AND s.status='LOCKED')`,
+            AND s.chat_id=k.chat_id AND s.case_id=k.id AND s.status='LOCKED' FOR UPDATE) FOR UPDATE`,
       [auth.workspace_id, chat.id]);
       if (Number(pending.count) !== 0) throw storeError('SOP_NOT_LOCKED', 409, '仍有 Case 未锁定 SOP');
       const [[missingReview]] = await db.execute(`SELECT COUNT(*) AS count FROM cases k
         LEFT JOIN case_data_confirmations d ON d.workspace_id=k.workspace_id
           AND d.chat_id=k.chat_id AND d.case_id=k.id
-        WHERE k.workspace_id=? AND k.chat_id=? AND d.case_id IS NULL`,
+        WHERE k.workspace_id=? AND k.chat_id=? AND d.case_id IS NULL FOR UPDATE`,
       [auth.workspace_id, chat.id]);
       if (Number(missingReview.count)) {
         throw storeError('DATA_NOT_CONFIRMED', 409, '仍有 Case 的模拟数据未确认');
@@ -327,7 +327,7 @@ export function createExchangeRepository({ transaction }) {
         throw storeError('BATCH_APPLICATION_MISMATCH', 409, '申请归属、日期或状态不一致');
       }
       const [[last]] = await db.execute(`SELECT COALESCE(MAX(batch_number),0) AS number FROM exchange_batches
-        WHERE workspace_id=? AND chat_id=? AND channel_id=? AND business_date=?`,
+        WHERE workspace_id=? AND chat_id=? AND channel_id=? AND business_date=? FOR UPDATE`,
       [auth.workspace_id, chat.id, channelId, date]);
       const number = Number(last.number) + 1;
       const publicId = crypto.randomUUID();

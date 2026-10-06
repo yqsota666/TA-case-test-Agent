@@ -21,7 +21,7 @@ import {verifyHoldingsSync} from './helpers/holdings-sync.js';
 
 const jsonValue=value=>typeof value==='string'?JSON.parse(value):value;
 
-// Opt-in against a migrated MySQL database. Every fixture and business write is rolled back.
+// Default opt-in fixtures roll back. Dedicated testholdingsrace databases commit between connections and must be discarded by the runner.
 test('MySQL: draft -> delivered 01 -> confirmed 02 -> delivered 03 -> confirmed 04, isolated and atomic',
   { skip: process.env.CASE_CONFIRMATION_MYSQL !== '1' }, async () => {
   const db = await mysql.createConnection(migrationConfig());

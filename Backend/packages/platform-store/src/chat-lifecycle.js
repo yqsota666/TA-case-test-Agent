@@ -15,7 +15,7 @@ export function createChatLifecycleRepository({transaction}){
  }
  async function cases(db,keys,write=false){
   const [rows]=await db.execute(`SELECT k.id,k.public_id,k.title,k.status,k.predecessor_case_id,
-   (SELECT r.final_verdict FROM case_result_reviews r WHERE r.workspace_id=k.workspace_id AND r.chat_id=k.chat_id AND r.case_id=k.id AND r.final_verdict IS NOT NULL ORDER BY r.id DESC LIMIT 1) AS final_verdict
+   (SELECT r.final_verdict FROM case_result_reviews r WHERE r.workspace_id=k.workspace_id AND r.chat_id=k.chat_id AND r.case_id=k.id AND r.final_verdict IS NOT NULL ORDER BY r.id DESC LIMIT 1${write?' FOR UPDATE':''}) AS final_verdict
    FROM cases k WHERE k.workspace_id=? AND k.chat_id=? ORDER BY k.id${write?' FOR UPDATE':''}`,keys);
   return rows;
  }
@@ -61,7 +61,7 @@ export function createChatLifecycleRepository({transaction}){
     FROM chat_run_links l JOIN case_chats t ON t.workspace_id=l.workspace_id AND t.id=l.target_chat_id
     LEFT JOIN cases k ON k.workspace_id=l.workspace_id AND k.chat_id=l.source_chat_id AND k.id=l.source_case_id
     LEFT JOIN cases n ON n.workspace_id=l.workspace_id AND n.chat_id=l.target_chat_id AND n.id=l.target_case_id
-    WHERE l.workspace_id=? AND l.source_chat_id=? AND l.request_id=?`,[...keys,input.requestId]);
+    WHERE l.workspace_id=? AND l.source_chat_id=? AND l.request_id=? FOR UPDATE`,[...keys,input.requestId]);
    if(prior){if(prior.kind!==kind||prior.reason!==reason||(prior.source_case_public_id??null)!==sourceId)fail('RUN_REQUEST_CONFLICT','同一请求标识已用于其他操作');return {chatPublicId:prior.chatPublicId,casePublicId:prior.casePublicId,duplicate:true,formalDataPreserved:true};}
    const rows=await cases(db,keys,true);
    let source=null;
