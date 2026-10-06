@@ -50,7 +50,14 @@ export function createPersistedDiscussionService({ repository, complete }) {
       token, chatPublicId, casePublicId,
       { expectedRevision: history.revision, userInput: input, kind: 'PROPOSE_PLAN' });
     const result = await proposeDiscussionPlan(graph, { priorTurns: history.turns, userInput: input });
-    result.proposal = await definePlanContract(complete, result.proposal);
+    try {
+      result.proposal = await definePlanContract(complete, result.proposal);
+    } catch (error) {
+      if (error.code === 'DATA_SPEC_INVALID' || error.code === 'INVALID_PLAN_CONTRACT') {
+        await repository.abandonCaseDiscussionTurn(token, chatPublicId, casePublicId, pending.turnNumber);
+      }
+      throw error;
+    }
     result.reply += '\n' + displayPlanContract(result.proposal.contract);
     result.promptVersion = 'plan-confirmed-contract-v1';
     const saved = await repository.finishCasePlanProposal(token, chatPublicId, casePublicId, {

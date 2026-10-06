@@ -49,7 +49,7 @@ function fixture() {
     modelCalls.push(request);
     return modelCalls.length === 1 ? firstReply : secondReply;
   } });
-  return { service, rounds, modelCalls };
+  return { service, rounds, modelCalls, repository };
 }
 
 test('service stores user intent before model call and reads only server-owned history', async () => {
@@ -139,4 +139,48 @@ test('premature proposal is rejected before creating a pending turn', async () =
   const { service, rounds } = fixture();
   await assert.rejects(service.propose({ ...scope, userInput: '现在生成 Plan' }), /至少需要两轮/);
   assert.equal(rounds.length, 0);
+});
+
+for (const invalidStage of ['DATA_SPEC_INVALID', 'INVALID_PLAN_CONTRACT']) {
+  test(`${invalidStage} releases proposal intent so the user can correct the request`, async () => {
+    const { service, repository, rounds } = fixture();
+    await service.discuss({ ...scope, userInput: '请讨论规则' });
+    await service.discuss({ ...scope, userInput: '再讨论边界' });
+    let invalid = true;
+    const proposing = createPersistedDiscussionService({ repository, complete: async request => {
+      if (request.messages) return JSON.stringify(plan);
+      const dataStage = request.system.includes('四张公共数据表');
+      if (invalid && dataStage === (invalidStage === 'DATA_SPEC_INVALID')) return '{}';
+      if (dataStage) return JSON.stringify(planContract(plan).dataSpecification);
+      const { version, protocolVersion, dataSpecification, ...derived } = planContract(plan);
+      return JSON.stringify(derived);
+    } });
+    await assert.rejects(proposing.propose({ ...scope, userInput: '请生成Plan，03日期20261006，04日期20261007' }), { code: invalidStage });
+    assert.equal(rounds.at(-1).status, 'ABANDONED');
+    invalid = false;
+    const result = await proposing.propose({ ...scope, userInput: '修正后的Plan请求，03日期20261006，04日期20261007' });
+    assert.equal(result.versionNumber, 1);
+    assert.equal(rounds.at(-1).status, 'COMPLETE');
+  });
+}
+
+test('temporary contract model failure retains the same proposal intent for retry', async () => {
+  const { service, repository, rounds } = fixture();
+  await service.discuss({ ...scope, userInput: '请讨论规则' });
+  await service.discuss({ ...scope, userInput: '再讨论边界' });
+  let unavailable = true;
+  const proposing = createPersistedDiscussionService({ repository, complete: async request => {
+    if (request.messages) return JSON.stringify(plan);
+    if (unavailable) throw new Error('model temporarily unavailable');
+    if (request.system.includes('四张公共数据表')) return JSON.stringify(planContract(plan).dataSpecification);
+    const { version, protocolVersion, dataSpecification, ...derived } = planContract(plan);
+    return JSON.stringify(derived);
+  } });
+  await assert.rejects(proposing.propose({ ...scope, userInput: '请生成Plan，03日期20261006，04日期20261007' }), /temporarily unavailable/);
+  assert.equal(rounds.at(-1).status, 'PENDING');
+  await assert.rejects(proposing.propose({ ...scope, userInput: '另一个请求' }), { code: 'DISCUSSION_IN_PROGRESS' });
+  unavailable = false;
+  await proposing.propose({ ...scope, userInput: '请生成Plan，03日期20261006，04日期20261007' });
+  assert.equal(rounds.length, 3);
+  assert.equal(rounds.at(-1).status, 'COMPLETE');
 });
