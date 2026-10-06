@@ -10,6 +10,7 @@ import { createReturnConfirmationRepository } from '../src/return-confirmation.j
 import { createReturnParsingService } from '../../case-api/src/return-parsing.js';
 import { createReturnConfirmationService } from '../../case-api/src/return-confirmation.js';
 import { createDataGenerationGraph } from '../../case-agent/src/data-generation.js';
+import { verifyAccountSelectionRace } from './helpers/account-selection-race.js';
 import { buildDataFile, dataFileName } from '../../platform-protocol/src/index.js';
 
 // Opt-in against a migrated MySQL database. Every fixture and business write is rolled back.
@@ -167,6 +168,13 @@ test('MySQL: draft -> delivered 01 -> confirmed 02 -> delivered 03 -> confirmed 
     await parse(reuse.scope,failedTradeBatch,'04',[{ ...returned04,AppSheetSerialNo:'SYNFAIL03',ReturnCode:'1001',ConfirmedAmount:null,ConfirmedVol:null,NAV:null }],906);
     assert.equal((await confirmations.apply(token,{ ...reuse.scope,parseId:failed04.parseId,recordIndexes:[0] })).results[0].outcome,'FAILED');
     assert.deepEqual(await confirmations.salesData(token),sales);
+    if (process.env.CASE_CONFIRMATION_RACE === '1') {
+      assert.match(migrationConfig().database, /^ta_case_agent_test_race[a-f0-9]+$/);
+      const racing = await createCase(false);
+      await confirmations.selectAccount(token,{ ...racing.scope,accountPublicId:sales.accounts[0].publicId });
+      await verifyAccountSelectionRace({db,token,scope:racing.scope,channelId,planVersionId:racing.data.planVersionId,
+        accountPublicId:sales.accounts[0].publicId,trade});
+    }
     const otherUserId = crypto.randomUUID();
     const [other] = await db.execute(`INSERT INTO platform_users(public_id,email,password_hash,display_name) VALUES (?,?,?,'隔离测试')`,
       [otherUserId,otherUserId+'@example.invalid','synthetic-test-only']);

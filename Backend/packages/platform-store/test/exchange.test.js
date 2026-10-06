@@ -66,7 +66,11 @@ test('stages an encoded 01 snapshot under a locked SOP and server-side scope', a
     fileType: '01', record
   });
   assert.match(result.snapshotHash, /^[a-f0-9]{64}$/);
-  const scope = calls.find(call => call.sql.includes('FROM case_chats'));
+  const lock = calls.find(call => call.sql.includes('SELECT k.id AS case_id'));
+  assert.match(lock.sql, /FOR UPDATE/);
+  assert.deepEqual(lock.values, [31, chatPublicId, casePublicId]);
+  const scope = calls.find(call => call.sql.includes("s.status='LOCKED'"));
+  assert.ok(calls.indexOf(lock) < calls.indexOf(scope));
   assert.match(scope.sql, /s\.status='LOCKED'/);
   assert.match(scope.sql, /AND EXISTS \(SELECT 1 FROM case_data_confirmations d/);
   assert.deepEqual(scope.values, [31, chatPublicId, casePublicId, '61', '71']);
