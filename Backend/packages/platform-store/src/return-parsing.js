@@ -53,7 +53,7 @@ export function createReturnParsingRepository({ transaction }) {
       const [parses] = await db.execute(`SELECT id,batch_id,expected_type,parsed_json
         FROM case_return_parses WHERE workspace_id=? AND chat_id=? AND case_id=? ORDER BY id`, keys);
       let orderContext=null;
-      try { orderContext=await exchangeOrderContext(db,keys); } catch(error) { if(error.code!=='EXCHANGE_PLAN_REQUIRED') throw error; }
+      try { orderContext=await exchangeOrderContext(db,keys,false); } catch(error) { if(error.code!=='EXCHANGE_PLAN_REQUIRED') throw error; }
       return { exchangePlanStatus:orderContext?'READY':'UNPLANNED', planVersion:orderContext?.version ?? null, steps: targets.map(target => ({ ...target, parses: parses.filter(row =>
         String(row.batch_id) === target.batchId && row.expected_type === target.expectedType)
         .map(row => ({ parseId: String(row.id), result: json(row.parsed_json),orderAccepted:Boolean(orderContext?.events.some(e=>e.condition==='PARSED' && String(e.parse_id)===String(row.id))) })) })) };
@@ -71,7 +71,7 @@ export function createReturnParsingRepository({ transaction }) {
       const state = await runGraph(target);
       const { rawFiles, result } = state.parsed;
       const [[prior]] = await db.execute(`SELECT id,parsed_json FROM case_return_parses
-        WHERE workspace_id=? AND chat_id=? AND case_id=? AND batch_id=? AND expected_type=? AND content_sha256=?`,
+        WHERE workspace_id=? AND chat_id=? AND case_id=? AND batch_id=? AND expected_type=? AND content_sha256=? FOR UPDATE`,
       [...keys, target.batchId, input.expectedType, result.sha256]);
       let order;
       let orderError;

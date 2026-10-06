@@ -114,7 +114,7 @@ test('MySQL: draft -> delivered 01 -> confirmed 02 -> delivered 03 -> confirmed 
     await confirmations.apply(token,{ ...first.scope,parseId:parsed04.parseId,recordIndexes:[0] });
     assert.deepEqual(await confirmations.salesData(token),sales);
     const changed = await parse(first.scope,batch03,'04',[{ ...returned04,ConfirmedVol:'201.00' }],903);
-    await assert.rejects(confirmations.apply(token,{ ...first.scope,parseId:changed.parseId,recordIndexes:[0] }),{ code:'EXCHANGE_STEP_CONFLICT' });
+    await assert.rejects(confirmations.apply(token,{ ...first.scope,parseId:changed.parseId,recordIndexes:[0] }),{ code:'CONFIRMATION_CONFLICT' });
     assert.deepEqual(await confirmations.salesData(token),sales);
     const second = await createCase();
     const failedOpening = { ...opening,AppSheetSerialNo:'SYNOPEN02',TransactionAccountID:second.data.accounts[0].account_no };

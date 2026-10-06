@@ -15,6 +15,9 @@ function fixture({ owner = { chat_id: 41, case_id: 51, chat_status: 'ACTIVE', ca
   const db = { async execute(sql, values) {
     calls.push({ sql, values });
     if(sql.includes('FROM case_sop_versions')) return [[{version_number:1,plan_json:legacy?{}:{exchangePlan}}]];
+    if(sql.includes('FROM case_exchange_plan_receipts'))return [[]];
+    if(sql.includes('FROM case_exchange_plan_bindings'))return [prior?[{stepId:'receive04',batch_id:61,file_type:'04'}]:[]];
+    if(sql.includes('INSERT INTO case_exchange_plan_bindings') || sql.includes('INSERT INTO case_exchange_plan_receipts'))return [{affectedRows:1}];
     if(sql.includes('FROM case_exchange_plan_events')) return [[...(sent?[{stepId:'send03',condition:'SENT',batch_id:61}]:[]),...(prior?[{stepId:'receive04',condition:'PARSED',batch_id:61,parse_id:81}]:[])]];
     if(sql.includes('INSERT INTO case_exchange_plan_events')) return [{affectedRows:1}];
     if (sql.includes('FROM platform_sessions')) return [[{ user_id: 7, workspace_id: 31 }]];
@@ -51,8 +54,8 @@ test('parsing stores raw bytes and complete result but never modifies applicatio
   assert.equal(result.result.businessApplied, false);
   assert.equal(result.result.applicationsMatched, false);
   const writes = f.calls.filter(c => /^INSERT|^UPDATE/.test(c.sql));
-  assert.equal(writes.length, 3);
-  assert.ok(writes.every(c => /^INSERT INTO (case_return_parse|case_exchange_plan_events)/.test(c.sql)));
+  assert.equal(writes.length, 4);
+  assert.ok(writes.every(c => /^INSERT INTO (case_return_parse|case_exchange_plan_events|case_exchange_plan_bindings|case_exchange_plan_receipts)/.test(c.sql)));
   assert.deepEqual(writes[0].values.slice(0, 5), [31, 41, 51, '61', '04']);
   assert.equal(writes[0].values.at(-1), 7);
   assert.deepEqual(writes[1].values.at(-1), Buffer.from(input('04').files[0].base64, 'base64'));

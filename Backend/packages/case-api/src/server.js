@@ -13,6 +13,7 @@ import { createReturnParsingRepository } from '../../platform-store/src/return-p
 import { createReturnParsingService } from './return-parsing.js';
 
 import { createReturnConfirmationRepository } from '../../platform-store/src/return-confirmation.js';
+import { createExchangePlanSupplementRepository } from '../../platform-store/src/exchange-plan-supplement.js';
 import { createReturnConfirmationService } from './return-confirmation.js';
 
 const allowedOrigin = process.env.CASE_PUBLIC_ORIGIN;
@@ -35,6 +36,7 @@ const transaction = async action => {
 };
 const repository = createCaseRepository({ transaction });
 const returnParsing = createReturnParsingService({ repository: createReturnParsingRepository({ transaction }) });
+const exchangePlanSupplement=createExchangePlanSupplementRepository({transaction});
 const returnConfirmation = createReturnConfirmationService({ repository: createReturnConfirmationRepository({ transaction }) });
 const exchangeRepository = createExchangeRepository({ transaction });
 const preparations = createApplicationPreparationRepository({ transaction });
@@ -92,5 +94,5 @@ const applicationPreparation = createApplicationPreparationService({ repository,
 const confirmData = ({ token, chatPublicId, casePublicId, revision }) =>
   repository.confirmGeneratedData(token, chatPublicId, casePublicId, revision);
 const server = createCaseHttpServer({ repository, discussionService, confirmPlan,
-  executeData, reviseData, exchangeRepository, applicationPreparation, confirmData, returnParsing, returnConfirmation, allowedOrigin });
+  executeData, reviseData, exchangeRepository, applicationPreparation, confirmData, returnParsing, returnConfirmation, exchangePlanSupplement, allowedOrigin });
 server.listen(Number(process.env.CASE_API_PORT ?? 3100), '127.0.0.1');
