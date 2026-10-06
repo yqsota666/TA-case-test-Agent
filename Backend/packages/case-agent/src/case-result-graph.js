@@ -13,7 +13,8 @@ export function compareCaseResults(snapshot,proposal){
   }
   const numericField=['confirmedAmount','confirmedVolume','totalVolume','availableVolume','frozenVolume'].includes(a.field);
   const expected=numericField?numeric(a.expectedValue):null,actual=numericField?numeric(evidence.values[a.field]):null;
-  const literal=expected!==null ? hasNumericFieldExpectation(a.field,a.expectedValue,a.expectedQuote,a.operator) : hasLiteralExpectation(a.expectedValue,a.expectedQuote);
+  if(numericField && (expected===null || actual===null)){issues.push('数值字段的预期或实际值不是有效十进制数');continue;}
+  const literal=expected!==null ? hasNumericFieldExpectation(a.field,a.expectedValue,a.expectedQuote,a.operator) : hasLiteralExpectation(a.expectedValue,a.expectedQuote,a.field);
   if(!literal || evidence.values[a.field]==null || (a.operator!=='eq' && (actual===null || expected===null))){issues.push('预期值不在引用的Plan原文中，或实际值不可比较');continue;}
   if((a.operator==='gte'&&!/(至少|不低于|不少于|大于等于|>=|≥)/.test(a.expectedQuote)) ||
      (a.operator==='lte'&&!/(最多|不高于|不超过|不多于|小于等于|<=|≤)/.test(a.expectedQuote))){issues.push('比较方向没有对应的预期原文');continue;}

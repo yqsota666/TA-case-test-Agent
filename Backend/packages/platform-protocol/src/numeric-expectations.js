@@ -33,8 +33,27 @@ export function hasNumericFieldExpectation(field, value, quote, operator) {
   const expected = preciseDecimal(value);
   return expected !== null && numericQuoteBindings(quote).some(binding => binding.field === field && preciseDecimal(binding.value) === expected && (operator === undefined || binding.operator === operator));
 }
-export function hasLiteralExpectation(value, quote) {
-  if (typeof value !== 'string' || !value.length) return false;
+const literalLabels = {
+  status: ['最终状态', '申请状态', '确认状态', '状态', '确认成功', 'status'],
+  returnCode: ['TA返回代码', '返回代码', '返回码', '结果代码', '结果码', '错误代码', '错误码', 'returnCode'],
+  transactionAccountId: ['交易账户号', '交易账号', '交易账户', '销售账号', 'transactionAccountId'],
+  taAccountId: ['TA账户号', 'TA账号', 'TA账户', 'TA号', 'taAccountId'],
+  fundCode: ['基金代码', '基金编码', 'fundCode'],
+  shareClass: ['份额类别', '份额分类', 'shareClass'],
+  branchCode: ['网点编号', '网点代码', '网点', 'branchCode'],
+  snapshotDate: ['确认日期', '快照日期', '业务日期', '快照日', '日期', 'snapshotDate'],
+};
+const literalAliases = Object.entries(literalLabels).flatMap(([field, names]) => names.map(name => ({ field, name })));
+const literalMarker = new RegExp(literalAliases.map(({ name }) => name).sort((a, b) => b.length - a.length).join('|'), 'gi');
+export function hasLiteralExpectation(value, quote, field) {
+  if (typeof value !== 'string' || !value.length || !Object.hasOwn(literalLabels, field)) return false;
   const escaped = value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return new RegExp(`(?<![A-Za-z0-9_.+-])${escaped}(?![A-Za-z0-9_.+-])`).test(quote);
+  const positive = new RegExp(`^(?:\\s|[=:：,，]|均为|应为|应该为|应当为|为|是|等于)*${escaped}(?![A-Za-z0-9_.+-])`);
+  const matches = [...String(quote).matchAll(literalMarker)];
+  return matches.some((match, i) => {
+    const alias = literalAliases.find(alias => alias.name.toLowerCase() === match[0].toLowerCase());
+    if (alias.field !== field || /(?:不是|不为|非|未|没有|不|not)\s*$/i.test(quote.slice(0, match.index))) return false;
+    const segment = quote.slice(match.index + match[0].length, matches[i + 1]?.index);
+    return positive.test(segment);
+  });
 }

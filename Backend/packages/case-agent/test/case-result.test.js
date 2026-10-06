@@ -60,3 +60,10 @@ test('non-numeric expected values need complete literal tokens from the quoted p
  const state={...snapshot,plan:{scenarios:[{expected:quote}]},evidence:[{...snapshot.evidence[0],values:{status:'CONFIRMED'}}]};
  assert.equal(compareCaseResults(state,{assertions:[{...proposal.assertions[0],expectedQuote:quote,field:'status',expectedValue:'CONFIRMED'}],uncertainties:[]}).outcome,'PASS');
 });
+
+test('invalid numeric formats, borrowed field literals and negation cannot recommend PASS',()=>{
+ for(const [quote,field,value] of [['总份额1e2','totalVolume','1e2'],['总份额100.000000001','totalVolume','100.000000001'],['基金代码000001','taAccountId','000001'],['状态不是CONFIRMED','status','CONFIRMED'],['不是状态CONFIRMED','status','CONFIRMED']]){
+  const state={...snapshot,plan:{scenarios:[{expected:quote}]},evidence:[{...snapshot.evidence[0],values:{[field]:value}}]};
+  assert.equal(compareCaseResults(state,{assertions:[{...proposal.assertions[0],expectedQuote:quote,field,expectedValue:value}],uncertainties:[]}).outcome,'REVIEW',quote);
+ }
+});
