@@ -70,6 +70,16 @@ test('numeric quote tokens reject exponent/thousands fragments and preserve Unic
  assert.equal(make('确认金额−100.00元','100'),false);assert.equal(make('确认金额−100.00元','-100'),true);
  assert.equal(make('确认金额－100.00元','-100'),true);assert.equal(make('确认金额+100.00元','100'),true);
  assert.equal(make('确认金额100元,无需其他结果','100'),true);
- for(const field of ['confirmedAmount','confirmedVolume']){assert.equal(make('明确结果100.00','100',field),true);assert.equal(make('未明确数字','100',field),false);}
- for(const field of ['totalVolume','availableVolume','frozenVolume']){assert.equal(make('明确结果100.00','100',field,'CURRENT_FORMAL_HOLDING'),true);assert.equal(make('未明确数字','100',field,'CURRENT_FORMAL_HOLDING'),false);}
+ for(const field of ['confirmedAmount','confirmedVolume']){assert.equal(make(field+'100.00','100',field),true);assert.equal(make('明确结果100.00','100',field),false);assert.equal(make('未明确数字','100',field),false);}
+ for(const field of ['totalVolume','availableVolume','frozenVolume']){assert.equal(make(field+'100.00','100',field,'CURRENT_FORMAL_HOLDING'),true);assert.equal(make('明确结果100.00','100',field,'CURRENT_FORMAL_HOLDING'),false);assert.equal(make('未明确数字','100',field,'CURRENT_FORMAL_HOLDING'),false);}
+});
+test('typed quantities bind each field in a shared Chinese quote and reject swapped or identifier values',()=>{
+ const quote='场景1，基金代码000001：总份额100.00份、可用90.00份、冻结10.00份';
+ const p={...plan,scenarios:[{expected:quote}]},c=planContract(p);
+ const fields=['totalVolume','availableVolume','frozenVolume'],values=['100','90','10'];
+ const base=c.expectations[0];
+ c.expectations=fields.map((field,i)=>({...base,field,source:'CURRENT_FORMAL_HOLDING',expectedQuote:quote,expectedValue:values[i],selector:{...base.selector,fundCode:'000001',shareClass:'0',fileType:null,businessDate:null}}));
+ assert.equal(validPlanContract(c,p),true);
+ for(const value of ['1','000001','90']){const invalid=structuredClone(c);invalid.expectations[0].expectedValue=value;assert.equal(validPlanContract(invalid,p),false);}
+ const swapped=structuredClone(c);swapped.expectations[1].expectedValue='10';swapped.expectations[2].expectedValue='90';assert.equal(validPlanContract(swapped,p),false);
 });
