@@ -48,6 +48,10 @@ export async function verifyTerminalTaFailure({db,transaction,token,scope,channe
   const review=await createCaseResultGraph({collect:async()=>partial,complete:async()=>{throw Error('oversized mappings must not reach the model');}}).invoke({});assert.equal(review.suggestion.outcome,'REVIEW');
   const cappedFacts=await workflowFacts(cappedDb,{owner:row,keys},token,scope);assert.equal(cappedFacts.review.confirmable,false);assert.equal(workflowPosition(cappedFacts).stage,'EVALUATE_RESULT');
   await assert.rejects(capped.confirm(token,{...scope,reviewId:saved.reviewId,verdict:'FAIL',reason:'部分映射不能封存'}),{code:'CASE_RESULT_CHANGED'});
+  await db.query('SAVEPOINT truncated_result_review');
+  const cappedReview=await capped.save(token,scope,review);
+  await assert.rejects(capped.confirm(token,{...scope,reviewId:cappedReview.reviewId,verdict:'FAIL',reason:'截断REVIEW不能封存'}),{code:'RESULT_NOT_READY'});
+  await db.query('ROLLBACK TO SAVEPOINT truncated_result_review');
  }
  for(const independent of [true,false]){
   await db.query('SAVEPOINT terminal_review_issue');
