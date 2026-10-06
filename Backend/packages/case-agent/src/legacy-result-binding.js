@@ -34,6 +34,19 @@ export function legacyBindingIssues(snapshot,checks,scenarioIndex){
  const expected=snapshot.plan.scenarios[scenarioIndex].expected,{bindings,recognized}=legacyExpectationBindings(expected),issues=[];
  if(!recognized)issues.push(`场景${scenarioIndex+1}的自然语言预期不能完整确定，请澄清`);
  const covered=checks.filter(c=>c.scenarioIndex===scenarioIndex);
+ const selected=[...new Map(covered.map(c=>{const e=snapshot.evidence.find(e=>e.id===c.evidenceId);return [e?.id,e];})).values()].filter(Boolean);
+ if(selected.length>1){
+  for(const field of ['transactionAccountId','channelId']){
+   const values=selected.map(e=>field==='channelId'?e.source.channelId:e.values[field]);
+   if(values.some(v=>v===null || v===undefined || v==='') || new Set(values.map(String)).size!==1)issues.push(`场景${scenarioIndex+1}的跨来源${field}不能证明一致`);
+  }
+  const fundEvidence=selected.filter(e=>e.source.kind==='CURRENT_FORMAL_HOLDING' || e.source.kind==='HOLDING' || (e.source.kind==='APPLICATION_CONFIRMATION' && e.source.fileType==='03'));
+  for(const field of ['fundCode','shareClass'])if(fundEvidence.length>1){
+   const values=fundEvidence.map(e=>e.values[field]);
+   if(values.some(v=>v===null || v===undefined || v==='') || new Set(values.map(String)).size!==1)issues.push(`场景${scenarioIndex+1}的跨来源${field}不能证明一致`);
+  }
+ }
+
  for(const c of covered){
   const source=snapshot.evidence.find(e=>e.id===c.evidenceId);
   const candidates=snapshot.evidence.filter(e=>e.source.kind===source?.source.kind && Object.hasOwn(e.values,c.field) && bindings.every(b=>{
