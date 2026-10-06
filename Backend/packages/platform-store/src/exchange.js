@@ -124,6 +124,11 @@ export function createExchangeRepository({ transaction }) {
     const date = validDate(businessDate);
     return transaction(async db => {
       const auth = await authenticateSession(db, token);
+      const [[owner]] = await db.execute(`SELECT k.id AS case_id,c.id AS chat_id
+        FROM case_chats c JOIN cases k ON k.workspace_id=c.workspace_id AND k.chat_id=c.id
+        WHERE c.workspace_id=? AND c.public_id=? AND k.public_id=? FOR UPDATE`,
+      [auth.workspace_id, chatPublicId, casePublicId]);
+      if (!owner) throw storeError('APPLICATION_SCOPE', 409, 'Case、SOP 或通道不可用于申请');
       const [[scope]] = await db.execute(`SELECT c.id AS chat_id,k.id AS case_id,s.id AS sop_id,
         h.id AS channel_id,h.distributor_code,h.protocol_version
         FROM case_chats c
@@ -135,7 +140,7 @@ export function createExchangeRepository({ transaction }) {
           AND k.public_id=? AND k.status IN ('SOP_LOCKED','EXECUTING')
           AND EXISTS (SELECT 1 FROM case_data_confirmations d
             WHERE d.workspace_id=k.workspace_id AND d.chat_id=k.chat_id AND d.case_id=k.id)
-          AND s.id=? AND h.id=?`,
+          AND s.id=? AND h.id=? FOR UPDATE`,
       [auth.workspace_id, chatPublicId, casePublicId, sopVersionId, channelId]);
       if (!scope) throw storeError('APPLICATION_SCOPE', 409, 'Case、SOP 或通道不可用于申请');
       const { snapshot, hash } = validSnapshot(fileType, record, scope.protocol_version, scope, businessDate);
@@ -143,13 +148,13 @@ export function createExchangeRepository({ transaction }) {
         FROM case_generated_accounts a JOIN case_generated_customers c
           ON c.workspace_id=a.workspace_id AND c.chat_id=a.chat_id
           AND c.case_id=a.case_id AND c.id=a.customer_id
-        WHERE a.workspace_id=? AND a.chat_id=? AND a.case_id=? AND a.account_no=?`,
+        WHERE a.workspace_id=? AND a.chat_id=? AND a.case_id=? AND a.account_no=? FOR UPDATE`,
       [auth.workspace_id, scope.chat_id, scope.case_id, record.TransactionAccountID]);
       if (!sourceAccount && fileType === '03') {
         [[sourceAccount]] = await db.execute(`SELECT sc.id,sc.branch_code,sc.investor_name AS name,sc.investor_type
           FROM case_sales_account_refs r JOIN sales_confirmed_accounts sc ON sc.workspace_id=r.workspace_id
             AND sc.channel_id=r.channel_id AND sc.id=r.account_id
-          WHERE r.workspace_id=? AND r.chat_id=? AND r.case_id=? AND r.channel_id=? AND sc.transaction_account_id=?`,
+          WHERE r.workspace_id=? AND r.chat_id=? AND r.case_id=? AND r.channel_id=? AND sc.transaction_account_id=? FOR UPDATE`,
         [auth.workspace_id,scope.chat_id,scope.case_id,scope.channel_id,record.TransactionAccountID]);
       }
       if (!sourceAccount || (record.BranchCode && sourceAccount.branch_code !== record.BranchCode) ||

@@ -197,7 +197,7 @@ export function createReturnConfirmationRepository({ transaction }) {
     if (!uuid.test(input.accountPublicId ?? '')) throw storeError('INVALID_INPUT', 400, '账户标识无效');
     return transaction(async db => {
       const { keys } = await context(db, token, input, true);
-      const [[staged]] = await db.execute(`SELECT id FROM applications WHERE workspace_id=? AND chat_id=? AND case_id=? LIMIT 1`,keys);
+      const [[staged]] = await db.execute(`SELECT id FROM applications WHERE workspace_id=? AND chat_id=? AND case_id=? LIMIT 1 FOR UPDATE`,keys);
       if (staged) throw error('APPLICATION_ALREADY_STAGED','已有申请，不能再切换申请账户；请新建 Case 选择已有账户');
       const [[account]] = await db.execute(`SELECT id,channel_id FROM sales_confirmed_accounts
         WHERE workspace_id=? AND public_id=? FOR UPDATE`, [keys[0],input.accountPublicId]);
