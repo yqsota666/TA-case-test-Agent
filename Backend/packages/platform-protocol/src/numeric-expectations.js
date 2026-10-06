@@ -15,6 +15,9 @@ export function preciseDecimal(value) {
 function fieldPrefix(text, at) {
   return text.slice(0, at).split(/[，,。；;\n]/).at(-1);
 }
+function uncertainTail(tail) {
+  return /[?？]|吗|是否|还是|或|\bor\b|[\/|]/i.test(tail.split(/[，,。；;\n]/)[0]);
+}
 function negatedPrefix(prefix) {
   return /(?:不|未|没有|非|\bnot\b)/i.test(prefix.replace(/不(?:少于|低于|超过|高于|多于)/g, ''));
 }
@@ -29,7 +32,7 @@ export function numericQuoteBindings(quote) {
     // A quantity must immediately follow its field, allowing only comparison language and units.
     const parsed = segment.match(/^((?:\s|[=:：≤≥]|>=|<=|应为|应该为|应当为|应达到|为|是|等于|至少|最多|不低于|不少于|大于等于|小于等于|不超过|不高于|不多于)*)([-+]?\d+(?:\.\d+)?)(?!\s*(?:[A-Za-z0-9_.+\-/%％×*÷万亿千百十]|[,，]\d))/);
     const value = parsed?.[2]?.replace(/^\+/, '');
-    if (value === undefined || preciseDecimal(value) === null) continue;
+    if (value === undefined || preciseDecimal(value) === null || uncertainTail(segment.slice(parsed[0].length))) continue;
     const field = aliases.find(alias => alias.name.toLowerCase() === match[0].toLowerCase()).field;
     const comparison = (prefix.match(/(?:至少|不低于|不少于|大于等于|>=|≥|最多|不高于|不超过|不多于|小于等于|<=|≤)\s*$/)?.[0] ?? '') + parsed[1];
     const operator = /(至少|不低于|不少于|大于等于|>=|≥)/.test(comparison) ? 'gte' :
@@ -62,8 +65,11 @@ export function hasLiteralExpectation(value, quote, field) {
   return matches.some((match, i) => {
     const alias = literalAliases.find(alias => alias.name.toLowerCase() === match[0].toLowerCase());
     if (alias.name === '确认成功' && value !== 'CONFIRMED') return false;
-    if (alias.field !== field || negatedPrefix(fieldPrefix(quote, match.index))) return false;
+    if (alias.field !== field || negatedPrefix(fieldPrefix(quote, match.index)) || /是否/.test(fieldPrefix(quote, match.index))) return false;
     const segment = quote.slice(match.index + match[0].length, matches[i + 1]?.index);
-    return positive.test(segment);
+    const matched=positive.exec(segment);
+    if(!matched)return false;
+    const tail=segment.slice(matched[0].length).split(/[，,。；;\n]/)[0];
+    return !uncertainTail(tail);
   });
 }

@@ -74,3 +74,10 @@ test('the full scenario preserves negation even when a model shortens its quote'
   assert.equal(compareCaseResults(state,{assertions:[{...proposal.assertions[0],expectedQuote:quote,field,expectedValue:value}],uncertainties:[]}).outcome,'REVIEW');
  }
 });
+
+test('literal status questions and alternative states cannot produce a PASS suggestion',()=>{
+ for(const expected of ['开户状态为CONFIRMED吗？','开户状态为CONFIRMED或FAILED']){
+  const state={...snapshot,plan:{scenarios:[{expected}]},evidence:[{...snapshot.evidence[0],values:{status:'CONFIRMED'}}]};
+  assert.equal(compareCaseResults(state,{assertions:[{...proposal.assertions[0],expectedQuote:expected,field:'status',expectedValue:'CONFIRMED'}],uncertainties:[]}).outcome,'REVIEW');
+ }
+});
