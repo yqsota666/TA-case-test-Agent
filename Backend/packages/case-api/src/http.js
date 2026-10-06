@@ -200,6 +200,7 @@ export function createCaseHttpHandler({ repository, discussionService, confirmPl
           if (data.reviewStatus !== 'CONFIRMED') {
             send(response, 409, { error: 'DATA_NOT_CONFIRMED' }); return;
           }
+          if(data.planDataFrozen){send(response,409,{error:'PLAN_DATA_FROZEN',message:'申请数据已在Plan中锁定，请使用申请准备按已确认Plan生成'});return;}
           send(response, 200, await exchangeRepository.stageApplication(token, {
             chatPublicId: application[1], casePublicId: application[2],
             sopVersionId: data.planVersionId, ...body }));
