@@ -15,8 +15,8 @@ function validDate(value) {
   return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === iso;
 }
 
-export function parseReturnFiles(files, { expectedType, channel }) {
-  if (!['02', '04', '05'].includes(expectedType)) fail('UNSUPPORTED_RETURN_TYPE', '仅支持分别解析 02、04 和 05');
+export function parseReturnFiles(files, { expectedType, channel, allowMixed = false }) {
+  if (!['02', '04', '05'].includes(expectedType) && !(allowMixed && expectedType === 'MIXED')) fail('UNSUPPORTED_RETURN_TYPE', '仅支持分别解析 02、04 和 05');
   if (!Array.isArray(files) || files.length < 1 || files.length > 17) {
     fail('INVALID_RETURN_PACKAGE', '请上传回传 TXT 文件，可同时附带原始 OFI 索引；最多 17 份');
   }
@@ -49,9 +49,10 @@ export function parseReturnFiles(files, { expectedType, channel }) {
     let parsed;
     try { parsed = parseDataFile(file.rawBytes); }
     catch { fail('INVALID_RETURN_FILE', `${file.fileName} 的文件头、字段、字节长度、数字或记录数无效`); }
-    if (parsed.fileType !== expectedType) fail('RETURN_TYPE_MISMATCH', `此入口等待 ${expectedType}，上传内容是 ${parsed.fileType}`);
+    if (!['02','04','05'].includes(parsed.fileType)) fail('UNSUPPORTED_RETURN_TYPE', '统一回传仅支持02、04、05');
+    if (!allowMixed && parsed.fileType !== expectedType) fail('RETURN_TYPE_MISMATCH', `此入口等待 ${expectedType}，上传内容是 ${parsed.fileType}`);
     if (!validDate(parsed.date)) fail('INVALID_RETURN_DATE', `${file.fileName} 的文件日期无效`);
-    const prefix = `OFD_${parsed.creator}_${parsed.receiver}_${parsed.date}_${expectedType}`;
+    const prefix = `OFD_${parsed.creator}_${parsed.receiver}_${parsed.date}_${parsed.fileType}`;
     if (!file.fileName.startsWith(prefix) || !/^(?:_\d{3})?\.TXT$/.test(file.fileName.slice(prefix.length))) {
       fail('RETURN_NAME_MISMATCH', '数据文件名与文件头的机构、日期或类型不一致');
     }
@@ -81,6 +82,10 @@ export function parseReturnFiles(files, { expectedType, channel }) {
   }
   const sha256 = hash(Buffer.from(JSON.stringify(rawFiles.map(file => [file.fileName, file.sha256])
     .sort((a, b) => a[0].localeCompare(b[0])))));
-  return { rawFiles, result: { expectedType, sha256, index, files: data, recordCount,
+  const selected = expectedType === 'MIXED' ? data : data.filter(file => file.fileType === expectedType);
+  if (!selected.length) fail('RETURN_TYPE_MISMATCH', `上传批次没有${expectedType}文件`);
+  return { rawFiles, result: { expectedType, sha256, index, files: selected,
+    ...(allowMixed ? { mixedPackage: true, packageFiles: data.map(file => ({fileName:file.fileName,fileType:file.fileType,sha256:file.sha256})) } : {}),
+    recordCount: selected.reduce((sum, file) => sum + file.records.length, 0),
     indexChecked: Boolean(index), businessApplied: false, applicationsMatched: false } };
 }

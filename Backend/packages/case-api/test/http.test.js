@@ -17,6 +17,7 @@ async function fixture(t, {orderRejected=false}={}) {
     returnConfirmation: Object.fromEntries(['read','delivery','apply','salesData','selectAccount'].map(method =>
       [method,async (token,input) => { calls.push(['confirmation-'+method,token,input]); return { ok:true }; }])),
     caseResult:{read:async(token,scope)=>{calls.push(['result-read',token,scope]);return {reviewId:null};},evaluate:async(token,scope)=>{calls.push(['result-evaluate',token,scope]);return {suggestion:{outcome:'REVIEW'}};},confirm:async(token,input)=>{calls.push(['result-confirm',token,input]);return {finalVerdict:'PASS'};}},
+    taReceipts:{read:async(token,input)=>{calls.push(['receipts-read',token,input]);return {supportedTypes:['02','04','05']};},parse:async(token,input)=>{calls.push(['receipts-parse',token,input]);return {phase:'PARSED',businessApplied:false};}},
     holdingsReturn: {
       read: async (token,scope)=>{calls.push(['holdings-read',token,scope]);return {steps:[],parses:[]};},
       parse: async (token,input)=>{calls.push(['holdings-parse',token,input]);return {phase:'PARSED'};},
@@ -380,6 +381,18 @@ test('Plan confirmation requires an explicit data or expectation section and rej
  assert.equal(calls.length,0);
  const r=await fetch(base+planRoute+'/confirm',{method:'POST',headers,body:JSON.stringify({versionNumber:1,section:'DATA'})});assert.equal(r.status,200);assert.equal(calls[0][1].section,'DATA');
 });
+
+ test('unified receipt routes keep scoped authentication, exact JSON and origin requirements',async t=>{
+ const {base,calls}=await fixture(t);const path=route.replace('/discussion','/ta-receipts');
+ const headers={cookie:'case_session=abcdefghijklmnopqrstuvwxyz012345',origin:allowedOrigin,'content-type':'application/json'};
+ assert.equal((await fetch(base+path)).status,401);
+ assert.equal((await fetch(base+path,{headers})).status,200);
+ const body={channelId:'2',files:[],routes:[{fileType:'04',batchPublicId:'cccccccc-cccc-cccc-cccc-cccccccccccc'}]};
+ assert.equal((await fetch(base+path+'/parse',{method:'POST',headers,body:JSON.stringify(body)})).status,200);
+ assert.equal(calls.at(-1)[0],'receipts-parse');assert.equal(calls.at(-1)[2].casePublicId,'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
+ assert.equal((await fetch(base+path+'/parse',{method:'POST',headers,body:JSON.stringify({...body,workspaceId:'other'})})).status,400);
+ assert.equal((await fetch(base+path+'/parse',{method:'POST',headers:{...headers,origin:'http://evil.invalid'},body:JSON.stringify(body)})).status,403);
+ });
 
 test('strict Plan cannot bypass frozen application values through the legacy manual record endpoint',async t=>{
  let staged=0;

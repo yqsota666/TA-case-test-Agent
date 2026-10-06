@@ -18,6 +18,7 @@ import { createReturnConfirmationRepository } from '../../platform-store/src/ret
 import { createExchangePlanSupplementRepository } from '../../platform-store/src/exchange-plan-supplement.js';
 import { createReturnConfirmationService } from './return-confirmation.js';
 
+import { createTaReceiptsRepository } from '../../platform-store/src/ta-receipts.js';
 import { createHoldingsReturnRepository } from '../../platform-store/src/holdings-return.js';
 
 import { createCaseResultRepository } from '../../platform-store/src/case-result.js';
@@ -47,6 +48,7 @@ const repository = createCaseRepository({ transaction });
 const returnParsing = createReturnParsingService({ repository: createReturnParsingRepository({ transaction }) });
 const exchangePlanSupplement=createExchangePlanSupplementRepository({transaction});
 const returnConfirmation = createReturnConfirmationService({ repository: createReturnConfirmationRepository({ transaction }) });
+const taReceipts = createTaReceiptsRepository({transaction});
 const holdingsReturn = createHoldingsReturnRepository({transaction});
 const exchangeRepository = createExchangeRepository({ transaction });
 const preparations = createApplicationPreparationRepository({ transaction });
@@ -105,5 +107,5 @@ const applicationPreparation = createApplicationPreparationService({ repository,
 const confirmData = ({ token, chatPublicId, casePublicId, revision }) =>
   repository.confirmGeneratedData(token, chatPublicId, casePublicId, revision);
 const server = createCaseHttpServer({ repository, discussionService, confirmPlan,
-  executeData, reviseData, exchangeRepository, applicationPreparation, confirmData, returnParsing, returnConfirmation, holdingsReturn, caseResult, exchangePlanSupplement, chatLifecycle, taReset, allowedOrigin });
+  executeData, reviseData, exchangeRepository, applicationPreparation, confirmData, returnParsing, returnConfirmation, holdingsReturn, taReceipts, caseResult, exchangePlanSupplement, chatLifecycle, taReset, allowedOrigin });
 server.listen(Number(process.env.CASE_API_PORT ?? 3100), '127.0.0.1');
