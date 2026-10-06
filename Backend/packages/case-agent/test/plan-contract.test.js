@@ -118,3 +118,10 @@ test('typed nonnumeric literals cannot borrow another field or negate the quoted
   assert.equal(validPlanContract(c,p),false,quote);
  }
 });
+
+test('typed quote extraction cannot remove recognized negative scenario context',()=>{
+ for(const [expected,quote,field,value] of [['不要确认金额100','确认金额100','confirmedAmount','100'],['不期望状态CONFIRMED','状态CONFIRMED','status','CONFIRMED']]){
+  const p={...plan,scenarios:[{expected}]},c=planContract(p);Object.assign(c.expectations[0],{expectedQuote:quote,field,expectedValue:value});
+  assert.equal(validPlanContract(c,p),false);
+ }
+});
