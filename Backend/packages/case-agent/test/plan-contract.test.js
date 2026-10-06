@@ -110,3 +110,11 @@ test('typed contracts cannot omit explicit numeric fields and silently PASS chan
  c.missing=[];c.expectations.push({...c.expectations[0],field:'availableVolume',expectedValue:'90'},{...c.expectations[0],field:'frozenVolume',expectedValue:'10'});
  assert.equal(validPlanContract(c,p),true);assert.equal(compareConfirmedExpectations(snapshot).outcome,'FAIL');
 });
+
+test('typed nonnumeric literals cannot borrow another field or negate the quoted result',()=>{
+ for(const [quote,field,value] of [['基金代码000001','taAccountId','000001'],['状态不是CONFIRMED','status','CONFIRMED'],['状态不为CONFIRMED','status','CONFIRMED'],['status not CONFIRMED','status','CONFIRMED']]){
+  const p={...plan,scenarios:[{expected:quote}]},c=planContract(p);
+  Object.assign(c.expectations[0],{expectedQuote:quote,field,expectedValue:value});
+  assert.equal(validPlanContract(c,p),false,quote);
+ }
+});

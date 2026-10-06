@@ -88,7 +88,7 @@ function validExpectations(c,d,plan) {
     }
     if (['confirmedAmount','confirmedVolume','totalVolume','availableVolume','frozenVolume'].includes(a.field)) {
       if (!hasNumericFieldExpectation(a.field,a.expectedValue,a.expectedQuote,a.operator)) return false;
-    } else if (a.operator!=='eq' || !hasLiteralExpectation(a.expectedValue,a.expectedQuote)) return false;
+    } else if (a.operator!=='eq' || !hasLiteralExpectation(a.expectedValue,a.expectedQuote,a.field)) return false;
     if (a.operator==='gte' && !/(至少|不低于|不少于|大于等于|>=|≥)/.test(a.expectedQuote)) return false;
     if (a.operator==='lte' && !/(最多|不高于|不超过|不多于|小于等于|<=|≤)/.test(a.expectedQuote)) return false;
     return true;
