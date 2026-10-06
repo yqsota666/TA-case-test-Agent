@@ -6,6 +6,7 @@ const Assertion=z.object({scenarioIndex:z.number().int().nonnegative(),expectedQ
  evidenceId:z.string().max(100),field:z.string().max(60),operator:z.enum(['eq','gte','lte']),expectedValue:z.string().min(1).max(100)}).strict();
 const Proposal=z.object({assertions:z.array(Assertion).max(300),uncertainties:z.array(z.string().max(500)).max(100)}).strict();
 export function terminalFailureSuggestion(snapshot) {
+ if(snapshot.terminalFailuresTruncated)return {outcome:'REVIEW',checks:[],issues:snapshot.issues,pending:snapshot.pending,explanation:'TA失败或关联申请超出本次完整处理上限，不使用部分映射判断通过或失败；请缩小Case范围后核查。'};
  if(snapshot.unresolvedFailures?.length)return {outcome:'REVIEW',checks:[],issues:snapshot.issues,pending:snapshot.pending,unresolvedFailures:snapshot.unresolvedFailures,explanation:'TA失败账户与必需后续申请不能唯一关联，请澄清映射；未推断其他账户失败。'};
  if(!snapshot.blockers?.length || snapshot.pending.length || snapshot.issues.length)return null;
  return {outcome:'FAIL',checks:[],issues:[],pending:[],blockers:snapshot.blockers,
