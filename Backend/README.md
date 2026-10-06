@@ -59,7 +59,7 @@ Case 的 `case_generated_*` 四张表是申请准备草稿和测试条件。确�
 5. 成功 02 匹配已发送的当前 Case/批次开户申请，才建立正式账户和 TA 绑定。之后继续申请准备，03 可使用此 TA 账号。
 6. 成功 04 匹配已发送的申购申请，才保存确认交易，并按 `ConfirmedVol` 增加正式持仓。金额和份额使用 TA 确认值，不使用申请金额或模拟持有。支持最终确认金额小于申请金额；非最终 `BusinessFinishFlag` 不生效。
 
-TA 业务失败不是解析错误：有效匹配的非 `0000` 返回码把申请标为 `FAILED`、保存可追溯确认记录，但不建立账户/交易/持仓。原始失败文件仍保留。
+TA 业务失败不是解析错误：有效匹配的非 `0000` 返回码把申请标为 `FAILED`、保存可追溯确认记录，但不建立账户/交易/持仓。原始失败文件仍保留。已显式应用、精确匹配当前Case/Plan与同一账户的失败若使必需后续步骤无法执行，结果节点给出TA依赖阻断证据及FAIL建议，允许人工FAIL后关联新Case；不把FAILED视作CONFIRMED、不发无法执行的03、不修改正式数据。纯解析失败仍等待显式应用，可选或无关分支失败不能封死其他必需分支。
 
 `GET /api/chats/:chat/cases/:case/return-confirmation` 返回批次发送状态和已应用确认。`POST .../return-confirmation/account` 接收 `{accountPublicId}`，将同一 Workspace 内正式账户引用到尚未生成申请的 Case；后续准备只使用用户选择的正式账户，允许直接生成 03、等待 04，不要求该 Case 再生成 01。已有申请时禁止切换账户。
 
@@ -169,4 +169,4 @@ GET Case `/workflow` 对账并返回stage/waiting/revision/checkpointId/interrup
 
 准备数据定义只描述初始模拟草稿，不能把02/04/05同步后的最终预期余额倒填成初始持仓。沿用已有正式账户的独立05 Case允许客户/账户/持仓三个数组为空，仅保留所需基金元数据；正式账户由后续引用选择。05能同步总/可用/冻结份额，草稿schema未包含后两字段不应成为missing，最终结果由结构化断言核验。已用保存的合成独立05 Plan进行真实Sophnet两次调用验证：三空、一个基金、零申请、三个固定余额预期、两处missing为空；纯生成校验，未修改原Plan或正式数据，原UNPLANNED时序继续等待明确日期确认。
 
-最终本地复测与真实Sophnet/UI证据见 [全流程验收](docs/full-flow-acceptance-2026-10-06.md)。发布终审另修复等锁后的RR旧快照：草稿revision/确认、父Chat发文门槛、终判封存及轮次幂等、TA reset epoch/cutoff、05较晚04确认量均使用当前锁定读；参见 [写事务审查](docs/repeatable-read-write-audit-2026-10-06.md)。最终常规233项通过、8个opt-in跳过；本地随机临时库6个MySQL测试通过，另有05/04真实双连接竞争及前修负控验证。真实TA网络与物理重置仍未接入。
+最终本地复测与真实Sophnet/UI证据见 [全流程验收](docs/full-flow-acceptance-2026-10-06.md)。发布终审另修复等锁后的RR旧快照：草稿revision/确认、父Chat发文门槛、终判封存及轮次幂等、TA reset epoch/cutoff、05较晚04确认量均使用当前锁定读；参见 [写事务审查](docs/repeatable-read-write-audit-2026-10-06.md)。最终常规244项通过、9个opt-in跳过；本地随机临时库9个MySQL测试全部通过，另有05/04真实双连接竞争及前修负控验证。真实TA网络与物理重置仍未接入。
