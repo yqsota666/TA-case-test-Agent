@@ -11,6 +11,7 @@ import { createReturnConfirmationRepository } from '../src/return-confirmation.j
 import { createReturnParsingService } from '../../case-api/src/return-parsing.js';
 import { createReturnConfirmationService } from '../../case-api/src/return-confirmation.js';
 import { createDataGenerationGraph } from '../../case-agent/src/data-generation.js';
+import { verifyExchangeOrderRace } from './helpers/exchange-order-race.js';
 import { verifyAccountSelectionRace } from './helpers/account-selection-race.js';
 import { buildDataFile, dataFileName } from '../../platform-protocol/src/index.js';
 
@@ -223,6 +224,11 @@ test('MySQL: draft -> delivered 01 -> confirmed 02 -> delivered 03 -> confirmed 
     const beforeCorrection=await confirmations.salesData(token);
     await assert.rejects(confirmations.apply(token,{...multipart.scope,parseId:correction.parseId,recordIndexes:[0]}),{code:'CONFIRMATION_CONFLICT'});
     assert.deepEqual(await confirmations.salesData(token),beforeCorrection);
+
+    if(process.env.CASE_EXCHANGE_RACE==='1') {
+      await verifyExchangeOrderRace({db,token,scope:multipart.scope,batchPublicId:multiBatch.publicId});
+      return;
+    }
 
     // A legacy generated batch mixing two Cases and01/03 is recoverable and sent atomically.
     const mixedOpening=await createCase(true);
