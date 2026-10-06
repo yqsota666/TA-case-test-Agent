@@ -404,6 +404,7 @@ test('durable workflow route authenticates and accepts notification only',async 
  assert.equal(calls.at(-1)[2].eventId,input.eventId);
  assert.equal((await fetch(base+path+'/resume',{method:'POST',headers,body:JSON.stringify({...input,stage:'PASS'})})).status,400);
  assert.equal((await fetch(base+path+'/resume',{method:'POST',headers:{...headers,origin:'https://invalid.example'},body:JSON.stringify(input)})).status,403);
+});
 
 
 test('strict Plan cannot bypass frozen application values through the legacy manual record endpoint',async t=>{
