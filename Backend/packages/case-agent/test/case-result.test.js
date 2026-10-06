@@ -32,3 +32,11 @@ test('numeric expectations bind to their own fields, not identifiers or other ba
  const equal={...source,plan:{scenarios:[{expected:'总份额100份、可用100份、冻结0份'}]},evidence:[{...source.evidence[0],values:{totalVolume:'100',availableVolume:'100',frozenVolume:'0'}}]};
  assert.equal(compareCaseResults(equal,{assertions:[{...valid.assertions[0],expectedQuote:equal.plan.scenarios[0].expected},{...valid.assertions[2],expectedQuote:equal.plan.scenarios[0].expected,expectedValue:'0'}],uncertainties:[]}).outcome,'REVIEW');
 });
+
+test('legacy model assertions cannot turn malformed numbers or negated expectations into PASS',()=>{
+ for(const [quote,value] of [['总份额10e2','1'],['总份额100,000','10'],['总份额1e+2','1'],['总份额1e-2','1'],['总份额100.1.2','10'],['总份额不等于10','10']]){
+  const state={...snapshot,plan:{scenarios:[{expected:quote}]},evidence:[{...snapshot.evidence[0],values:{totalVolume:value}}]};
+  const assertion={...proposal.assertions[0],expectedQuote:quote,expectedValue:value};
+  assert.equal(compareCaseResults(state,{assertions:[assertion],uncertainties:[]}).outcome,'REVIEW',quote);
+ }
+});

@@ -19,7 +19,7 @@ export function numericQuoteBindings(quote) {
     const match = matches[i];
     const segment = text.slice(match.index + match[0].length, matches[i + 1]?.index);
     // A quantity must immediately follow its field, allowing only comparison language and units.
-    const value = segment.match(/^[\s:=：为是应最终达到等于至少最多不低于不少于大于小于超过高于≤≥<>份额数金额人民币元]*([-+]?\d+(?:\.\d+)?)(?![\d.eE,，]\d)/)?.[1]?.replace(/^\+/, '');
+    const value = segment.match(/^(?:\s|[=:：≤≥]|>=|<=|应为|应该为|应当为|应达到|为|是|等于|至少|最多|不低于|不少于|大于等于|小于等于|不超过|不高于|不多于)*([-+]?\d+(?:\.\d+)?)(?![A-Za-z0-9_.+-]|[,，]\d)/)?.[1]?.replace(/^\+/, '');
     if (value === undefined || preciseDecimal(value) === null) continue;
     const field = aliases.find(alias => alias.name.toLowerCase() === match[0].toLowerCase()).field;
     bindings.push({ field, value });
