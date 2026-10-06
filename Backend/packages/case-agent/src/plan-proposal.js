@@ -74,17 +74,22 @@ function mentionsTime(clause, time) {
 }
 
 function rejectsTime(clause) {
-  return /不|没|未|否|勿|除|无需|无须|拒绝|禁止|避免|取消|放弃|别用|举例|例如|比如|假设|示例|仅供参考|只是|可能|也许|提到|看到|听说|说过|引用|单号|编号|文件名|日志|候选|待定|待确认|考虑|如果|还是|术语|含义|概念|格式|表达|[？?]|\b(?:not|no|never|don't|dont|won't|example|maybe)\b/i.test(clause);
+  return /不|没|未|否|勿|除|无需|无须|拒绝|禁止|避免|取消|放弃|停用|停止|撤销|作废|暂缓|另定|再定|再说|重排|别用|举例|例如|比如|假设|示例|仅供参考|只是|可能|也许|提到|看到|听说|说过|引用|单号|编号|文件名|日志|候选|待定|待确认|考虑|如果|还是|术语|含义|概念|格式|表达|[？?]|\b(?:not|no|never|don't|dont|won't|example|maybe)\b/i.test(clause);
 }
 
 const allFiles = /所有文件|全部文件|每个文件|每份文件|所有步骤|全部步骤/;
 const sendTimeRole = /业务日期|申请日期|发送|生成|申请时间|申请时点/;
 const receiveTimeRole = /回传|回报|接收|上传|确认日期|确认时间|确认时点/;
+const timeRevision = /改为|改成|更改|变成|换成|调整|改到|换到|挪到|改用|换用|改至|挪至|调至|延期|推迟|提前|延后/;
 
 function timingScope(clause, step) {
-  // Remove full dates so the day in 2026-10-01 cannot be mistaken for file01.
-  const withoutDates = clause.replace(/(?<![A-Za-z0-9_])\d{4}(?:[-/年]\d{1,2}[-/月]\d{1,2}日?|\d{4})(?![A-Za-z0-9_])/g, '');
-  const files = [...withoutDates.matchAll(/(?<![A-Za-z0-9_])(01|02|03|04|05)(?![A-Za-z0-9_])/g)].map(match => match[1]);
+  // Timing numbers and round ordinals are not file references.
+  const withoutTimes = clause
+    .replace(/(?<![A-Za-z0-9_])\d{4}(?:[-/年]\d{1,2}[-/月]\d{1,2}日?|\d{4})(?![A-Za-z0-9_])/g, ' ')
+    .replace(/T\s*[+\-＋－−]\s*\d+(?:\.\d+)?/gi, ' ')
+    .replace(/\b\d{1,2}:\d{2}(?::\d{2})?\b/g, ' ')
+    .replace(/第\s*\d+\s*(?:轮|次|天|日)|\d+\s*(?:个)?(?:交易日|工作日|自然日|小时|分钟|秒|天|日(?!期)|周(?![一二三四五六日天1-7])|月|年)/g, ' ');
+  const files = [...withoutTimes.matchAll(/(?<![A-Za-z0-9_])(01|02|03|04|05)(?![A-Za-z0-9_])/g)].map(match => match[1]);
   if (files.length) return { addressed: files.includes(step.fileType), global: false };
   if (allFiles.test(clause)) return { addressed: true, global: false };
   const send = sendTimeRole.test(clause), receive = receiveTimeRole.test(clause);
@@ -105,10 +110,11 @@ export function guardExchangeTimeEvidence(proposal, userMessages) {
   const missing = proposal.exchangePlan.steps.filter(step => {
     const latest = clauses.findLast(clause => {
       const scope = timingScope(clause, step), mentioned = mentionsTime(clause, step.businessTime);
-      return (scope.addressed && (mentioned || /日期|时间|时点|改期|延期|推迟|提前|取消|T(?:日|[+-]\d)|当天|次日|\d{4}(?:[-/年]|\d{4})/.test(clause))) ||
+      return (scope.addressed && (mentioned || timeRevision.test(clause) || /日期|时间|时点|改期|取消|放弃|停用|停止|撤销|作废|拒绝|不使用|不用|不要|不再|别用|待定|待确认|候选|考虑|暂缓|另定|再定|再说|重排|T(?:日|[+-]\d)|当天|次日|今天|明天|后天|上午|下午|晚上|早上|中午|本周|下周|月底|月初|(?:周|星期|礼拜)[一二三四五六日天1-7]|\d{4}(?:[-/年]|\d{4})/.test(clause))) ||
         (scope.global && mentioned && rejectsTime(clause));
     });
-    return !latest || !timingScope(latest, step).addressed || !mentionsTime(latest, step.businessTime) || !affirmsTime(latest);
+    const revisedTime = latest?.split(timeRevision).at(-1);
+    return !latest || !timingScope(latest, step).addressed || !mentionsTime(revisedTime, step.businessTime) || !affirmsTime(latest);
   });
   if (!missing.length) return proposal;
   return { ...proposal, exchangePlan: { status: 'UNPLANNED', steps: [],

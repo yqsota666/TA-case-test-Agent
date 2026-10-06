@@ -122,3 +122,38 @@ test('shared times require evidence for each file while unscoped rejection remai
   if(missing)assert.deepEqual(result.proposal.exchangePlan.openQuestions.map(question=>question.match(/^请确认 ([^（]+)/)[1]),missing,messages.join('；'));
  }
 });
+
+test('offset digits and natural rescheduling cannot supply or preserve unrelated file evidence',async()=>{
+ const base={objective:'交换文件',preconditions:[],scenarios:[{title:'交换',setup:'申请',action:'发文',expected:'回传',evidence:'文件'}],openQuestions:[]};
+ const offsetPlan=value=>({status:'READY',openQuestions:[],steps:[['01','T日'],['02',value],['03','T日'],['04',value]].map(([fileType,time],index)=>({
+  stepId:'step'+fileType,roundId:index<2?'account':'trade',direction:index%2?'RECEIVE':'SEND',fileType,
+  businessTime:{kind:'RELATIVE',value:time},required:true,dependsOn:index===0?[]:[{stepId:'step'+String(index).padStart(2,'0'),condition:index%2?'SENT':'CONFIRMED'}],
+ }))});
+ const cases=[];
+ for(const value of ['T+02','T-02','T+02日','T + 02','T＋02','T−02','T+2.02','确认后02天','02:04']) {
+  cases.push({plan:offsetPlan(value),messages:[`01和03使用T日，04使用${value}`],ready:false,missing:['step02']});
+  cases.push({plan:offsetPlan(value),messages:[`01和03使用T日，02和04使用${value}`],ready:true});
+ }
+ cases.push({plan:offsetPlan('T+02'),messages:['01和03使用T日，第02轮04使用T+02'],ready:false,missing:['step02']});
+ cases.push({plan:offsetPlan('T+02'),messages:['01和03使用T日，REF02使用T+02，04使用T+02'],ready:false,missing:['step02']});
+ const relative={...exchangePlan,steps:exchangePlan.steps.map((step,index)=>({...step,businessTime:{kind:'RELATIVE',value:index?'T+2':'T+1'}}))};
+ for(const change of ['03改为周三','03改成星期三','03更改为礼拜三','03变成明天','03换成下周','03调整到下午','03改到周五','03周三','03候选周三','03考虑明天','03取消','03放弃','03撤销','03停止','03作废','03不用了','03不要了','03时间待定'])
+  cases.push({plan:relative,messages:['03使用T+1，04使用T+2',change],ready:false,missing:['send03']});
+ cases.push({plan:relative,messages:['03使用T+1，04使用T+2','04改为周三'],ready:false,missing:['receive04']});
+ for(const change of ['03从T+1改为周三','03把T+1换成T+3','03从T+1推迟到周三','03从T+1延期一周','03停止使用T+1','03撤销T+1','03暂缓T+1'])
+  cases.push({plan:relative,messages:['03使用T+1，04使用T+2',change],ready:false,missing:['send03']});
+ cases.push({plan:relative,messages:['03使用T+1，04使用T+2','撤销T+1'],ready:false,missing:['send03']});
+ cases.push({plan:exchangePlan,messages:['03日期20261006，04日期20261007','03从20261006改为20261008'],ready:false,missing:['send03']});
+ cases.push({plan:relative,messages:['03从T+3改为T+1，04使用T+2'],ready:true});
+ cases.push({plan:relative,messages:['03使用T+1，04使用T+2','03保持T+1'],ready:true});
+ for(const {plan,messages,ready,missing} of cases) {
+  const priorTurns=[{role:'user',content:messages[0]},{role:'assistant',content:'讨论业务'},{role:'user',content:'测试交换'},{role:'assistant',content:'讨论时间'}];
+  if(messages.length>1)priorTurns.push({role:'user',content:messages[1]},{role:'assistant',content:'整理计划'});
+  let calls=0;
+  const graph=createDiscussionGraph({complete:async()=>++calls===1?JSON.stringify({...base,exchangePlan:plan}):'当前理解：文件时间还需要确认。\n建议先测：明确申请与回传的业务时间。\n请你确认：每个文件分别采用什么时间？'});
+  const result=await proposeDiscussionPlan(graph,{priorTurns,userInput:'整理计划'});
+  assert.equal(result.proposal.exchangePlan.status,ready?'READY':'UNPLANNED',messages.join('；'));
+  assert.equal(calls,ready?1:2,messages.join('；'));
+  if(missing)assert.deepEqual(result.proposal.exchangePlan.openQuestions.map(question=>question.match(/^请确认 ([^（]+)/)[1]),missing,messages.join('；'));
+ }
+});
