@@ -40,3 +40,12 @@ test('legacy model assertions cannot turn malformed numbers or negated expectati
   assert.equal(compareCaseResults(state,{assertions:[assertion],uncertainties:[]}).outcome,'REVIEW',quote);
  }
 });
+
+test('another field range cannot authorize an invented operator on this field',()=>{
+ const quote='总份额至少100份，可用90份';
+ const state={...snapshot,plan:{scenarios:[{expected:quote}]},evidence:[{...snapshot.evidence[0],values:{totalVolume:'100',availableVolume:'95'}}]};
+ const a={...proposal.assertions[0],expectedQuote:quote,expectedValue:'100',operator:'gte'};
+ const b={...a,field:'availableVolume',expectedValue:'90'};
+ assert.equal(compareCaseResults(state,{assertions:[a,b],uncertainties:[]}).outcome,'REVIEW');
+ assert.equal(compareCaseResults(state,{assertions:[a,{...b,operator:'eq'}],uncertainties:[]}).outcome,'FAIL');
+});

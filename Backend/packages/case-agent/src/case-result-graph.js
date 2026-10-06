@@ -13,7 +13,7 @@ export function compareCaseResults(snapshot,proposal){
   }
   const numericField=['confirmedAmount','confirmedVolume','totalVolume','availableVolume','frozenVolume'].includes(a.field);
   const expected=numericField?numeric(a.expectedValue):null,actual=numericField?numeric(evidence.values[a.field]):null;
-  const literal=expected!==null ? hasNumericFieldExpectation(a.field,a.expectedValue,a.expectedQuote) : a.expectedQuote.includes(a.expectedValue);
+  const literal=expected!==null ? hasNumericFieldExpectation(a.field,a.expectedValue,a.expectedQuote,a.operator) : a.expectedQuote.includes(a.expectedValue);
   if(!literal || evidence.values[a.field]==null || (a.operator!=='eq' && (actual===null || expected===null))){issues.push('预期值不在引用的Plan原文中，或实际值不可比较');continue;}
   if((a.operator==='gte'&&!/(至少|不低于|不少于|大于等于|>=|≥)/.test(a.expectedQuote)) ||
      (a.operator==='lte'&&!/(最多|不高于|不超过|不多于|小于等于|<=|≤)/.test(a.expectedQuote))){issues.push('比较方向没有对应的预期原文');continue;}

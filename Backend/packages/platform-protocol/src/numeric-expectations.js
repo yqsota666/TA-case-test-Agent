@@ -19,14 +19,17 @@ export function numericQuoteBindings(quote) {
     const match = matches[i];
     const segment = text.slice(match.index + match[0].length, matches[i + 1]?.index);
     // A quantity must immediately follow its field, allowing only comparison language and units.
-    const value = segment.match(/^(?:\s|[=:：≤≥]|>=|<=|应为|应该为|应当为|应达到|为|是|等于|至少|最多|不低于|不少于|大于等于|小于等于|不超过|不高于|不多于)*([-+]?\d+(?:\.\d+)?)(?![A-Za-z0-9_.+-]|[,，]\d)/)?.[1]?.replace(/^\+/, '');
+    const parsed = segment.match(/^((?:\s|[=:：≤≥]|>=|<=|应为|应该为|应当为|应达到|为|是|等于|至少|最多|不低于|不少于|大于等于|小于等于|不超过|不高于|不多于)*)([-+]?\d+(?:\.\d+)?)(?!\s*(?:[A-Za-z0-9_.+\-/%％×*÷万亿千百十]|[,，]\d))/);
+    const value = parsed?.[2]?.replace(/^\+/, '');
     if (value === undefined || preciseDecimal(value) === null) continue;
     const field = aliases.find(alias => alias.name.toLowerCase() === match[0].toLowerCase()).field;
-    bindings.push({ field, value });
+    const operator = /(至少|不低于|不少于|大于等于|>=|≥)/.test(parsed[1]) ? 'gte' :
+      /(最多|不高于|不超过|不多于|小于等于|<=|≤)/.test(parsed[1]) ? 'lte' : 'eq';
+    bindings.push({ field, value, operator });
   }
   return bindings;
 }
-export function hasNumericFieldExpectation(field, value, quote) {
+export function hasNumericFieldExpectation(field, value, quote, operator) {
   const expected = preciseDecimal(value);
-  return expected !== null && numericQuoteBindings(quote).some(binding => binding.field === field && preciseDecimal(binding.value) === expected);
+  return expected !== null && numericQuoteBindings(quote).some(binding => binding.field === field && preciseDecimal(binding.value) === expected && (operator === undefined || binding.operator === operator));
 }
