@@ -10,6 +10,7 @@ import {
   PLAN_PROPOSAL_PROMPT_VERSION,
   displayPlanProposal,
   parsePlanProposal,
+  guardExchangeTimeEvidence,
 } from './plan-proposal.js';
 
 export const FOLLOWUP_DISCUSSION_PROMPT_VERSION = 'followup-discussion-v3';
@@ -74,10 +75,10 @@ export function createDiscussionGraph({ complete }) {
   }));
   graph.addNode('propose_plan', async ({ userInput, priorTurns }) => {
     if (priorTurns.length < 4) throw new Error('Plan 提案前至少需要两轮完整讨论');
-    const proposal = parsePlanProposal(await complete({
+    const proposal = guardExchangeTimeEvidence(parsePlanProposal(await complete({
       system: PLAN_PROPOSAL_PROMPT,
       messages: [...priorTurns, { role: 'user', content: userInput }],
-    }));
+    })), [...priorTurns.filter(turn=>turn.role==='user').map(turn=>turn.content),userInput]);
     return {
       proposal,
       reply: displayPlanProposal(proposal),
@@ -85,11 +86,20 @@ export function createDiscussionGraph({ complete }) {
       promptVersion: PLAN_PROPOSAL_PROMPT_VERSION,
     };
   });
+  graph.addNode('ask_exchange_timing', async ({ proposal, userInput, priorTurns }) => ({
+    reply: checkFollowupDiscussionReply(await complete({
+      system: FOLLOWUP_DISCUSSION_PROMPT + ' 本轮专门询问文件时序：逐轮01/02、03/04及可选独立05，询问未知的业务日期或相对时点、发送/接收前置条件。不要猜测日期，不把1至2轮当上限。当前缺少的信息：' + proposal.exchangePlan.openQuestions.join('；'),
+      messages: [...priorTurns, {role:'user',content:userInput}],
+    })),
+    promptVersion: 'exchange-timing-v1', phase:'PROPOSAL_PENDING',
+  }));
+  graph.addConditionalEdges('propose_plan', ({proposal}) => proposal.exchangePlan.status === 'UNPLANNED' ? 'ask_exchange_timing' : END, ['ask_exchange_timing', END]);
+  graph.addEdge('ask_exchange_timing', END);
   graph.addConditionalEdges(START,
     ({ mode, priorTurns }) => mode === 'PROPOSE_PLAN' ? 'propose_plan' :
       priorTurns.length ? 'refine_test_approach' : 'ask_testing_intent',
     ['ask_testing_intent', 'refine_test_approach', 'propose_plan']);
-  graph.addEdge('ask_testing_intent', END).addEdge('refine_test_approach', END).addEdge('propose_plan', END);
+  graph.addEdge('ask_testing_intent', END).addEdge('refine_test_approach', END);
   return graph.compile();
 }
 

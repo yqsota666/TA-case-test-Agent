@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { validExchangePlan } from '../../platform-protocol/src/exchange-plan.js';
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const tokenPattern = /^[A-Za-z0-9_-]{32,128}$/;
@@ -33,7 +34,8 @@ function hasExactKeys(value, keys) {
 }
 
 function validSopPlan(plan) {
-  return hasExactKeys(plan, ['objective', 'preconditions', 'scenarios', 'openQuestions']) &&
+  return (hasExactKeys(plan, ['objective', 'preconditions', 'scenarios', 'openQuestions']) ||
+      (hasExactKeys(plan, ['objective', 'preconditions', 'scenarios', 'openQuestions', 'exchangePlan']) && validExchangePlan(plan.exchangePlan))) &&
     validPlanText(plan.objective) &&
     Array.isArray(plan.preconditions) && plan.preconditions.length <= 50 &&
     plan.preconditions.every(validPlanText) &&
@@ -226,6 +228,9 @@ export function createCaseRepository({ transaction }) {
       const plan = typeof latest.plan_json === 'string' ? JSON.parse(latest.plan_json) : latest.plan_json;
       if (!validSopPlan(plan)) {
         throw storeError('INVALID_PLAN', 409, '已保存的 Plan 结构无效，请重新生成');
+      }
+      if (!plan.exchangePlan || plan.exchangePlan.status !== 'READY') {
+        throw storeError('EXCHANGE_PLAN_REQUIRED',409,'请先讨论文件的轮次、业务时间和顺序，再确认 Plan');
       }
       if (plan.openQuestions.length) {
         throw storeError('PLAN_HAS_OPEN_QUESTIONS', 409, '请先解决 Plan 中的待确认事项');

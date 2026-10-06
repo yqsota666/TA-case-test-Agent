@@ -1,3 +1,4 @@
+import { checkExchangeOrder, recordExchangeEvent } from './exchange-order.js';
 import crypto from 'node:crypto';
 import { authenticateSession, storeError } from './index.js';
 
@@ -39,31 +40,56 @@ export function createReturnConfirmationRepository({ transaction }) {
   }
 
   async function delivery(token, input) {
-    if (!uuid.test(input.batchPublicId ?? '')) throw storeError('INVALID_INPUT', 400, '批次标识无效');
+    if (!uuid.test(input.batchPublicId ?? '') || (input.exchangeSteps !== undefined &&
+        (!Array.isArray(input.exchangeSteps) || input.exchangeSteps.length>200 ||
+          input.exchangeSteps.some(step=>!step || Object.keys(step).length!==3 ||
+            !uuid.test(step.casePublicId??'') || !['01','03'].includes(step.fileType) || typeof step.stepId!=='string') ||
+          new Set(input.exchangeSteps.map(step=>step.casePublicId+step.fileType)).size!==input.exchangeSteps.length))) {
+      throw storeError('INVALID_INPUT',400,'批次或各Case的发送步骤映射无效');
+    }
     return transaction(async db => {
-      const { auth, keys } = await context(db, token, input, true);
-      const [[batch]] = await db.execute(`SELECT b.id,b.status FROM exchange_batches b
-        WHERE b.workspace_id=? AND b.chat_id=? AND b.public_id=? AND EXISTS
+      const { auth, keys } = await context(db,token,input,true);
+      const [[batch]] = await db.execute(`SELECT b.id,b.status,DATE_FORMAT(b.business_date,'%Y%m%d') AS business_date
+        FROM exchange_batches b WHERE b.workspace_id=? AND b.chat_id=? AND b.public_id=? AND EXISTS
           (SELECT 1 FROM batch_applications ba JOIN applications a ON a.workspace_id=ba.workspace_id
-           AND a.chat_id=ba.chat_id AND a.id=ba.application_id
-           WHERE ba.workspace_id=b.workspace_id AND ba.chat_id=b.chat_id AND ba.batch_id=b.id AND a.case_id=?) FOR UPDATE`,
-      [keys[0], keys[1], input.batchPublicId, keys[2]]);
-      if (!batch) throw storeError('BATCH_NOT_FOUND', 404, '批次不存在');
-      if (['DELIVERED','RECEIVED'].includes(batch.status)) return { delivered: true, duplicate: true };
-      if (batch.status !== 'GENERATED') throw error('BATCH_NOT_GENERATED', '须先生成完整申请文件');
-      const [[missing]] = await db.execute(`SELECT COUNT(*) AS n FROM batch_applications ba
-        WHERE ba.workspace_id=? AND ba.chat_id=? AND ba.batch_id=? AND NOT EXISTS
-        (SELECT 1 FROM exchange_files f WHERE f.workspace_id=ba.workspace_id AND f.chat_id=ba.chat_id
-         AND f.batch_id=ba.batch_id AND f.direction='OUTBOUND' AND f.file_type=ba.file_type)`,
-      [keys[0], keys[1], batch.id]);
-      if (Number(missing.n)) throw error('BATCH_NOT_GENERATED', '批次仍有申请文件未生成');
-      await db.execute(`UPDATE exchange_batches SET status='DELIVERED',delivered_at=CURRENT_TIMESTAMP(3)
-        WHERE workspace_id=? AND chat_id=? AND id=?`, [auth.workspace_id, keys[1], batch.id]);
-      await db.execute(`UPDATE applications a JOIN batch_applications ba ON ba.workspace_id=a.workspace_id
-        AND ba.chat_id=a.chat_id AND ba.application_id=a.id SET a.status='WAITING_RETURN'
-        WHERE ba.workspace_id=? AND ba.chat_id=? AND ba.batch_id=? AND a.status='GENERATED'`,
-      [keys[0], keys[1], batch.id]);
-      return { delivered: true, duplicate: false };
+            AND a.chat_id=ba.chat_id AND a.id=ba.application_id
+            WHERE ba.workspace_id=b.workspace_id AND ba.chat_id=b.chat_id AND ba.batch_id=b.id AND a.case_id=?) FOR UPDATE`,
+        [keys[0],keys[1],input.batchPublicId,keys[2]]);
+      if(!batch) throw storeError('BATCH_NOT_FOUND',404,'批次不存在');
+      const [members] = await db.execute(`SELECT DISTINCT k.id AS case_id,k.public_id AS case_public_id,k.status AS case_status,a.file_type
+        FROM batch_applications ba JOIN applications a ON a.workspace_id=ba.workspace_id AND a.chat_id=ba.chat_id AND a.id=ba.application_id
+        JOIN cases k ON k.workspace_id=a.workspace_id AND k.chat_id=a.chat_id AND k.id=a.case_id
+        WHERE ba.workspace_id=? AND ba.chat_id=? AND ba.batch_id=? ORDER BY k.id,a.file_type FOR UPDATE`,[keys[0],keys[1],batch.id]);
+      if(input.exchangeSteps?.some(step=>!members.some(member=>member.case_public_id===step.casePublicId && member.file_type===step.fileType))) {
+        throw storeError('EXCHANGE_MAPPING_INVALID',409,'步骤映射包含不属于此批次的Case或文件类型');
+      }
+      const orders=[];
+      for(const member of members) {
+        if(['PASS','FAIL'].includes(member.case_status))throw error('CASE_NOT_WRITABLE','批次含已结束Case，不能登记实际发送');
+        const stepId=input.exchangeSteps?.find(step=>step.casePublicId===member.case_public_id && step.fileType===member.file_type)?.stepId ??
+          (member.case_public_id===input.casePublicId && members.filter(row=>row.case_id===member.case_id).length===1 ? input.exchangeStepId : undefined);
+        const memberKeys=[keys[0],keys[1],member.case_id];
+        const checked=await checkExchangeOrder(db,memberKeys,{stepId,direction:'SEND',fileType:member.file_type,
+          businessDate:batch.business_date,batchId:batch.id,condition:'SENT'});
+        orders.push({keys:memberKeys,checked,member});
+      }
+      const duplicate=['DELIVERED','RECEIVED'].includes(batch.status);
+      if(!duplicate) {
+        if(batch.status!=='GENERATED')throw error('BATCH_NOT_GENERATED','须先生成完整申请文件');
+        const [[missing]]=await db.execute(`SELECT COUNT(*) AS n FROM batch_applications ba
+          WHERE ba.workspace_id=? AND ba.chat_id=? AND ba.batch_id=? AND NOT EXISTS
+          (SELECT 1 FROM exchange_files f WHERE f.workspace_id=ba.workspace_id AND f.chat_id=ba.chat_id
+            AND f.batch_id=ba.batch_id AND f.direction='OUTBOUND' AND f.file_type=ba.file_type)`,[keys[0],keys[1],batch.id]);
+        if(Number(missing.n))throw error('BATCH_NOT_GENERATED','批次仍有申请文件未生成');
+        await db.execute(`UPDATE exchange_batches SET status='DELIVERED',delivered_at=CURRENT_TIMESTAMP(3)
+          WHERE workspace_id=? AND chat_id=? AND id=?`,[auth.workspace_id,keys[1],batch.id]);
+        await db.execute(`UPDATE applications a JOIN batch_applications ba ON ba.workspace_id=a.workspace_id
+          AND ba.chat_id=a.chat_id AND ba.application_id=a.id SET a.status='WAITING_RETURN'
+          WHERE ba.workspace_id=? AND ba.chat_id=? AND ba.batch_id=? AND a.status='GENERATED'`,[keys[0],keys[1],batch.id]);
+      }
+      for(const order of orders) await recordExchangeEvent(db,order.keys,order.checked,{condition:'SENT',batchId:batch.id});
+      return {delivered:true,duplicate,message:'已按各Case和文件类型核验整批发送步骤',steps:orders.map(order=>({
+        casePublicId:order.member.case_public_id,fileType:order.member.file_type,stepId:order.checked.step.stepId}))};
     });
   }
 
@@ -123,6 +149,8 @@ export function createReturnConfirmationRepository({ transaction }) {
       if (!['DELIVERED','RECEIVED'].includes(parsed.status)) throw error('APPLICATION_NOT_DELIVERED', '须先确认对应申请文件已实际发送至 TA');
       await db.execute('SELECT id FROM exchange_channels WHERE workspace_id=? AND id=? FOR UPDATE', [keys[0], parsed.channel_id]);
       const packageResult = json(parsed.parsed_json);
+      const order=await checkExchangeOrder(db,keys,{stepId:input.exchangeStepId,direction:'RECEIVE',fileType:parsed.expected_type,businessDate:packageResult.files[0]?.date,batchId:parsed.batch_id,parseId:input.parseId,condition:'CONFIRMED'});
+      if(!order.events.some(e=>e.stepId===order.step.stepId && e.condition==='PARSED' && String(e.parse_id)===String(input.parseId))) throw error('ORDER_VIOLATION','本回传未通过上传时序校验，请补齐前置步骤后重新上传或重试解析');
       const rows = packageResult.files.flatMap(file => file.records.map((record, localIndex) => ({ file, record, localIndex })));
       if (input.recordIndexes.some(index => index >= rows.length)) throw storeError('INVALID_INPUT', 400, '回传记录序号不存在');
       const results = [];
@@ -189,6 +217,8 @@ export function createReturnConfirmationRepository({ transaction }) {
           } });
         results.push(applied);
       }
+      const [[pending]]=await db.execute(`SELECT COUNT(*) AS n FROM applications a JOIN batch_applications ba ON ba.workspace_id=a.workspace_id AND ba.chat_id=a.chat_id AND ba.application_id=a.id WHERE a.workspace_id=? AND a.chat_id=? AND a.case_id=? AND ba.batch_id=? AND a.file_type=? AND a.status<>'CONFIRMED' FOR UPDATE`,[...keys,parsed.batch_id,parsed.expected_type==='02'?'01':'03']);
+      if(Number(pending.n)===0) await recordExchangeEvent(db,keys,order,{condition:'CONFIRMED',batchId:parsed.batch_id,parseId:input.parseId});
       return { businessApplied: true, results };
     });
   }

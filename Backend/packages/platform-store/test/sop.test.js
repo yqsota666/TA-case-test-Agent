@@ -1,3 +1,4 @@
+import { exchangePlan } from '../../case-agent/test/exchange-plan-fixture.js';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createCaseRepository } from '../src/index.js';
@@ -7,7 +8,7 @@ const chatPublicId = '9b039fda-601d-4f3c-b065-0f7bf0837ccc';
 const casePublicId = '15d68e0b-6ae6-4ced-9ad8-9b705c4744ef';
 const plan = { objective: '检查规则', preconditions: [],
   scenarios: [{ title: '边界场景', setup: '准备边界数据', action: '执行操作',
-    expected: '观察结果符合规则', evidence: '记录输入输出' }], openQuestions: [] };
+    expected: '观察结果符合规则', evidence: '记录输入输出' }], openQuestions: [], exchangePlan };
 
 function fixture({ chat = { id: 41, status: 'ACTIVE' }, caseRow = { id: 51, status: 'DISCUSSING' } } = {}) {
   const calls = [];
@@ -86,4 +87,14 @@ test('repository accepts plain identifier underscores without the Agent wrapper'
   assert.deepEqual(await repository.saveSopProposal(token, chatPublicId, casePublicId,
     { ...plan, objective: 'confirm_record_id' }),
   { versionNumber: 1, status: 'PENDING_CONFIRMATION' });
+});
+
+test('legacy or unresolved exchange plan remains readable but cannot be newly locked by guessing defaults',async()=>{
+ for(const exchange of [undefined,{status:'UNPLANNED',steps:[],openQuestions:['是哪天？']}]){
+  const f=fixture();const proposal={...plan};if(exchange)proposal.exchangePlan=exchange;else delete proposal.exchangePlan;
+  await f.repository.saveSopProposal(token,chatPublicId,casePublicId,proposal);
+  assert.equal((await f.repository.getLatestSopProposal(token,chatPublicId,casePublicId)).status,'PENDING_CONFIRMATION');
+  await assert.rejects(f.repository.confirmSopProposal(token,chatPublicId,casePublicId,1),{code:'EXCHANGE_PLAN_REQUIRED'});
+  assert.equal(f.versions[0].status,'PENDING_CONFIRMATION');
+ }
 });

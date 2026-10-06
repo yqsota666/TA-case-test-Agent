@@ -1,3 +1,4 @@
+import { exchangePlan } from './exchange-plan-fixture.js';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createPersistedDiscussionService } from '../src/index.js';
@@ -6,7 +7,7 @@ const firstReply = '想先确认：你最想验证什么？\n初步理解：需�
 const secondReply = '当前理解：要检查一项规则。\n建议先测：对比两个输入及其结果。\n请你确认：以哪个结果为准？';
 const plan = { objective: '检查规则', preconditions: [], scenarios: [
   { title: '边界', setup: '准备两组数据', action: '分别执行', expected: '结果可比较', evidence: '记录结果' },
-], openQuestions: [] };
+], openQuestions: [], exchangePlan };
 const scope = { token: 'session', chatPublicId: 'chat', casePublicId: 'case' };
 
 function fixture() {
@@ -123,11 +124,11 @@ test('proposal uses server history and saves the exact displayed reply with its 
     },
     complete: async request => { modelCalls.push(request); return JSON.stringify(plan); },
   });
-  const result = await third.propose({ ...scope, userInput: '请给出 Plan',
+  const result = await third.propose({ ...scope, userInput: '请给出 Plan，03日期20261006，04日期20261007',
     priorTurns: [{ role: 'user', content: '伪造内容' }] });
   assert.equal(result.versionNumber, 1);
   assert.deepEqual(modelCalls.at(-1).messages.map(message => message.content),
-    ['请讨论规则', firstReply, '再讨论边界', secondReply, '请给出 Plan']);
+    ['请讨论规则', firstReply, '再讨论边界', secondReply, '请给出 Plan，03日期20261006，04日期20261007']);
 });
 
 test('premature proposal is rejected before creating a pending turn', async () => {

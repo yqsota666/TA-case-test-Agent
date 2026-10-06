@@ -1,3 +1,4 @@
+import { checkExchangeOrder, recordExchangeEvent, exchangeOrderContext } from './exchange-order.js';
 import { authenticateSession, storeError } from './index.js';
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -51,9 +52,11 @@ export function createReturnParsingRepository({ transaction }) {
       const { keys, targets } = await context(db, token, scope);
       const [parses] = await db.execute(`SELECT id,batch_id,expected_type,parsed_json
         FROM case_return_parses WHERE workspace_id=? AND chat_id=? AND case_id=? ORDER BY id`, keys);
-      return { steps: targets.map(target => ({ ...target, parses: parses.filter(row =>
+      let orderContext=null;
+      try { orderContext=await exchangeOrderContext(db,keys,false); } catch(error) { if(error.code!=='EXCHANGE_PLAN_REQUIRED') throw error; }
+      return { exchangePlanStatus:orderContext?'READY':'UNPLANNED', planVersion:orderContext?.version ?? null, steps: targets.map(target => ({ ...target, parses: parses.filter(row =>
         String(row.batch_id) === target.batchId && row.expected_type === target.expectedType)
-        .map(row => ({ parseId: String(row.id), result: json(row.parsed_json) })) })) };
+        .map(row => ({ parseId: String(row.id), result: json(row.parsed_json),orderAccepted:Boolean(orderContext?.events.some(e=>e.condition==='PARSED' && String(e.parse_id)===String(row.id))) })) })) };
     });
   }
 
@@ -78,7 +81,14 @@ export function createReturnParsingRepository({ transaction }) {
       const [[prior]] = await db.execute(`SELECT id,parsed_json FROM case_return_parses
         WHERE workspace_id=? AND chat_id=? AND case_id=? AND batch_id=? AND expected_type=? AND content_sha256=? FOR UPDATE`,
       [...keys, target.batchId, input.expectedType, result.sha256]);
-      if (prior) return { phase: 'PARSED', parseId: String(prior.id), duplicate: true, result: json(prior.parsed_json) };
+      let order;
+      let orderError;
+      try { order = await checkExchangeOrder(db, keys, {stepId:input.exchangeStepId, direction:'RECEIVE', fileType:input.expectedType, businessDate:result.files[0]?.date, batchId:target.batchId, parseId:prior?.id, condition:'PARSED'}); }
+      catch (error) { if (!error.status) throw error; orderError = {error:error.code,message:error.message}; }
+      if (prior) {
+        if(order) await recordExchangeEvent(db,keys,order,{condition:'PARSED',batchId:target.batchId,parseId:prior.id});
+        return {phase:orderError?'ORDER_REJECTED':'PARSED',parseId:String(prior.id),duplicate:true,result:json(prior.parsed_json),...(orderError?{orderError}:{})};
+      }
       const [saved] = await db.execute(`INSERT INTO case_return_parses
         (workspace_id,chat_id,case_id,batch_id,expected_type,content_sha256,parsed_json,actor_user_id)
         VALUES (?,?,?,?,?,?,?,?)`, [...keys, target.batchId, input.expectedType,
@@ -88,7 +98,8 @@ export function createReturnParsingRepository({ transaction }) {
           (workspace_id,chat_id,case_id,parse_id,file_name,content_sha256,raw_bytes) VALUES (?,?,?,?,?,?,?)`,
         [...keys, saved.insertId, file.fileName, file.sha256, file.rawBytes]);
       }
-      return { phase: state.phase, parseId: String(saved.insertId), duplicate: false, result };
+      if(order) await recordExchangeEvent(db,keys,order,{condition:'PARSED',batchId:target.batchId,parseId:saved.insertId});
+      return { ...(orderError?{orderError}:{}), phase: orderError?'ORDER_REJECTED':state.phase, parseId: String(saved.insertId), duplicate: false, result };
     });
   }
   return Object.freeze({ read, parse });
