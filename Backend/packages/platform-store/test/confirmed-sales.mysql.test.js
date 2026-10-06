@@ -39,12 +39,15 @@ test('MySQL: draft -> delivered 01 -> confirmed 02 -> delivered 03 -> confirmed 
     const exchange = createExchangeRepository({ transaction });
     const parsing = createReturnParsingService({ repository: createReturnParsingRepository({ transaction }) });
     const confirmations = createReturnConfirmationService({ repository: createReturnConfirmationRepository({ transaction }) });
+    const stepIds=new Map();
+    const counters=new Map();
+    const planStep=(stepId,fileType,roundId,dependsOn=[])=>({stepId,fileType,roundId,direction:['01','03'].includes(fileType)?'SEND':'RECEIVE',businessTime:{kind:'DATE',value:fileType==='01'?'20261006':'20261007'},required:true,dependsOn});
     async function createCase(withAccount = true) {
       const scope = { chatPublicId: crypto.randomUUID(),casePublicId: crypto.randomUUID() };
       const [chat] = await db.execute(`INSERT INTO case_chats(public_id,workspace_id,title) VALUES (?,?,'合成确认账本测试')`,[scope.chatPublicId,workspaceId]);
       const [c] = await db.execute(`INSERT INTO cases(public_id,workspace_id,chat_id,title,status) VALUES (?,?,?,'合成确认账本测试','SOP_LOCKED')`,[scope.casePublicId,workspaceId,chat.insertId]);
       await db.execute(`INSERT INTO case_sop_versions(workspace_id,chat_id,case_id,version_number,plan_json,status,locked_at)
-        VALUES (?,?,?,1,?,'LOCKED',CURRENT_TIMESTAMP(3))`,[workspaceId,chat.insertId,c.insertId,JSON.stringify({ test: 'synthetic' })]);
+        VALUES (?,?,?,1,?,'LOCKED',CURRENT_TIMESTAMP(3))`,[workspaceId,chat.insertId,c.insertId,JSON.stringify({test:'synthetic',exchangePlan:{status:'READY',openQuestions:[],steps:withAccount? [planStep('s01_1','01','open1'),planStep('r02_1','02','open1',[{stepId:'s01_1',condition:'SENT'}]),planStep('s03_1','03','trade1',[{stepId:'r02_1',condition:'CONFIRMED'}]),planStep('r04_1','04','trade1',[{stepId:'s03_1',condition:'SENT'}])] : [planStep('s03_1','03','trade1'),planStep('r04_1','04','trade1',[{stepId:'s03_1',condition:'SENT'}]),planStep('s03_2','03','trade2',[{stepId:'r04_1',condition:'CONFIRMED'}]),planStep('r04_2','04','trade2',[{stepId:'s03_2',condition:'SENT'}])]}})]);
       const spec = { customers: withAccount ? [{ name:'合成客户',investorType:'1',simulatedBalance:'999999.00' }] : [],
         accounts: withAccount ? [{ customerIndex:0,branchCode:'306' }] : [],
         funds:[{ fundCode:'000001',fundName:'合成基金',shareClass:'A',nav:'1.00000000' }],
@@ -61,18 +64,21 @@ test('MySQL: draft -> delivered 01 -> confirmed 02 -> delivered 03 -> confirmed 
       const batch = await exchange.createOutboundBatch(token,{ chatPublicId:scope.chatPublicId,channelId,
         businessDate:record.TransactionDate,applicationPublicIds:[app.publicId] });
       await exchange.generateOutboundFiles(token,{ chatPublicId:scope.chatPublicId,batchPublicId:batch.publicId });
+      const type=record.BusinessCode==='001'?'01':'03';
+      const key=scope.casePublicId+type; const n=(counters.get(key)??0)+1;counters.set(key,n);
+      stepIds.set(batch.publicId,`s${type}_${n}`);
       return batch.publicId;
     }
     async function parse(scope,batchPublicId,fileType,records,sequence) {
       const options = { creator:'27',receiver:'306',date:'20261007',version:'22',fileType,sequence };
       const raw = buildDataFile({ ...options,records });
       return parsing.parse(token,{ ...scope,batchPublicId,expectedType:fileType,
-        files:[{ fileName:dataFileName(options),base64:raw.toString('base64') }] });
+        exchangeStepId:stepIds.get(batchPublicId).replace(/^s01/,'r02').replace(/^s03/,'r04'),files:[{ fileName:dataFileName(options),base64:raw.toString('base64') }] });
     }
     const first = await createCase();
     const opening = { AppSheetSerialNo:'SYNOPEN01',BusinessCode:'001',DistributorCode:'306',TransactionDate:'20261006',TransactionTime:'120000',
       TransactionAccountID:first.data.accounts[0].account_no,BranchCode:'306',InvestorName:'合成客户',IndividualOrInstitution:'1',CertificateType:'0',CertificateNo:'S'.repeat(40) };
-    const trade = { AppSheetSerialNo:'SYNTRADE01',BusinessCode:'022',DistributorCode:'306',TransactionDate:'20261006',TransactionTime:'120000',
+    const trade = { AppSheetSerialNo:'SYNTRADE01',BusinessCode:'022',DistributorCode:'306',TransactionDate:'20261007',TransactionTime:'120000',
       TransactionAccountID:opening.TransactionAccountID,TAAccountID:'SYNTA01',BranchCode:'306',IndividualOrInstitution:'1',FundCode:'000001',ShareClass:'A',CurrencyType:'156',ApplicationAmount:'450.00',ChargeType:'0' };
     assert.deepEqual((await confirmations.salesData(token)).accounts,[]);
     assert.deepEqual((await confirmations.salesData(token)).holdings,[]); // 888 synthetic shares do not become sales holdings.
@@ -82,9 +88,12 @@ test('MySQL: draft -> delivered 01 -> confirmed 02 -> delivered 03 -> confirmed 
     const return02 = { ...opening,BusinessCode:'101',ReturnCode:'0000',TAAccountID:'SYNTA01',TASerialNO:'SYNCFM01',TransactionCfmDate:'20261007' };
     const parsed02 = await parse(first.scope,batch01,'02',[return02],901);
     assert.equal(parsed02.result.businessApplied,false);
+    assert.equal(parsed02.phase,'ORDER_REJECTED');assert.equal(parsed02.orderError.error,'ORDER_VIOLATION');
+    const early=(await parsing.read(token,first.scope));assert.equal(early.steps[0].phase,'ORDER_REJECTED');
     assert.equal((await confirmations.salesData(token)).accounts.length,0);
     await assert.rejects(confirmations.apply(token,{ ...first.scope,parseId:parsed02.parseId,recordIndexes:[0] }),{ code:'APPLICATION_NOT_DELIVERED' });
-    await confirmations.delivery(token,{ ...first.scope,batchPublicId:batch01 });
+    await confirmations.delivery(token,{ ...first.scope,batchPublicId:batch01,exchangeStepId:stepIds.get(batch01) });
+    await parse(first.scope,batch01,'02',[return02],901);
     await confirmations.apply(token,{ ...first.scope,parseId:parsed02.parseId,recordIndexes:[0] });
     assert.equal((await confirmations.salesData(token)).accounts.length,1);
     assert.equal((await confirmations.salesData(token)).accounts[0].certificateNo.length,40);
@@ -96,7 +105,8 @@ test('MySQL: draft -> delivered 01 -> confirmed 02 -> delivered 03 -> confirmed 
       ConfirmedAmount:'250.00',ConfirmedVol:'200.00',NAV:'1.25000000',BusinessFinishFlag:'1' };
     const parsed04 = await parse(first.scope,batch03,'04',[returned04],902);
     assert.equal((await confirmations.salesData(token)).transactions.length,0);
-    await confirmations.delivery(token,{ ...first.scope,batchPublicId:batch03 });
+    await confirmations.delivery(token,{ ...first.scope,batchPublicId:batch03,exchangeStepId:stepIds.get(batch03) });
+    await parse(first.scope,batch03,'04',[returned04],902);
     await confirmations.apply(token,{ ...first.scope,parseId:parsed04.parseId,recordIndexes:[0] });
     let sales = await confirmations.salesData(token);
     assert.equal(sales.transactions[0].confirmedAmount,'250.00');
@@ -104,14 +114,15 @@ test('MySQL: draft -> delivered 01 -> confirmed 02 -> delivered 03 -> confirmed 
     await confirmations.apply(token,{ ...first.scope,parseId:parsed04.parseId,recordIndexes:[0] });
     assert.deepEqual(await confirmations.salesData(token),sales);
     const changed = await parse(first.scope,batch03,'04',[{ ...returned04,ConfirmedVol:'201.00' }],903);
-    await assert.rejects(confirmations.apply(token,{ ...first.scope,parseId:changed.parseId,recordIndexes:[0] }),{ code:'CONFIRMATION_CONFLICT' });
+    await assert.rejects(confirmations.apply(token,{ ...first.scope,parseId:changed.parseId,recordIndexes:[0] }),{ code:'EXCHANGE_STEP_CONFLICT' });
     assert.deepEqual(await confirmations.salesData(token),sales);
     const second = await createCase();
     const failedOpening = { ...opening,AppSheetSerialNo:'SYNOPEN02',TransactionAccountID:second.data.accounts[0].account_no };
     const failedApp = await stage(second.scope,second.data,'01',failedOpening);
     const failedBatch = await generate(second.scope,failedOpening,failedApp);
     const failed02 = await parse(second.scope,failedBatch,'02',[{ ...failedOpening,BusinessCode:'101',ReturnCode:'1001',TransactionCfmDate:'20261007' }],904);
-    await confirmations.delivery(token,{ ...second.scope,batchPublicId:failedBatch });
+    await confirmations.delivery(token,{ ...second.scope,batchPublicId:failedBatch,exchangeStepId:stepIds.get(failedBatch) });
+    await parse(second.scope,failedBatch,'02',[{ ...failedOpening,BusinessCode:'101',ReturnCode:'1001',TransactionCfmDate:'20261007' }],904);
     const failed = await confirmations.apply(token,{ ...second.scope,parseId:failed02.parseId,recordIndexes:[0] });
     assert.equal(failed.results[0].outcome,'FAILED');
     assert.deepEqual(await confirmations.salesData(token),sales);
@@ -129,7 +140,8 @@ test('MySQL: draft -> delivered 01 -> confirmed 02 -> delivered 03 -> confirmed 
     assert.deepEqual((await parsing.read(token,reuse.scope)).steps.map(row=>row.expectedType),['04']);
     const direct04 = await parse(reuse.scope,reusedBatch,'04',[{ ...returned04,AppSheetSerialNo:'SYNDIRECT03' },
       { ...returned04,AppSheetSerialNo:'UNKNOWNTEST' }],905);
-    await confirmations.delivery(token,{ ...reuse.scope,batchPublicId:reusedBatch });
+    await confirmations.delivery(token,{ ...reuse.scope,batchPublicId:reusedBatch,exchangeStepId:stepIds.get(reusedBatch) });
+    await parse(reuse.scope,reusedBatch,'04',[{...returned04,AppSheetSerialNo:'SYNDIRECT03'},{...returned04,AppSheetSerialNo:'UNKNOWNTEST'}],905);
     await assert.rejects(confirmations.apply(token,{ ...reuse.scope,parseId:direct04.parseId,recordIndexes:[0,1] }),{ code:'RETURN_MISMATCH' });
     assert.deepEqual(await confirmations.salesData(token),sales);
     assert.equal((await exchange.listCaseApplications(token,reuse.scope)).applications[0].status,'WAITING_RETURN');
@@ -151,7 +163,8 @@ test('MySQL: draft -> delivered 01 -> confirmed 02 -> delivered 03 -> confirmed 
     const failedTradeApp = await stage(reuse.scope,reuseData,'03',failedTrade);
     const failedTradeBatch = await generate(reuse.scope,failedTrade,failedTradeApp);
     const failed04 = await parse(reuse.scope,failedTradeBatch,'04',[{ ...returned04,AppSheetSerialNo:'SYNFAIL03',ReturnCode:'1001',ConfirmedAmount:null,ConfirmedVol:null,NAV:null }],906);
-    await confirmations.delivery(token,{ ...reuse.scope,batchPublicId:failedTradeBatch });
+    await confirmations.delivery(token,{ ...reuse.scope,batchPublicId:failedTradeBatch,exchangeStepId:stepIds.get(failedTradeBatch) });
+    await parse(reuse.scope,failedTradeBatch,'04',[{ ...returned04,AppSheetSerialNo:'SYNFAIL03',ReturnCode:'1001',ConfirmedAmount:null,ConfirmedVol:null,NAV:null }],906);
     assert.equal((await confirmations.apply(token,{ ...reuse.scope,parseId:failed04.parseId,recordIndexes:[0] })).results[0].outcome,'FAILED');
     assert.deepEqual(await confirmations.salesData(token),sales);
     const otherUserId = crypto.randomUUID();

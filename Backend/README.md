@@ -85,3 +85,19 @@ CASE_CONFIRMATION_MYSQL=1 pnpm test:store
 ```
 
 测试读取正常 CASE_DB_* 环境配置，所有合成用户/Case/申请/确认和故障测试写入最终回滚，覆盖草稿不生效、未交付拒绝、开户后交易、实际确认量、业务失败、重复/冲突、同请求错误整批回滚、存储故障回滚、已有账户直接 03 与跨 Workspace/Case 隔离。
+
+### Plan 文件时序与受控上传
+
+Plan v2 增加必填 `exchangePlan`。`status: UNPLANNED` 时 `steps` 为空、`openQuestions` 给出时间/轮次问题；AI 的 `ask_exchange_timing` 节点询问用户，修改后重新提案。READY 的每个步骤包含 `stepId`、`roundId`、`direction`（SEND/RECEIVE）、`fileType`、`businessTime`（DATE/RELATIVE）、`required` 和 `dependsOn: [{stepId, condition}]`。01/03 是 SEND，02/04/05 是 RECEIVE；02/04 必须依赖同轮次01/03的 SENT。依赖为有向无环图，不强制全局02<04<05，不限制两轮；已有确认账户可直接03，05可独立或可选。
+
+DATE 使用 YYYYMMDD：发送检查批次业务日期，接收检查文件头日期，不把文件头日期等同于所有记录的交易确认日期。模型提出的日期必须出现在用户消息中，只有助手建议的日期不能成为可执行计划；未知时点返回时序讨论。RELATIVE 保存用户明确说过的相对时点说明，实际顺序由 dependsOn 校验；本 PR 不提供交易日历、T+N 日期计算或时分秒定时调度。
+
+`validate_exchange_order` 是独立 LangGraph 节点，发送登记、受控02/04上传、正式确认生效都会执行它。依赖条件区分：SENT 是登记实际发送；PARSED 是格式正确且上传时序校验通过；CONFIRMED 是对应批次全部申请成功确认。解析不等于成功确认；业务失败不会满足 CONFIRMED。
+
+事件保存到014迁移的 `case_exchange_plan_events`，绑定认证 Workspace/Chat/Case、锁定 Plan 版本、步骤与批次/回传包，上传不修改 Plan。一个步骤绑定一个完整上传包（可包含原始分片）；不同内容不能覆盖已接受包，更正需要另行定义步骤/Case。本 PR 按 Case 和单文件类型发送批次；多 Case 共享批次须先拆分。
+
+上传及 delivery/apply JSON 可增加可选 `exchangeStepId`，多个同类型轮次无法唯一推断时必须提供。错误顺序返回 HTTP409、`error: ORDER_VIOLATION`、说明缺少哪个依赖；文件格式正确的乱序包仍保存原件和解析结果，返回 `phase: ORDER_REJECTED` 与 `parseId`，不记录步骤完成、不生效。补齐前置条件后须显式重新上传同包，原件幂等；不偷偷自动恢复。错误日期、错误轮次或覆盖已有步骤另报对应错误。GET解析路径将历史包标为 `orderAccepted`，不把仅保存的包显示为已接收完成。
+
+历史 Plan 缺 exchangePlan 仍可读取、历史原件保留，GET 明示 UNPLANNED；不能猜测默认顺序或自动重写锁定版本。新锁定和继续正式生效会要求完整时序；已锁定历史 Case 当前需新建有明确时序的 Case 继续验收。本 PR 尚未提供历史锁定计划补充迁移工具。
+
+05 在本 PR 只支持 Plan 描述与校验框架；没有05上传、协议解析或持仓同步入口。现有协议/确认前置条件仍独立强制，用户确认的测试顺序不能允许未确认账户先产生正式交易。

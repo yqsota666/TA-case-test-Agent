@@ -29,3 +29,4 @@ export { DataSpecificationSchema, DataEditSchema, DATA_GENERATION_PROMPT, parseD
 export { DATA_REVIEW_PROMPT, parseDataReviewReply, deriveDataReview } from './data-review.js';
 export { APPLICATION_PREPARATION_PROMPT, deriveApplicationPreparation,
   compileApplicationIntents, preparationCatalog } from './application-preparation.js';
+export { createExchangeOrderGraph } from './exchange-order-graph.js';

@@ -1,3 +1,4 @@
+import { exchangePlan } from './exchange-plan-fixture.js';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
@@ -8,7 +9,7 @@ import {
 } from '../src/index.js';
 
 const priorTurns = [
-  { role: 'user', content: '同一笔申请的确认记录重复上传，需要怎么测试？' },
+  { role: 'user', content: '业务日期20261006，回传日期20261007。同一笔申请的确认记录重复上传，需要怎么测试？' },
   { role: 'assistant', content: '想先确认：你最关注什么？\n初步理解：需要检查重复上传的处理。\n还需明确：你希望观察哪个结果。' },
   { role: 'user', content: '我关注账户份额不会重复增加。' },
   { role: 'assistant', content: '当前理解：目标是防止重复入账。\n建议先测：重复导入同一确认记录并核对份额。\n请你确认：是否还需检查明细？' },
@@ -23,6 +24,7 @@ const proposal = {
     expected: '份额只增加一次',
     evidence: '两次上传结果及账户份额变动记录',
   }],
+  exchangePlan,
   openQuestions: ['是否还需检查交易明细？'],
 };
 
@@ -34,7 +36,7 @@ test('a plan request yields a reviewable proposal without locking it', async () 
   } });
   const result = await proposeDiscussionPlan(graph, { priorTurns, userInput: '请整理为 Plan 提案。' });
   assert.equal(result.phase, 'PROPOSAL_PENDING');
-  assert.equal(result.promptVersion, 'plan-proposal-v1');
+  assert.equal(result.promptVersion, 'plan-proposal-v2');
   assert.deepEqual(result.proposal, proposal);
   assert.match(result.reply, /^测试目标：验证重复确认不会重复入账/);
   assert.match(result.reply, /场景 1：重复上传确认/);

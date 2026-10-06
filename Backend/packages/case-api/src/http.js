@@ -92,7 +92,7 @@ export function createCaseHttpHandler({ repository, discussionService, confirmPl
         const body = await jsonBody(request);
         const keys = confirmation[3] === 'apply' ? ['parseId','recordIndexes'] :
           confirmation[3] === 'delivery' ? ['batchPublicId'] : ['accountPublicId'];
-        if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).length !== keys.length ||
+        if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some(key=>!keys.includes(key) && !(key==='exchangeStepId' && confirmation[3]!=='account')) ||
             !keys.every(key => Object.hasOwn(body,key))) { send(response, 400, { error: 'INVALID_INPUT' }); return; }
         send(response, 200, await returnConfirmation[confirmation[3] === 'account' ? 'selectAccount' : confirmation[3]](token,{...scope,...body})); return;
       }
@@ -106,12 +106,13 @@ export function createCaseHttpHandler({ repository, discussionService, confirmPl
           send(response, 415, { error: 'UNSUPPORTED_MEDIA_TYPE' }); return;
         }
         const body = await jsonBody(request, 12 * 1024 * 1024);
-        if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).length !== 2 ||
+        if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some(key=>!['batchPublicId','files','exchangeStepId'].includes(key)) ||
             !Object.hasOwn(body, 'batchPublicId') || !Object.hasOwn(body, 'files') || !Array.isArray(body.files)) {
           send(response, 400, { error: 'INVALID_INPUT' }); return;
         }
-        send(response, 200, await returnParsing.parse(token, { ...scope, batchPublicId: body.batchPublicId,
-          files: body.files, expectedType: parsing[3] })); return;
+        const result=await returnParsing.parse(token, { ...scope, batchPublicId:body.batchPublicId,
+          files:body.files,exchangeStepId:body.exchangeStepId,expectedType:parsing[3] });
+        send(response,result.orderError?409:200,result.orderError?{...result,error:result.orderError.error,message:result.orderError.message}:result); return;
       }
       if (exchangeRoute && channels) {
         send(response, 200, await exchangeRepository.listChannels(token)); return;

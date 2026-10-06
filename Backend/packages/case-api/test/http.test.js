@@ -9,7 +9,7 @@ const planRoute = route.replace('/discussion', '/plan');
 const dataRoute = route.replace('/discussion', '/data');
 const allowedOrigin = 'http://127.0.0.1:3100';
 
-async function fixture(t) {
+async function fixture(t, {orderRejected=false}={}) {
   const calls = [];
   const server = createCaseHttpServer({
     allowedOrigin,
@@ -17,7 +17,7 @@ async function fixture(t) {
       [method,async (token,input) => { calls.push(['confirmation-'+method,token,input]); return { ok:true }; }])),
     returnParsing: {
       read: async (token, scope) => { calls.push(['parsing-read', token, scope]); return { steps: [] }; },
-      parse: async (token, input) => { calls.push(['parsing-write', token, input]); return { phase: 'PARSED' }; },
+      parse: async (token, input) => { calls.push(['parsing-write', token, input]); return orderRejected?{phase:'ORDER_REJECTED',parseId:'81',orderError:{error:'ORDER_VIOLATION',message:'缺少send03，请补齐后重试'},result:{businessApplied:false}}:{phase:'PARSED'}; },
     },
     repository: { readCaseDiscussion: async (...args) => {
       calls.push(['read', ...args]); return { revision: 2, turns: [], pending: null };
@@ -317,4 +317,15 @@ test('formal sales queries and confirmation mutations require auth, origin and e
   assert.equal(applied[2].chatPublicId,'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
   assert.equal(applied[2].casePublicId,'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
   assert.deepEqual(applied[2].recordIndexes,[0]);
+});
+
+test('planned upload rejects order with 409 and explicit evidence id; step id is forwarded, extra scope is forbidden',async t=>{
+ const {base,calls}=await fixture(t,{orderRejected:true});
+ const path=route.replace('/discussion','/return-parsing/04');
+ const headers={'content-type':'application/json',origin:allowedOrigin,cookie:'case_session='+ 'a'.repeat(43)};
+ const payload={batchPublicId:'cccccccc-cccc-cccc-cccc-cccccccccccc',exchangeStepId:'receive04',files:[]};
+ const response=await fetch(base+path,{method:'POST',headers,body:JSON.stringify(payload)});
+ assert.equal(response.status,409);const body=await response.json();assert.equal(body.error,'ORDER_VIOLATION');assert.equal(body.parseId,'81');assert.match(body.message,/send03/);
+ assert.equal(calls.at(-1)[2].exchangeStepId,'receive04');
+ const wrong=await fetch(base+path,{method:'POST',headers,body:JSON.stringify({...payload,workspaceId:'999'})});assert.equal(wrong.status,400);
 });

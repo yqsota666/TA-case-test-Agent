@@ -1,3 +1,4 @@
+import { exchangePlan } from './exchange-plan-fixture.js';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createPlanConfirmationGraph, decidePlan, stagePlanProposal } from '../src/index.js';
@@ -7,6 +8,7 @@ const proposal = {
   preconditions: [],
   scenarios: [{ title: '边界场景', setup: '准备边界数据', action: '执行计算',
     expected: '结果符合已确认规则', evidence: '记录输入与输出' }],
+  exchangePlan,
   openQuestions: [],
 };
 

@@ -1,3 +1,4 @@
+import { exchangePlan } from '../../case-agent/test/exchange-plan-fixture.js';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createReturnParsingRepository } from '../src/return-parsing.js';
@@ -9,10 +10,13 @@ const token = 'a'.repeat(43);
 const input = type => ({ ...scope, batchPublicId, expectedType: type, files: [{ fileName: `OFD_27_306_20261007_${type}_001.TXT`,
   base64: buildDataFile({ creator: '27', receiver: '306', date: '20261007', fileType: type, records: [{ ReturnCode: '0000' }] }).toString('base64') }] });
 function fixture({ owner = { chat_id: 41, case_id: 51, chat_status: 'ACTIVE', case_status: 'EXECUTING' },
-  rows, prior, history = [], failFile = false } = {}) {
+  rows, prior, history = [], failFile = false, sent = true, legacy = false } = {}) {
   const calls = [];
   const db = { async execute(sql, values) {
     calls.push({ sql, values });
+    if(sql.includes('FROM case_sop_versions')) return [[{version_number:1,plan_json:legacy?{}:{exchangePlan}}]];
+    if(sql.includes('FROM case_exchange_plan_events')) return [[...(sent?[{stepId:'send03',condition:'SENT',batch_id:61}]:[]),...(prior?[{stepId:'receive04',condition:'PARSED',batch_id:61,parse_id:81}]:[])]];
+    if(sql.includes('INSERT INTO case_exchange_plan_events')) return [{affectedRows:1}];
     if (sql.includes('FROM platform_sessions')) return [[{ user_id: 7, workspace_id: 31 }]];
     if (sql.includes('FROM case_chats c')) return [[owner]];
     if (sql.includes('SELECT DISTINCT')) return [rows ?? [{ batch_id: 61, batch_public_id: batchPublicId,
@@ -47,8 +51,8 @@ test('parsing stores raw bytes and complete result but never modifies applicatio
   assert.equal(result.result.businessApplied, false);
   assert.equal(result.result.applicationsMatched, false);
   const writes = f.calls.filter(c => /^INSERT|^UPDATE/.test(c.sql));
-  assert.equal(writes.length, 2);
-  assert.ok(writes.every(c => /^INSERT INTO case_return_parse/.test(c.sql)));
+  assert.equal(writes.length, 3);
+  assert.ok(writes.every(c => /^INSERT INTO (case_return_parse|case_exchange_plan_events)/.test(c.sql)));
   assert.deepEqual(writes[0].values.slice(0, 5), [31, 41, 51, '61', '04']);
   assert.equal(writes[0].values.at(-1), 7);
   assert.deepEqual(writes[1].values.at(-1), Buffer.from(input('04').files[0].base64, 'base64'));
@@ -83,3 +87,21 @@ test('wrong type, ungenerated path, ended Case and corrupt uploads do not write'
 test('storage failure propagates to the outer transaction rather than claiming parse success', async () => {
   await assert.rejects(fixture({ failFile: true }).service.parse(token, input('04')), { code: 'ER_STORAGE_FAILURE' });
 });
+
+ test('out of order parse retains original bytes without accepting step; explicit retry accepts same package',async()=>{
+ const blocked=fixture({sent:false});
+ const result=await blocked.service.parse(token,{...input('04'),exchangeStepId:'receive04'});
+ assert.equal(result.phase,'ORDER_REJECTED');assert.ok(['ORDER_VIOLATION','EXCHANGE_BATCH_MISMATCH'].includes(result.orderError.error));
+ assert.equal(blocked.calls.filter(c=>c.sql.startsWith('INSERT INTO case_return_parse')).length,2);
+ assert.ok(!blocked.calls.some(c=>c.sql.startsWith('INSERT INTO case_exchange_plan_events')));
+ const retry=fixture({prior:{id:81,parsed_json:result.result}});
+ const accepted=await retry.service.parse(token,input('04'));
+ assert.equal(accepted.phase,'PARSED');assert.equal(accepted.duplicate,true);
+ assert.ok(!retry.calls.some(c=>c.sql.startsWith('INSERT INTO case_return_parse')));
+ });
+ test('legacy Plan is explicitly unplanned, preserves historical parsed evidence but no completion',async()=>{
+ const legacy=fixture({legacy:true});
+ const result=await legacy.service.parse(token,input('04'));
+ assert.equal(result.phase,'ORDER_REJECTED');assert.equal(result.orderError.error,'EXCHANGE_PLAN_REQUIRED');
+ const restored=await legacy.service.read(token,scope);assert.equal(restored.exchangePlanStatus,'UNPLANNED');
+ });
