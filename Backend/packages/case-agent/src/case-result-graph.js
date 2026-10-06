@@ -1,5 +1,6 @@
+import {legacyBindingIssues,legacyLiteralMatches} from './legacy-result-binding.js';
 import { validPlanContract } from '../../platform-protocol/src/plan-contract.js';
-import { preciseDecimal as numeric, numericQuoteBindings, hasNumericFieldExpectation, hasLiteralExpectation } from '../../platform-protocol/src/numeric-expectations.js';
+import { preciseDecimal as numeric, numericQuoteBindings, hasNumericFieldExpectation } from '../../platform-protocol/src/numeric-expectations.js';
 import { StateGraph, StateSchema, START, END } from '@langchain/langgraph';
 import { z } from 'zod';
 const Assertion=z.object({scenarioIndex:z.number().int().nonnegative(),expectedQuote:z.string().min(1).max(1000),
@@ -23,7 +24,7 @@ export function compareCaseResults(snapshot,proposal){
   const numericField=['confirmedAmount','confirmedVolume','totalVolume','availableVolume','frozenVolume'].includes(a.field);
   const expected=numericField?numeric(a.expectedValue):null,actual=numericField?numeric(evidence.values[a.field]):null;
   if(numericField && (expected===null || actual===null)){issues.push('数值字段的预期或实际值不是有效十进制数');continue;}
-  const literal=expected!==null ? hasNumericFieldExpectation(a.field,a.expectedValue,a.expectedQuote,a.operator) && hasNumericFieldExpectation(a.field,a.expectedValue,scenario.expected,a.operator) : hasLiteralExpectation(a.expectedValue,a.expectedQuote,a.field) && hasLiteralExpectation(a.expectedValue,scenario.expected,a.field);
+  const literal=expected!==null ? hasNumericFieldExpectation(a.field,a.expectedValue,a.expectedQuote,a.operator) && hasNumericFieldExpectation(a.field,a.expectedValue,scenario.expected,a.operator) : legacyLiteralMatches(a.expectedValue,a.expectedQuote,a.field) && legacyLiteralMatches(a.expectedValue,scenario.expected,a.field);
   if(!literal || evidence.values[a.field]==null || (a.operator!=='eq' && (actual===null || expected===null))){issues.push('预期值不在引用的Plan原文中，或实际值不可比较');continue;}
   if((a.operator==='gte'&&!/(至少|不低于|不少于|大于等于|>=|≥)/.test(a.expectedQuote)) ||
      (a.operator==='lte'&&!/(最多|不高于|不超过|不多于|小于等于|<=|≤)/.test(a.expectedQuote))){issues.push('比较方向没有对应的预期原文');continue;}
@@ -32,6 +33,7 @@ export function compareCaseResults(snapshot,proposal){
  }
  for(let i=0;i<(snapshot.plan.scenarios??[]).length;i++){
   const covered=checks.filter(c=>c.scenarioIndex===i);
+  issues.push(...legacyBindingIssues(snapshot,checks,i));
   if(!covered.length)issues.push(`场景${i+1}没有可核验的具体预期`);
   const values=numericQuoteBindings(snapshot.plan.scenarios[i].expected);
   if(values.some(v=>!covered.some(c=>c.field===v.field && numeric(c.expectedValue)!==null && numeric(c.expectedValue)===numeric(v.value))))issues.push(`场景${i+1}有明确预期数值尚未核验`);
@@ -90,6 +92,11 @@ export function compareConfirmedExpectations(snapshot) {
  if(terminal)return {...terminal,...(terminal.outcome==='FAIL' && issues.length?{outcome:'REVIEW',issues,explanation:'独立预期证据缺失、不唯一或不可比较，请核查；不能仅依据另一分支的TA失败封存。'}:{}),checks,...(unavailable.length?{unavailableExpectations:unavailable}:{})};
  const outcome=snapshot.pending.length?'WAITING':issues.length?'REVIEW':checks.some(c=>!c.matched)?'FAIL':'PASS';
  return {outcome,checks,issues,pending:snapshot.pending,explanation:outcome==='PASS'?'已确认的结构化预期逐项一致，等待人工确认。':outcome==='FAIL'?'实际数据与已确认预期不符。':outcome==='WAITING'?'必需回传或同步尚未完成。':'证据缺失或不唯一，请核查。'};
+}
+export function canConfirmCaseResult(snapshot,suggestion) {
+ if(!['PASS','FAIL'].includes(suggestion?.outcome) || suggestion.issues?.length || suggestion.uncertainties?.length || snapshot.pending.length || snapshot.issues.length)return false;
+ const current=snapshot.plan.contract?compareConfirmedExpectations(snapshot):terminalFailureSuggestion(snapshot)??compareCaseResults(snapshot,{assertions:suggestion.checks??[],uncertainties:[]});
+ return ['PASS','FAIL'].includes(current.outcome) && current.outcome===suggestion.outcome;
 }
 export function createCaseResultGraph({collect,complete}){
  const graph=new StateGraph(new StateSchema({snapshot:z.unknown().nullable().default(null),proposal:z.unknown().nullable().default(null),suggestion:z.unknown().nullable().default(null),phase:z.string().default('COLLECTING')}));

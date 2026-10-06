@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import {canConfirmCaseResult} from '../../case-agent/src/case-result-graph.js';
 import {authenticateSession,storeError} from './index.js';
 import {exchangeOrderContext} from './exchange-order.js';
 import {terminalTaFailures} from './terminal-ta-failure.js';
@@ -132,7 +133,7 @@ export function createCaseResultRepository({transaction}){
    if(current.sha256!==row.evidence_sha256)throw storeError('CASE_RESULT_CHANGED',409,'证据或Plan已变化，请重新判断');
    if(current.blockers?.length && input.verdict!=='FAIL')throw storeError('TERMINAL_TA_FAILURE_REQUIRES_FAIL',409,'必需步骤已被TA业务失败阻断，只能人工确认失败后关联新Case');
    const suggestion=json(row.suggestion_json);
-   if(['WAITING','REVIEW'].includes(suggestion.outcome))throw storeError('RESULT_NOT_READY',409,'请先补齐结果或澄清预期，不能直接封存');
+   if(!canConfirmCaseResult(current,suggestion))throw storeError('RESULT_NOT_READY',409,'当前核对规则或证据不支持此建议，请重新判断后确认');
    await db.execute(`UPDATE case_result_reviews SET final_verdict=?,confirmation_reason=?,confirmed_by_user_id=?,confirmed_at=CURRENT_TIMESTAMP(3) WHERE workspace_id=? AND chat_id=? AND case_id=? AND id=?`,[input.verdict,input.reason.trim(),auth.user_id,...keys,input.reviewId]);
    await db.execute('UPDATE cases SET status=? WHERE workspace_id=? AND chat_id=? AND id=?',[input.verdict,...keys]);
    await db.execute(`INSERT INTO case_state_events(workspace_id,chat_id,case_id,from_status,to_status,actor_user_id,reason) VALUES (?,?,?,?,?,?,?)`,[...keys,owner.case_status,input.verdict,auth.user_id,'result review '+input.reviewId+': '+input.reason.trim()]);

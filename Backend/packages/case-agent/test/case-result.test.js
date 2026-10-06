@@ -23,7 +23,7 @@ test('partial numeric coverage and invented comparison directions require clarif
 test('numeric expectations bind to their own fields, not identifiers or other balances',()=>{
  const quote='场景1，基金代码000001：总份额100.00份、可用90.00份、冻结10.00份';
  const fields=['totalVolume','availableVolume','frozenVolume'],values=['100','90','10'];
- const source={...snapshot,plan:{scenarios:[{expected:quote}]},evidence:[{...snapshot.evidence[0],values:Object.fromEntries(fields.map((f,i)=>[f,values[i]]))}]};
+ const source={...snapshot,plan:{scenarios:[{expected:quote}]},evidence:[{...snapshot.evidence[0],values:{fundCode:'000001',...Object.fromEntries(fields.map((f,i)=>[f,values[i]]))}}]};
  const valid={assertions:fields.map((field,i)=>({...proposal.assertions[0],field,expectedQuote:quote,expectedValue:values[i]})),uncertainties:[]};
  assert.equal(compareCaseResults(source,valid).outcome,'PASS');
  for(const value of ['1','000001','90'])assert.equal(compareCaseResults(source,{...valid,assertions:[{...valid.assertions[0],expectedValue:value},...valid.assertions.slice(1)]}).outcome,'REVIEW');

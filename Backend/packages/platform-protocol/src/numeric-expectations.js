@@ -21,7 +21,7 @@ function uncertainTail(tail) {
 function negatedPrefix(prefix) {
   return /(?:不|未|没有|非|\bnot\b)/i.test(prefix.replace(/不(?:少于|低于|超过|高于|多于)/g, ''));
 }
-export function numericQuoteBindings(quote) {
+export function numericQuoteBindingSpans(quote) {
   const text = String(quote).replace(/[−－]/g, '-');
   const matches = [...text.matchAll(marker)], bindings = [];
   for (let i = 0; i < matches.length; i++) {
@@ -34,12 +34,18 @@ export function numericQuoteBindings(quote) {
     const value = parsed?.[2]?.replace(/^\+/, '');
     if (value === undefined || preciseDecimal(value) === null || uncertainTail(segment.slice(parsed[0].length))) continue;
     const field = aliases.find(alias => alias.name.toLowerCase() === match[0].toLowerCase()).field;
-    const comparison = (prefix.match(/(?:至少|不低于|不少于|大于等于|>=|≥|最多|不高于|不超过|不多于|小于等于|<=|≤)\s*$/)?.[0] ?? '') + parsed[1];
+    const before = prefix.match(/(?:至少|不低于|不少于|大于等于|>=|≥|最多|不高于|不超过|不多于|小于等于|<=|≤)\s*$/)?.[0] ?? '';
+    const comparison = before + parsed[1];
     const operator = /(至少|不低于|不少于|大于等于|>=|≥)/.test(comparison) ? 'gte' :
       /(最多|不高于|不超过|不多于|小于等于|<=|≤)/.test(comparison) ? 'lte' : 'eq';
-    bindings.push({ field, value, operator });
+    const end=match.index+match[0].length+parsed[0].length;
+    const unit=text.slice(end).match(/^\s*(?:元|份)/)?.[0]??'';
+    bindings.push({ field, value, operator, start:match.index-before.length, end:end+unit.length });
   }
   return bindings;
+}
+export function numericQuoteBindings(quote) {
+ return numericQuoteBindingSpans(quote).map(({field,value,operator})=>({field,value,operator}));
 }
 export function hasNumericFieldExpectation(field, value, quote, operator) {
   const expected = preciseDecimal(value);
