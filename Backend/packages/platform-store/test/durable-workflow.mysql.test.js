@@ -38,11 +38,13 @@ test('MySQL durable workflow: restart, multi-instance event replay, rollback, is
  const plan={objective:'申购结果验证',preconditions:[],scenarios:[{title:'申购',setup:'合成客户',action:'申购100元',expected:'状态CONFIRMED',evidence:'TA确认'}],openQuestions:[],exchangePlan};plan.contract=planContract(plan);
  const args=[token,chat.publicId,item.publicId];await business.saveSopProposal(...args,plan);
  // Simulate a crash between graph persistence and event-response persistence.
- const [[beforeCrash]]=await pool.execute('SELECT SHA2(saver_blob,256) AS checksum FROM case_workflow_checkpoints');
+ const scopeDb=await pool.getConnection();const {keys:caseKeys}=await workflowScope(scopeDb,token,scope).finally(()=>scopeDb.release());
+ const checksumSql='SELECT SHA2(saver_blob,256) AS checksum FROM case_workflow_checkpoints WHERE workspace_id=? AND chat_id=? AND case_id=?';
+ const [[beforeCrash]]=await pool.execute(checksumSql,caseKeys);
  const failedEvent={...scope,eventId:crypto.randomUUID(),expectedStage:'DISCUSSION'};
  const faultyPool={getConnection:async()=>{const db=await pool.getConnection();const execute=db.execute.bind(db);db.execute=async(sql,args)=>{if(sql.startsWith('INSERT INTO case_workflow_events'))throw Error('synthetic event persistence failure');return execute(sql,args);};const release=db.release.bind(db);db.release=()=>{db.execute=execute;release();};return db;}};
  await assert.rejects(createDurableWorkflowRepository({pool:faultyPool}).resume(token,failedEvent),/synthetic event persistence failure/);
- const [[afterCrash]]=await pool.execute('SELECT SHA2(saver_blob,256) AS checksum FROM case_workflow_checkpoints');assert.equal(afterCrash.checksum,beforeCrash.checksum);
+ const [[afterCrash]]=await pool.execute(checksumSql,caseKeys);assert.equal(afterCrash.checksum,beforeCrash.checksum);
  assert.equal((await repo.resume(token,failedEvent)).replayed,undefined);
  assert.equal((await repo.read(token,scope)).stage,'CONFIRM_PLAN_DATA');
  await business.confirmSopProposal(...args,1,'DATA');assert.equal((await restarted.read(token,scope)).stage,'CONFIRM_EXPECTATIONS');
