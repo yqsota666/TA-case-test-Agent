@@ -53,6 +53,7 @@ export function createChatLifecycleRepository({transaction}){
  async function startRun(token,input,kind){
   identifier(input.requestId);const reason=reasonText(input.reason);
   if(kind==='RETEST')identifier(input.casePublicId);
+  const sourceId=input.casePublicId?.toLowerCase()??null;
   if(kind==='NEW_RUN'&&input.confirmPreserveFormalData!==true)fail('PRESERVATION_CONFIRMATION_REQUIRED','新轮次保留正式数据及历史，请显式确认',400);
   return transaction(async db=>{
    const {auth,chat,keys}=await context(db,token,input,true);
@@ -61,11 +62,11 @@ export function createChatLifecycleRepository({transaction}){
     LEFT JOIN cases k ON k.workspace_id=l.workspace_id AND k.chat_id=l.source_chat_id AND k.id=l.source_case_id
     LEFT JOIN cases n ON n.workspace_id=l.workspace_id AND n.chat_id=l.target_chat_id AND n.id=l.target_case_id
     WHERE l.workspace_id=? AND l.source_chat_id=? AND l.request_id=?`,[...keys,input.requestId]);
-   if(prior){if(prior.kind!==kind||prior.reason!==reason||(prior.source_case_public_id??null)!==(input.casePublicId??null))fail('RUN_REQUEST_CONFLICT','同一请求标识已用于其他操作');return {chatPublicId:prior.chatPublicId,casePublicId:prior.casePublicId,duplicate:true,formalDataPreserved:true};}
+   if(prior){if(prior.kind!==kind||prior.reason!==reason||(prior.source_case_public_id??null)!==sourceId)fail('RUN_REQUEST_CONFLICT','同一请求标识已用于其他操作');return {chatPublicId:prior.chatPublicId,casePublicId:prior.casePublicId,duplicate:true,formalDataPreserved:true};}
    const rows=await cases(db,keys,true);
    let source=null;
    if(kind==='RETEST'){
-    source=rows.find(r=>r.public_id===input.casePublicId.toLowerCase());
+    source=rows.find(r=>r.public_id===sourceId);
     if(!source)fail('CASE_NOT_FOUND','来源Case不存在',404);
     if(source.status!=='FAIL'||source.final_verdict!=='FAIL')fail('RETEST_REQUIRES_FAIL','仅人工最终失败的Case可创建关联复测');
     if(chat.status!=='ACTIVE')fail('CHAT_CLOSED','Chat已结束，不能追加后续Case');
