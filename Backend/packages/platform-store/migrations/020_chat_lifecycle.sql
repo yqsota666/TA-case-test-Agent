@@ -1,0 +1,23 @@
+CREATE TABLE chat_run_links (
+ id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+ workspace_id BIGINT UNSIGNED NOT NULL,
+ source_chat_id BIGINT UNSIGNED NOT NULL,
+ source_case_id BIGINT UNSIGNED NULL,
+ target_chat_id BIGINT UNSIGNED NOT NULL,
+ target_case_id BIGINT UNSIGNED NULL,
+ request_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+ kind VARCHAR(16) NOT NULL,
+ reason VARCHAR(2000) NOT NULL,
+ actor_user_id BIGINT UNSIGNED NOT NULL,
+ created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+ UNIQUE KEY uq_run_request (workspace_id,source_chat_id,request_id),
+ UNIQUE KEY uq_run_target_case (workspace_id,target_case_id),
+ CONSTRAINT fk_run_source FOREIGN KEY (workspace_id,source_chat_id) REFERENCES case_chats(workspace_id,id),
+ CONSTRAINT fk_run_target FOREIGN KEY (workspace_id,target_chat_id) REFERENCES case_chats(workspace_id,id),
+ CONSTRAINT fk_run_source_case FOREIGN KEY (workspace_id,source_chat_id,source_case_id) REFERENCES cases(workspace_id,chat_id,id),
+ CONSTRAINT fk_run_target_case FOREIGN KEY (workspace_id,target_chat_id,target_case_id) REFERENCES cases(workspace_id,chat_id,id),
+ CONSTRAINT fk_run_actor FOREIGN KEY (workspace_id,actor_user_id) REFERENCES workspaces(id,owner_user_id),
+ CONSTRAINT ck_run_kind CHECK (kind IN ('RETEST','NEW_RUN')),
+ CONSTRAINT ck_run_case CHECK ((kind='RETEST' AND source_case_id IS NOT NULL AND target_case_id IS NOT NULL) OR (kind='NEW_RUN' AND source_case_id IS NULL AND target_case_id IS NULL)),
+ CONSTRAINT ck_run_reason CHECK (CHAR_LENGTH(TRIM(reason))>0)
+) ENGINE=InnoDB;

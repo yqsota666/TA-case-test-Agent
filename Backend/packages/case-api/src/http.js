@@ -2,6 +2,8 @@ import { createServer } from 'node:http';
 import { DataEditSchema } from '../../case-agent/src/index.js';
 import { parseDataFile } from '../../platform-protocol/src/index.js';
 
+const chatCollectionPath=/^\/api\/chats(?:\/([0-9a-f-]{36})\/cases)?$/i;
+const lifecyclePath=/^\/api\/chats\/([0-9a-f-]{36})\/lifecycle(?:\/(close|retest|new-run))?$/i;
 const pathPattern = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/(discussion|plan|plan\/confirm|data|data\/execute|data\/review|data\/confirm|application-preparation)$/i;
 const applicationPath = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/applications$/i;
 const bindingPath = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/ta-bindings$/i;
@@ -48,12 +50,16 @@ async function jsonBody(request, limit = 256 * 1024) {
 }
 
 export function createCaseHttpHandler({ repository, discussionService, confirmPlan, executeData,
-  reviseData, exchangeRepository, applicationPreparation, confirmData, returnParsing, returnConfirmation, holdingsReturn, caseResult, exchangePlanSupplement, allowedOrigin }) {
+  reviseData, exchangeRepository, applicationPreparation, confirmData, returnParsing, returnConfirmation, holdingsReturn, caseResult, exchangePlanSupplement, chatLifecycle, allowedOrigin }) {
   if (!repository || !discussionService || !confirmPlan || !executeData || !reviseData || !allowedOrigin) {
     throw new TypeError('API dependencies required');
   }
   return async (request, response) => {
     const pathname = new URL(request.url, 'http://localhost').pathname;
+    const collection=chatCollectionPath.exec(pathname);
+    const collectionRoute=Boolean(collection && ['GET','POST'].includes(request.method));
+    const lifecycle=chatLifecycle && lifecyclePath.exec(pathname);
+    const lifecycleRoute=Boolean(lifecycle && ((!lifecycle[2] && request.method==='GET') || (lifecycle[2] && request.method==='POST')));
     const catalog = pathname === '/api/data/catalog' && request.method === 'GET';
     const match = pathPattern.exec(pathname);
     const application = applicationPath.exec(pathname);
@@ -80,7 +86,7 @@ export function createCaseHttpHandler({ repository, discussionService, confirmPl
         (application && ['GET', 'POST'].includes(request.method)) ||
         (batch && request.method === 'POST') ||
         (files && request.method === 'GET')));
-    if (!resultRoute && !holdingsRoute && !supplementRoute && !catalog && !salesRoute && !confirmationRoute && !exchangeRoute && !parsingRoute && (!match || !['GET', 'POST', 'PATCH'].includes(request.method) ||
+    if (!collectionRoute && !lifecycleRoute && !resultRoute && !holdingsRoute && !supplementRoute && !catalog && !salesRoute && !confirmationRoute && !exchangeRoute && !parsingRoute && (!match || !['GET', 'POST', 'PATCH'].includes(request.method) ||
         (request.method === 'PATCH' && match?.[3] !== 'data') ||
         (['plan/confirm', 'data/execute', 'data/confirm'].includes(match?.[3]) && request.method !== 'POST') ||
         (match?.[3] === 'data/review' && !['GET', 'POST'].includes(request.method)) ||
@@ -90,6 +96,25 @@ export function createCaseHttpHandler({ repository, discussionService, confirmPl
     try {
       const token = cookieToken(request.headers.cookie);
       if (!token) { send(response, 401, { error: 'UNAUTHENTICATED' }); return; }
+      if(collectionRoute){
+        if(request.method==='GET'){send(response,200,collection[1]?await repository.listCases(token,collection[1]):await repository.listChats(token));return;}
+        if(request.headers.origin!==allowedOrigin){send(response,403,{error:'INVALID_ORIGIN'});return;}
+        if(!/^application\/json(?:\s*;|$)/i.test(request.headers['content-type']??'')){send(response,415,{error:'UNSUPPORTED_MEDIA_TYPE'});return;}
+        const body=await jsonBody(request);
+        if(!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).length!==1||!Object.hasOwn(body,'title')){send(response,400,{error:'INVALID_INPUT'});return;}
+        send(response,201,collection[1]?await repository.createCase(token,collection[1],body.title):await repository.createChat(token,body.title));return;
+      }
+      if(lifecycleRoute){
+        if(!lifecycle[2]){send(response,200,await chatLifecycle.read(token,{chatPublicId:lifecycle[1]}));return;}
+        if(request.headers.origin!==allowedOrigin){send(response,403,{error:'INVALID_ORIGIN'});return;}
+        if(!/^application\/json(?:\s*;|$)/i.test(request.headers['content-type']??'')){send(response,415,{error:'UNSUPPORTED_MEDIA_TYPE'});return;}
+        const body=await jsonBody(request);
+        const kind=lifecycle[2];
+        const keys=kind==='close'?(body?.mode==='FORCE'?['mode','reason']:['mode']):kind==='retest'?['requestId','casePublicId','reason']:['requestId','reason','confirmPreserveFormalData'];
+        if(!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).length!==keys.length||!keys.every(k=>Object.hasOwn(body,k))){send(response,400,{error:'INVALID_INPUT'});return;}
+        const method=kind==='new-run'?'newRun':kind;
+        send(response,200,await chatLifecycle[method](token,{chatPublicId:lifecycle[1],...body}));return;
+      }
       if(supplementRoute) {
         if(request.headers.origin!==allowedOrigin){send(response,403,{error:'INVALID_ORIGIN'});return;}
         if(!/^application\/json(?:\s*;|$)/i.test(request.headers['content-type']??'')){send(response,415,{error:'UNSUPPORTED_MEDIA_TYPE'});return;}

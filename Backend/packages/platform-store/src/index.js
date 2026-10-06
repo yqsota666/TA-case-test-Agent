@@ -89,6 +89,14 @@ export function createCaseRepository({ transaction }) {
     });
   }
 
+  async function listChats(token) {
+    return transaction(async db=>{
+      const auth=await authenticateSession(db,token);
+      const [chats]=await db.execute('SELECT public_id,title,status,close_reason,closed_at,created_at FROM case_chats WHERE workspace_id=? ORDER BY id DESC LIMIT 200',[auth.workspace_id]);
+      return {chats};
+    });
+  }
+
   async function createCase(token, chatPublicId, title) {
     chatPublicId = requiredUuid(chatPublicId, 'Chat');
     const cleanTitle = titleText(title);
@@ -776,7 +784,7 @@ export function createCaseRepository({ transaction }) {
     });
   }
 
-  return Object.freeze({ createChat, createCase, listCases, saveSopProposal,
+  return Object.freeze({ createChat, listChats, createCase, listCases, saveSopProposal,
     getLatestSopProposal, confirmSopProposal, readCaseDiscussion, beginCaseDiscussionTurn,
     finishCaseDiscussionTurn, abandonCaseDiscussionTurn, finishCasePlanProposal,
     generatedData, generatedDataCatalog, executeGeneratedData, editGeneratedData,
