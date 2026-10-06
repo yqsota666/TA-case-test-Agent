@@ -55,3 +55,9 @@ test('optional source on an explicit mandatory dependency remains a blocker; an 
  f.plan.contract.applications.push({stepId:'purchase',accountIndex:null,transactionAccountId:'90000000000000002'});assert.equal(unresolvedTerminalTaFailures(f).length,1);
  f.order.plan.steps[2].required=false;f.order.plan.steps[3].required=false;assert.deepEqual(deriveTerminalTaFailures(f),[]);assert.deepEqual(unresolvedTerminalTaFailures(f),[]);
 });
+
+test('optional bridge application becomes necessary only when its required successor depends on it',()=>{
+ const f=fixture();f.order.plan.steps[1].required=false;f.order.plan.steps[2].required=false;const blockers=deriveTerminalTaFailures(f);assert.deepEqual(blockers[0].blockedStepIds,['confirmation','purchase']);f.order.blockers=blockers;
+ assert.equal(workflowPosition({chatStatus:'ACTIVE',caseStatus:'EXECUTING',plan:{status:'LOCKED'},generated:true,draftConfirmed:true,order:f.order}).stage,'EVALUATE_RESULT');
+ f.order.plan.steps[3].required=false;assert.deepEqual(deriveTerminalTaFailures(f),[]);assert.deepEqual(unresolvedTerminalTaFailures(f),[]);
+});

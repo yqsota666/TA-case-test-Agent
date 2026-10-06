@@ -1,9 +1,18 @@
 const json=value=>typeof value==='string'?JSON.parse(value):value;
 
+function necessarySteps(steps) {
+ const required=new Set(steps.filter(s=>s.required).map(s=>s.stepId));
+ let changed=true;
+ while(changed){changed=false;for(const s of steps.filter(s=>required.has(s.stepId))){
+  for(const d of s.dependsOn)if(!required.has(d.stepId)){required.add(d.stepId);changed=true;}
+ }}
+ return required;
+}
+
 // A failed receipt never satisfies CONFIRMED. This records why a required
 // dependent application cannot execute, without inventing any future TA result.
 export function deriveTerminalTaFailures({plan,order,applications,preparedAccounts=[],failures}) {
- const blockers=[];
+ const blockers=[],necessary=necessarySteps(order.plan.steps);
  const accountFor=stepId=>{
   const specified=plan.contract?.applications.filter(a=>a.stepId===stepId);
   if(specified?.length){
@@ -19,14 +28,14 @@ export function deriveTerminalTaFailures({plan,order,applications,preparedAccoun
   if(!step || step.direction!=='RECEIVE' || !['02','04'].includes(step.fileType))continue;
   const account=json(failed.record).TransactionAccountID;
   if(!account || json(failed.confirmation).TransactionAccountID!==account)continue;
-  const direct=order.plan.steps.filter(s=>s.required && s.direction==='SEND' && s.fileType==='03' &&
+  const direct=order.plan.steps.filter(s=>necessary.has(s.stepId) && s.direction==='SEND' && s.fileType==='03' &&
    accountFor(s.stepId)===account && s.dependsOn.some(d=>d.stepId===step.stepId && d.condition==='CONFIRMED') &&
    !order.events.some(e=>e.stepId===s.stepId && e.condition==='SENT'));
   if(!direct.length)continue;
   const blocked=new Set(direct.map(s=>s.stepId));
   let changed=true;
   while(changed){changed=false;for(const s of order.plan.steps){
-   if(s.required && !(s.direction==='SEND' && s.fileType==='03' && accountFor(s.stepId)!==account) && !blocked.has(s.stepId) && s.dependsOn.some(d=>blocked.has(d.stepId)) &&
+   if(necessary.has(s.stepId) && !(s.direction==='SEND' && s.fileType==='03' && accountFor(s.stepId)!==account) && !blocked.has(s.stepId) && s.dependsOn.some(d=>blocked.has(d.stepId)) &&
     !order.events.some(e=>e.stepId===s.stepId && e.condition===(s.direction==='SEND'?'SENT':'PARSED'))){blocked.add(s.stepId);changed=true;}
   }}
   blockers.push({failedStepId:step.stepId,applicationId:failed.applicationId,parseId:failed.parseId,
@@ -37,12 +46,13 @@ export function deriveTerminalTaFailures({plan,order,applications,preparedAccoun
 }
 
 export function unresolvedTerminalTaFailures({plan,order,applications,preparedAccounts=[],failures}) {
+ const necessary=necessarySteps(order.plan.steps);
  return failures.filter(f=>{
   const source=order.plan.steps.find(s=>s.stepId===f.stepId);
   if(!source || source.direction!=='RECEIVE' || !['02','04'].includes(source.fileType))return false;
   const account=json(f.record).TransactionAccountID;
   return order.plan.steps.some(s=>{
-   if(!s.required || s.direction!=='SEND' || s.fileType!=='03' || !s.dependsOn.some(d=>d.stepId===f.stepId && d.condition==='CONFIRMED'))return false;
+   if(!necessary.has(s.stepId) || s.direction!=='SEND' || s.fileType!=='03' || !s.dependsOn.some(d=>d.stepId===f.stepId && d.condition==='CONFIRMED'))return false;
    const specified=plan.contract?.applications.filter(a=>a.stepId===s.stepId);
    const candidates=specified?.length?specified.map(a=>a.transactionAccountId??preparedAccounts[a.accountIndex]?.transactionAccountId):applications.filter(a=>a.stepId===s.stepId && a.fileType==='03').map(a=>json(a.record).TransactionAccountID);
    const accounts=new Set(candidates);
