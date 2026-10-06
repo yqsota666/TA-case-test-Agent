@@ -13,6 +13,8 @@ async function fixture(t) {
   const calls = [];
   const server = createCaseHttpServer({
     allowedOrigin,
+    returnConfirmation: Object.fromEntries(['read','delivery','apply','salesData','selectAccount'].map(method =>
+      [method,async (token,input) => { calls.push(['confirmation-'+method,token,input]); return { ok:true }; }])),
     returnParsing: {
       read: async (token, scope) => { calls.push(['parsing-read', token, scope]); return { steps: [] }; },
       parse: async (token, input) => { calls.push(['parsing-write', token, input]); return { phase: 'PARSED' }; },
@@ -296,4 +298,23 @@ test('02/04 have separate scoped parse-only routes and reject authorization/inpu
     [path + '/05', { method: 'POST', headers, body: JSON.stringify(payload) }, 404],
   ]) assert.equal((await fetch(base + url, req)).status, status);
   assert.equal(calls.length, 3);
+});
+
+test('formal sales queries and confirmation mutations require auth, origin and exact scoped input', async t => {
+  const { base,calls } = await fixture(t);
+  const path = route.replace('/discussion','/return-confirmation');
+  const headers = { cookie:'case_session=abcdefghijklmnopqrstuvwxyz012345',origin:allowedOrigin,'content-type':'application/json' };
+  assert.equal((await fetch(base+'/api/sales-data')).status,401);
+  assert.equal((await fetch(base+'/api/sales-data',{ headers })).status,200);
+  assert.equal((await fetch(base+path,{ headers })).status,200);
+  assert.equal((await fetch(base+path+'/apply',{ method:'POST',headers:{ ...headers,origin:'https://foreign.invalid' },body:'{}' })).status,403);
+  assert.equal((await fetch(base+path+'/apply',{ method:'POST',headers,body:JSON.stringify({ parseId:'1',recordIndexes:[0],workspaceId:'foreign' }) })).status,400);
+  for (const [action,body] of [['delivery',{ batchPublicId:'cccccccc-cccc-cccc-cccc-cccccccccccc' }],
+    ['apply',{ parseId:'1',recordIndexes:[0] }],['account',{ accountPublicId:'dddddddd-dddd-dddd-dddd-dddddddddddd' }]]) {
+    assert.equal((await fetch(base+path+'/'+action,{ method:'POST',headers,body:JSON.stringify(body) })).status,200);
+  }
+  const applied = calls.find(call => call[0]==='confirmation-apply');
+  assert.equal(applied[2].chatPublicId,'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+  assert.equal(applied[2].casePublicId,'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
+  assert.deepEqual(applied[2].recordIndexes,[0]);
 });

@@ -41,3 +41,47 @@ pnpm start:legacy
 四个实际 LangGraph 节点为 `wait_account_return`、`parse_account_return`、`wait_transaction_return`、`parse_transaction_return`：01/03 原始发文决定对应等待入口；手动上传事件分别进入 02/04 解析节点；解析成功后保存结果并结束本次调用；解析异常由 API 返回错误，等待入口仍可重试。等待依据持久化的生成文件重建，成功结果存储于 `case_return_parses` / `case_return_parse_files`；重启和页面刷新后可读取。当前使用数据库恢复及事件重新 invoke，未宣称已实现整个 TA 流程的 LangGraph checkpoint/interrupt 编排。
 
 此次 PR 只含后端，前端上传与查看入口仅用于本地验收。协议和接口测试覆盖有效文件、业务失败、空记录、中文、金额/份额/净值精度、索引分片、错误类型、损坏内容、幂等和权限范围；真实 TA 扩展格式仍需拿实际文件核对。
+
+### TA 确认后才生效的销售数据
+
+Case 的 `case_generated_*` 四张表是申请准备草稿和测试条件。确认草稿仅表示允许据此准备 01/03；它不建立正式账户、不增加正式持仓、不生成成功交易。`GET /data` 用 `purpose: APPLICATION_DRAFT`、`businessApplied: false` 标明用途。
+
+正式销售查询为 `GET /api/sales-data`，只读取 `sales_confirmed_accounts`、`sales_confirmed_transactions`、`sales_confirmed_holdings`，并标记 `source: TA_CONFIRMED`。生成的模拟余额、模拟持有、净值和旧 TA 绑定均不会自动复制到正式表。此次不定义资金账户的现金会计；正式视图没有把模拟余额当现金余额。
+
+当前应用范围明确为开户 `01/001 → 02/101` 和申购 `03/022 → 04/122`。其他业务码仍可作为协议测试申请/解析结果，但不能通过确认生效接口修改正式数据。赎回、冻结/解冻、销户、05 快照同步及 Case 成败判定需另行实现，不推断它们的会计含义。
+
+流程：
+
+1. 确认 Plan、准备并确认申请草稿；点击申请准备，生成 01。草稿确认不再自动启动申请准备，便于先选择已有正式账户。
+2. 实际将文件发送至 TA 后，调用 `POST /api/chats/:chat/cases/:case/return-confirmation/delivery`，请求 `{batchPublicId}`。这里只记录用户对实际发送的声明，不声称系统代替用户完成了传输。批次须完整生成；同一物理批次内全部申请进入 `WAITING_RETURN`。
+3. 在对应的 02/04 纯解析入口上传原始回传。解析仍仅保存原文件与解析字段，不写正式数据。
+4. 调用 `POST /api/chats/:chat/cases/:case/return-confirmation/apply`，请求 `{parseId,recordIndexes}`。序号从 0 开始，按解析结果 files 顺序、每份文件 records 顺序展开。可逐条选择；未知申请、身份冲突、尚未发送、未支持/未完成业务或不完整成功回传均明确拒绝。一个请求内任何记录错误，整个请求回滚。
+5. 成功 02 匹配已发送的当前 Case/批次开户申请，才建立正式账户和 TA 绑定。之后继续申请准备，03 可使用此 TA 账号。
+6. 成功 04 匹配已发送的申购申请，才保存确认交易，并按 `ConfirmedVol` 增加正式持仓。金额和份额使用 TA 确认值，不使用申请金额或模拟持有。支持最终确认金额小于申请金额；非最终 `BusinessFinishFlag` 不生效。
+
+TA 业务失败不是解析错误：有效匹配的非 `0000` 返回码把申请标为 `FAILED`、保存可追溯确认记录，但不建立账户/交易/持仓。原始失败文件仍保留。
+
+`GET /api/chats/:chat/cases/:case/return-confirmation` 返回批次发送状态和已应用确认。`POST .../return-confirmation/account` 接收 `{accountPublicId}`，将同一 Workspace 内正式账户引用到尚未生成申请的 Case；后续准备只使用用户选择的正式账户，允许直接生成 03、等待 04，不要求该 Case 再生成 01。已有申请时禁止切换账户。
+
+确认使用四个实际 LangGraph 节点：
+
+| 节点 | 输入/触发事件 | 成功后的结果 | 失败/重试 |
+| --- | --- | --- | --- |
+| `verify_account_return` | 用户选择已解析的 02 记录，当前 Case 的已交付 01 快照 | 验证申请号、机构、业务码、身份和日期，生成开户确认或业务失败计划 | 核验错误不进入生效节点；保留解析结果，可重新上传/选择正确记录 |
+| `apply_account_confirmation` | 已通过核验的计划 | 成功开户建立正式账户与绑定；业务失败仅将申请标失败 | SQL 错误整个事务回滚，重试原记录；相同申请/记录摘要幂等 |
+| `verify_transaction_return` | 用户选择已解析的 04 记录，已交付 03 快照 | 验证账户、基金、份额类别、币种、日期和精确确认量 | 不支持业务、非最终确认、无效金额/份额不生效 |
+| `apply_transaction_confirmation` | 已核验的申购确认计划和已有正式账户 | 按确认量写正式交易和持仓；业务失败仅将申请标失败 | SQL 错误回滚；重复记录不重复增加份额；不同确认不能覆盖旧结果 |
+
+这些节点与上一阶段等待/解析节点通过持久化业务数据和 API 事件衔接。图本身没有宣称具备 LangGraph 原生 checkpoint/interrupt；服务重启后的等待状态来自批次、申请、解析包及确认表。未来 05 属于独立输入事件与节点。
+
+迁移 012/013 新建正式数据与 Case 账户引用表，并兼容 V2.2 的 40 位证件字段。迁移不把旧测试数据追认为正式业务；历史 `CONFIRMED` 申请、旧绑定不会被自动提升，也没有提供无提示补账入口。验收使用新 Case，真实历史补账应单独核验来源。旧 `matchReturnRecord` 直接建绑定旁路返回 `CONFIRMATION_SERVICE_REQUIRED`。
+
+所有正式写入、申请状态、回传归属和绑定位于同一数据库事务。Workspace 来自认证会话，Case/Chat/批次/通道均在 SQL 中核对，原始回传字节摘要在首次应用前验证。通道锁串行化共享账户/持仓更新；每份申请只允许一条最终确认，不同回传须进入另行定义的更正流程。
+
+验证正式业务的 MySQL 集成测试（先运行 `db:migrate`）：
+
+```sh
+CASE_CONFIRMATION_MYSQL=1 pnpm test:store
+```
+
+测试读取正常 CASE_DB_* 环境配置，所有合成用户/Case/申请/确认和故障测试写入最终回滚，覆盖草稿不生效、未交付拒绝、开户后交易、实际确认量、业务失败、重复/冲突、同请求错误整批回滚、存储故障回滚、已有账户直接 03 与跨 Workspace/Case 隔离。

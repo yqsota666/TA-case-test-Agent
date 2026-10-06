@@ -561,7 +561,7 @@ export function createCaseRepository({ transaction }) {
       FROM case_data_edit_events WHERE workspace_id=? AND chat_id=? AND case_id=?`, keys);
     const [[confirmation]] = await db.execute(`SELECT revision,confirmed_at
       FROM case_data_confirmations WHERE workspace_id=? AND chat_id=? AND case_id=?`, keys);
-    return { status: 'VALIDATED', planVersionId: String(execution.sop_version_id),
+    return { status: 'VALIDATED', purpose: 'APPLICATION_DRAFT', businessApplied: false, planVersionId: String(execution.sop_version_id),
       reviewStatus: confirmation ? 'CONFIRMED' : 'PENDING_REVIEW',
       confirmedAt: confirmation?.confirmed_at ?? null,
       createdAt: execution.created_at, revision: Number(edit.revision), customers, accounts, funds, holdings };
