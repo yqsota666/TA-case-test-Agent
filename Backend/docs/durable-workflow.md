@@ -4,7 +4,7 @@ Case图包含 `reconcile_committed_business → 对应阶段等待节点 → rec
 
 等待阶段覆盖讨论、Plan数据确认、Plan预期确认、准备草稿、草稿确认、文件时序补充、文件交换、结果判断、人工确认结果、Case最终及Chat关闭。文件交换返回多个同时可以处理的step；01/03是否相依、独立05位于哪个时间点，始终由用户已确认Plan DAG与SQL SENT/PARSED/CONFIRMED事件决定。
 
-GET `/api/chats/:chat/cases/:case/workflow` 认证后对账并返回 `{stage,waiting,revision,checkpointId,interrupted}`。POST同一路径 `/resume` 接收且仅接收 `{eventId:UUID,expectedStage:string}`：这是通知重新读取已提交SQL，不接受客户端提供业务事实，不代替文件上传、解析、应用和人工确认。前端先调用既有业务API，再通知恢复；漏通知可以由下次读取恢复。故障不会重复执行模型或正式数据修改。
+GET `/api/chats/:chat/cases/:case/workflow` 认证后对账并返回 `{stage,waiting,revision,checkpointId,interrupted}`。POST同一路径 `/resume` 接收且仅接收 `{eventId:UUID,expectedStage:string}`：这是通知重新读取已提交SQL，不接受客户端提供业务事实，不代替文件上传、解析、应用和人工确认。前端先调用既有业务API，再通知恢复；漏通知可以由下次读取恢复。故障不会重复执行模型或正式数据修改。`expectedStage`记录发起通知时看到的阶段；若其他读取已推进checkpoint，仍按当前已提交事实返回最新阶段。同一`eventId`重放必须保留原`expectedStage`，更改内容仍返回事件冲突。
 
 每个workspace/chat/case独立thread，服务端计算线程名；每次读和恢复重新鉴权。跨实例使用MySQL会话锁序列化，checkpoint和事件响应在同事务提交，同UUID重复恢复返回原响应；相同UUID不同内容拒绝。锁等待超时返回可重试409。GET对账只保存内部工作流状态，不修改关闭Chat的业务事实。checkpoint容量16MiB，超过明确拒绝，原状态事务回滚；未提供历史删除接口。
 
