@@ -56,14 +56,45 @@ export function displayPlanProposal(proposal) {
   return lines.join('\n');
 }
 
-// Dates in a model proposal must be traceable to human messages, never just an assistant suggestion.
+function mentionsTime(clause, time) {
+  if (time.kind === 'DATE') {
+    return [...clause.matchAll(/(?<![A-Za-z0-9_])(\d{4})(?:[-/年](\d{1,2})[-/月](\d{1,2})日?|(\d{2})(\d{2}))(?![A-Za-z0-9_])/g)]
+      .some(match => match[1] + (match[2] ?? match[4]).padStart(2, '0') +
+        (match[3] ?? match[5]).padStart(2, '0') === time.value);
+  }
+  let index = clause.indexOf(time.value);
+  while (index !== -1) {
+    const before = clause[index - 1] ?? '';
+    const after = clause[index + time.value.length] ?? '';
+    if ((!/^[A-Za-z0-9_]/.test(time.value) || !/[A-Za-z0-9_]/.test(before)) &&
+        (!/[A-Za-z0-9_]$/.test(time.value) || !/[A-Za-z0-9_]/.test(after))) return true;
+    index = clause.indexOf(time.value, index + 1);
+  }
+  return false;
+}
+
+function affirmsTime(clause) {
+  // This is deliberately conservative: a mention, question or rejected time needs discussion.
+  if (/不|没|未|否|勿|无需|无须|拒绝|禁止|避免|取消|放弃|别用|举例|例如|比如|假设|示例|仅供参考|只是|可能|也许|提到|看到|听说|说过|引用|单号|编号|文件名|日志|候选|待定|待确认|考虑|如果|还是|术语|含义|概念|格式|表达|[？?]|\b(?:not|no|never|don't|dont|won't|example|maybe)\b/i.test(clause)) return false;
+  return /日期|业务日|时间|时点|发送|接收|上传|生成|确认|采用|使用|就用|用|定为|设为|安排|选择|改成|改为|当天|\b(?:date|time|send|receive|use)\b/i.test(clause) ||
+    /^\s*(?:01|02|03|04|05)(?![A-Za-z0-9_])(?:文件)?\s*[:：]?\s*/.test(clause);
+}
+
+function revisesStepTime(clause, step) {
+  const namesFile = new RegExp(`(?<![A-Za-z0-9_])${step.fileType}(?![A-Za-z0-9_])`).test(clause);
+  const namesDateRole = step.businessTime.kind === 'DATE' &&
+    (step.direction === 'SEND' ? /业务日期|发送日期|申请日期/ : /回传日期|接收日期/).test(clause);
+  return (namesFile || namesDateRole) && /日期|时间|时点|改期|延期|推迟|提前|取消|T(?:日|[+-]\d)|当天|次日|\d{4}(?:[-/年]|\d{4})/.test(clause);
+}
+
+// Only human timing statements count; later rejection replaces earlier affirmative evidence.
 export function guardExchangeTimeEvidence(proposal, userMessages) {
   if (proposal.exchangePlan.status !== 'READY') return proposal;
-  const evidence = userMessages.join('\n');
-  const dates = new Set([...evidence.matchAll(/(?<!\d)(\d{4})(?:[-/年](\d{1,2})[-/月](\d{1,2})日?|(\d{2})(\d{2}))(?!\d)/g)]
-    .map(match => match[1] + (match[2] ?? match[4]).padStart(2,'0') + (match[3] ?? match[5]).padStart(2,'0')));
-  const missing = proposal.exchangePlan.steps.filter(step => step.businessTime.kind === 'DATE' ?
-    !dates.has(step.businessTime.value) : !evidence.includes(step.businessTime.value));
+  const clauses = userMessages.flatMap(message => message.match(/[^。！？?!；;\n，,]+[。！？?!；;\n，,]?/g) ?? []);
+  const missing = proposal.exchangePlan.steps.filter(step => {
+    const latest = clauses.findLast(clause => mentionsTime(clause, step.businessTime) || revisesStepTime(clause, step));
+    return !latest || !mentionsTime(latest, step.businessTime) || !affirmsTime(latest);
+  });
   if (!missing.length) return proposal;
   return { ...proposal, exchangePlan: { status: 'UNPLANNED', steps: [],
     openQuestions: missing.slice(0,30).map(step => `请确认 ${step.stepId}（${step.fileType}）的业务日期或相对业务时点，不使用模型推测的时间。`) } };

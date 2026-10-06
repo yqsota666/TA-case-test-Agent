@@ -92,6 +92,8 @@ Plan v2 增加必填 `exchangePlan`。`status: UNPLANNED` 时 `steps` 为空、`
 
 DATE 使用 YYYYMMDD：发送检查批次业务日期，接收检查文件头日期，不把文件头日期等同于所有记录的交易确认日期。模型提出的日期必须出现在用户消息中，只有助手建议的日期不能成为可执行计划；未知时点返回时序讨论。RELATIVE 保存用户明确说过的相对时点说明，实际顺序由 dependsOn 校验；本 PR 不提供交易日历、T+N 日期计算或时分秒定时调度。
 
+提案时间证据使用保守的文本护栏：标识符中的日期、举例/疑问/否定的时间不算确认；较新的同时间否定或同文件改期会使旧提案回到 UNPLANNED。正常简短回答如“01 T日，02 T+1，03确认后当天，04 T+2”可作为证据。这不是通用语言语义判断，含混表达（如“没问题T+1”）可能继续追问，不能据此自动生效。
+
 `validate_exchange_order` 是独立 LangGraph 节点，发送登记、受控02/04上传、正式确认生效都会执行它。依赖条件区分：SENT 是登记实际发送；PARSED 是格式正确且上传时序校验通过；CONFIRMED 是对应批次全部申请成功确认。解析不等于成功确认；业务失败不会满足 CONFIRMED。
 
 014 的 `case_exchange_plan_events` 保存 SENT/CONFIRMED；新增015的 bindings 绑定认证 Workspace/Chat/Case、锁定 Plan 版本、步骤和批次，receipts 按每个回传包保存 PARSED。一个 RECEIVE 步骤可接收同批多包，成功确认按对应 Case/批次/申请类型聚合；相同包重试幂等，冲突确认不可覆盖正式账本。多 Case、混合01/03批次按每个成员计划检查后原子发送；任何成员检查失败都不会部分发送。delivery 可传 `exchangeSteps: [{casePublicId,fileType,stepId}]` 明确各成员步骤。
