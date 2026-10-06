@@ -57,6 +57,7 @@ test('MySQL: close preserves statuses, requires human verdicts, freezes old writ
   const retryInput={chatPublicId:normal.publicId,casePublicId:c.publicId,requestId:crypto.randomUUID(),reason:'修复后复测'};
   const retry=await life.retest(token,retryInput);assert.ok(retry.casePublicId);assert.equal(retry.chatPublicId,normal.publicId);
   assert.equal((await life.retest(token,retryInput)).duplicate,true);
+  assert.equal((await life.retest(token,{...retryInput,casePublicId:retryInput.casePublicId.toUpperCase()})).duplicate,true);
   const discussion=await repo.readCaseDiscussion(token,retry.chatPublicId,retry.casePublicId);
   assert.equal(discussion.sourceContext.casePublicId,c.publicId);assert.equal(discussion.sourceContext.humanFailureReason,'人工失败');assert.equal(discussion.sourceContext.contextIsReadOnly,true);assert.equal(discussion.turns.length,0);
   await assert.rejects(repo.readCaseDiscussion(token,fresh.chatPublicId,retry.casePublicId),{code:'CASE_NOT_FOUND'});
