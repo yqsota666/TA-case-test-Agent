@@ -1,4 +1,5 @@
 import {assertTaAccountActive} from './ta-reset.js';
+import { parseReturnFiles } from '../../platform-protocol/src/return-parsing.js';
 import { checkExchangeOrder, recordExchangeEvent } from './exchange-order.js';
 import crypto from 'node:crypto';
 import { authenticateSession, storeError } from './index.js';
@@ -141,7 +142,7 @@ export function createReturnConfirmationRepository({ transaction }) {
     }
     return transaction(async db => {
       const { auth, keys } = await context(db, token, input, true);
-      const [[parsed]] = await db.execute(`SELECT p.parsed_json,p.expected_type,b.id AS batch_id,b.channel_id,b.status,
+      const [[parsed]] = await db.execute(`SELECT p.parsed_json,p.content_sha256,p.expected_type,b.id AS batch_id,b.channel_id,b.status,
         h.ta_code,h.distributor_code,h.protocol_version FROM case_return_parses p
         JOIN exchange_batches b ON b.workspace_id=p.workspace_id AND b.chat_id=p.chat_id AND b.id=p.batch_id
         JOIN exchange_channels h ON h.workspace_id=b.workspace_id AND h.id=b.channel_id
@@ -149,7 +150,25 @@ export function createReturnConfirmationRepository({ transaction }) {
       if (!parsed) throw storeError('PARSE_NOT_FOUND', 404, '解析记录不存在');
       if (!['DELIVERED','RECEIVED'].includes(parsed.status)) throw error('APPLICATION_NOT_DELIVERED', '须先确认对应申请文件已实际发送至 TA');
       await db.execute('SELECT id FROM exchange_channels WHERE workspace_id=? AND id=? FOR UPDATE', [keys[0], parsed.channel_id]);
-      const packageResult = json(parsed.parsed_json);
+      const storedPackage = json(parsed.parsed_json);
+      const [originalFiles] = await db.execute(`SELECT file_name,content_sha256,raw_bytes FROM case_return_parse_files
+        WHERE workspace_id=? AND chat_id=? AND case_id=? AND parse_id=? ORDER BY file_name FOR UPDATE`,[...keys,input.parseId]);
+      if(originalFiles.some(file=>crypto.createHash('sha256').update(file.raw_bytes).digest('hex')!==file.content_sha256)) {
+        throw error('RETURN_SOURCE_INVALID','回传原文件摘要不一致，不能同步销售数据');
+      }
+      let packageResult;
+      try {
+        packageResult=parseReturnFiles(originalFiles.map(file=>({fileName:file.file_name,base64:file.raw_bytes.toString('base64')})),{
+          expectedType:parsed.expected_type,allowMixed:Boolean(storedPackage.mixedPackage),
+          channel:{taCode:parsed.ta_code,distributorCode:parsed.distributor_code,protocolVersion:parsed.protocol_version}}).result;
+      } catch { throw error('RETURN_SOURCE_INVALID','回传原始批次结构无效，不能同步销售数据'); }
+      if(packageResult.sha256!==parsed.content_sha256) throw error('RETURN_SOURCE_INVALID','回传原始批次不完整');
+      const orderedNames=storedPackage.files?.map(file=>file.fileName);
+      if(!Array.isArray(orderedNames) || new Set(orderedNames).size!==packageResult.files.length ||
+        orderedNames.length!==packageResult.files.length || orderedNames.some(name=>!packageResult.files.some(file=>file.fileName===name))) {
+        throw error('RETURN_SOURCE_INVALID','回传文件映射与原始包不一致');
+      }
+      packageResult.files=orderedNames.map(name=>packageResult.files.find(file=>file.fileName===name));
       const order=await checkExchangeOrder(db,keys,{stepId:input.exchangeStepId,direction:'RECEIVE',fileType:parsed.expected_type,businessDate:packageResult.files[0]?.date,batchId:parsed.batch_id,parseId:input.parseId,condition:'CONFIRMED'});
       if(!order.events.some(e=>e.stepId===order.step.stepId && e.condition==='PARSED' && String(e.parse_id)===String(input.parseId))) throw error('ORDER_VIOLATION','本回传未通过上传时序校验，请补齐前置步骤后重新上传或重试解析');
       const rows = packageResult.files.flatMap(file => file.records.map((record, localIndex) => ({ file, record, localIndex })));

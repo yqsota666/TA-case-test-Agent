@@ -97,3 +97,25 @@ test('rejects unsafe names, duplicate names, malformed/noncanonical Base64 and r
   const many = buildDataFile({ creator: '27', receiver: '306', date: '20261007', fileType: '02', records: Array.from({ length: 2001 }, () => ({})) });
   assert.throws(() => parseReturnFiles([upload(name('02'), many)], options('02')), { code: 'RETURN_RECORD_LIMIT' });
 });
+
+test('mixed 02/04/05 validates original full OFI before typed projection and preserves every raw byte',()=>{
+  const files=['02','04','05'].map(type=>upload(name(type),raw(type)));
+  const index=upload('OFI_27_306_20261007.TXT',buildIndexFile({creator:'27',receiver:'306',date:'20261007',fileNames:files.map(f=>f.fileName)}));
+  const complete=parseReturnFiles([index,...files],{...options('MIXED'),allowMixed:true});
+  assert.equal(complete.result.recordCount,3);
+  for(const type of ['02','04','05']) {
+    const selected=parseReturnFiles([index,...files],{...options(type),allowMixed:true});
+    assert.equal(selected.result.recordCount,1);assert.equal(selected.result.files[0].fileType,type);
+    assert.equal(selected.result.sha256,complete.result.sha256);
+    assert.equal(selected.rawFiles.length,4);assert.equal(selected.result.index.fileNames.length,3);
+    assert.equal(selected.result.packageFiles.length,3);
+    for(let i=0;i<files.length;i++)assert.equal(selected.rawFiles[i+1].rawBytes.toString('base64'),files[i].base64);
+  }
+  assert.throws(()=>parseReturnFiles([index,...files.slice(0,2)],{...options('MIXED'),allowMixed:true}),{code:'RETURN_INDEX_MISMATCH'});
+  assert.throws(()=>parseReturnFiles([index,files[0]],{...options('02'),allowMixed:true}),{code:'RETURN_INDEX_MISMATCH'});
+  const damaged={...files[2],base64:Buffer.from('invalid').toString('base64')};
+  assert.throws(()=>parseReturnFiles([index,files[0],files[1],damaged],{...options('02'),allowMixed:true}),{code:'INVALID_RETURN_FILE'});
+  assert.throws(()=>parseReturnFiles([index,...files],options('02')),{code:'RETURN_TYPE_MISMATCH'});
+  const unknown=upload(name('07'),buildDataFile({creator:'27',receiver:'306',date:'20261007',fileType:'07',records:[]}));
+  assert.throws(()=>parseReturnFiles([unknown],{...options('MIXED'),allowMixed:true}),{code:'UNSUPPORTED_RETURN_TYPE'});
+});

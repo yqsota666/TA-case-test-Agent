@@ -9,11 +9,11 @@ const State = new StateSchema({
   result: z.unknown().nullable().default(null),
   phase: z.enum(['WAITING_UPLOAD','PARSED','VERIFIED','SYNCED']).default('WAITING_UPLOAD'),
 });
-export function createHoldingsParsingGraph({ channel }) {
+export function createHoldingsParsingGraph({ channel, allowMixed = false }) {
   const graph = new StateGraph(State);
   graph.addNode('wait_holdings_return', () => ({ phase: 'WAITING_UPLOAD' }));
   graph.addNode('parse_holdings_return', state => ({ phase: 'PARSED',
-    parsed: parseReturnFiles(state.files, { expectedType: '05', channel }) }));
+    parsed: parseReturnFiles(state.files, { expectedType: '05', channel, allowMixed }) }));
   graph.addEdge(START,'wait_holdings_return');
   graph.addConditionalEdges('wait_holdings_return', state => state.files === null ? END : 'parse_holdings_return', [END,'parse_holdings_return']);
   graph.addEdge('parse_holdings_return',END);

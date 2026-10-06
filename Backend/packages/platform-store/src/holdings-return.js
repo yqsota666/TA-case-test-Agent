@@ -52,12 +52,12 @@ export function createHoldingsReturnRepository({ transaction }) {
       return {steps,planningError,parses:parses.map(p=>({...p,parsed:json(p.parsed),applied:p.applied&&json(p.applied)}))};
     });
   }
-  async function parse(token,input) {
+  async function parse(token,input,runParsing) {
     const target=await transaction(async db=>{
       const {keys}=await context(db,token,input);
       return channel(db,keys[0],input.channelId);
     });
-    const {parsed}=await createHoldingsParsingGraph({channel:target}).invoke({files:input.files});
+    const {parsed}=runParsing ? await runParsing(target) : await createHoldingsParsingGraph({channel:target}).invoke({files:input.files});
     return transaction(async db=>{
       const {auth,keys}=await context(db,token,input,true);
       const current=await channel(db,keys[0],input.channelId,true);
@@ -102,7 +102,7 @@ export function createHoldingsReturnRepository({ transaction }) {
       const [files]=await db.execute(`SELECT file_name,content_sha256,raw_bytes FROM case_holdings_return_files
         WHERE workspace_id=? AND chat_id=? AND case_id=? AND parse_id=? ORDER BY file_name FOR UPDATE`,[...keys,input.parseId]);
       if(files.some(file=>hash(file.raw_bytes)!==file.content_sha256))reject('RETURN_SOURCE_INVALID','05原文件摘要不一致');
-      const {parsed}=await createHoldingsParsingGraph({channel:ch}).invoke({files:files.map(f=>({fileName:f.file_name,base64:f.raw_bytes.toString('base64')}))});
+      const {parsed}=await createHoldingsParsingGraph({channel:ch,allowMixed:Boolean(json(p.parsed_json).mixedPackage)}).invoke({files:files.map(f=>({fileName:f.file_name,base64:f.raw_bytes.toString('base64')}))});
       if(parsed.result.sha256!==p.content_sha256)reject('RETURN_SOURCE_INVALID','05原始包不完整');
       const checked=await order(db,keys,input.exchangeStepId,parsed.result.files[0].date,p.channel_id);
       if(!checked.events.some(e=>e.stepId===checked.step.stepId && e.holdingsParseId===String(input.parseId)))reject('ORDER_VIOLATION','此05尚未通过当前Plan的上传时序校验');

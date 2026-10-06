@@ -24,7 +24,7 @@ export function createReturnParsingRepository({ transaction }) {
     }
     const keys = [auth.workspace_id, owner.chat_id, owner.case_id];
     const [rows] = await db.execute(`SELECT DISTINCT b.id AS batch_id,b.public_id AS batch_public_id,
-      f.file_type,f.file_name,h.ta_code,h.distributor_code,h.protocol_version
+      f.file_type,f.file_name,b.channel_id,h.ta_code,h.distributor_code,h.protocol_version
       FROM applications a JOIN batch_applications ba ON ba.workspace_id=a.workspace_id
         AND ba.chat_id=a.chat_id AND ba.application_id=a.id
       JOIN exchange_batches b ON b.workspace_id=ba.workspace_id AND b.chat_id=ba.chat_id AND b.id=ba.batch_id
@@ -38,7 +38,7 @@ export function createReturnParsingRepository({ transaction }) {
       let target = targets.find(item => item.batchPublicId === row.batch_public_id && item.expectedType === expectedType);
       if (!target) {
         target = { batchId: String(row.batch_id), batchPublicId: row.batch_public_id, expectedType,
-          outboundType: row.file_type, outboundFiles: [], channel: { taCode: row.ta_code,
+          channelId: String(row.channel_id), outboundType: row.file_type, outboundFiles: [], channel: { taCode: row.ta_code,
             distributorCode: row.distributor_code, protocolVersion: row.protocol_version } };
         targets.push(target);
       }

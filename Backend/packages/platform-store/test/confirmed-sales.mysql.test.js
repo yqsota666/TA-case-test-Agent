@@ -16,6 +16,7 @@ import { verifyExchangeOrderRace } from './helpers/exchange-order-race.js';
 import { verifyAccountSelectionRace } from './helpers/account-selection-race.js';
 import { buildDataFile, dataFileName } from '../../platform-protocol/src/index.js';
 
+import {verifyUnifiedReceipts} from './helpers/unified-receipts.js';
 import {verifyHoldingsSync} from './helpers/holdings-sync.js';
 
 const jsonValue=value=>typeof value==='string'?JSON.parse(value):value;
@@ -137,6 +138,7 @@ test('MySQL: draft -> delivered 01 -> confirmed 02 -> delivered 03 -> confirmed 
     await confirmations.delivery(token,{ ...first.scope,batchPublicId:batch03,exchangeStepId:stepIds.get(batch03) });
     await parse(first.scope,batch03,'04',[returned04],902);
     await confirmations.apply(token,{ ...first.scope,parseId:parsed04.parseId,recordIndexes:[0] });
+    await verifyUnifiedReceipts({db,transaction,token,channelId,scope:first.scope,batch01,batch03,return02,returned04,confirmations});
     let sales = await confirmations.salesData(token);
     assert.equal(sales.transactions[0].confirmedAmount,'250.00');
     assert.equal(sales.holdings[0].totalVolume,'200.00');
