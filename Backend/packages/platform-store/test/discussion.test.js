@@ -150,3 +150,11 @@ test('proposal completion rejects too little discussion before writing a SOP', a
       promptVersion: 'plan-proposal-v1', proposal: plan }), { code: 'INSUFFICIENT_DISCUSSION' });
   assert.equal(calls.some(call => call.sql.includes('INSERT INTO case_sop_versions')), false);
 });
+
+ test('locked Case and closed Chat retain scoped read-only discussion history',async()=>{
+  const options={chat:{id:41,status:'FORCE_CLOSED'},caseRow:{id:51,status:'SOP_LOCKED'},initialTurns:[{turn_number:1,user_text:'合成历史',assistant_text:reply,status:'COMPLETE',turn_kind:'DISCUSS'}]};
+  const {repository,calls}=fixture(options);
+  assert.equal((await repository.readCaseDiscussion(...scope)).turns.length,2);
+  assert.ok(calls.filter(c=>c.sql.includes('FROM case_discussion_turns')).every(c=>c.values[0]===31&&c.values[1]===41&&c.values[2]===51));
+  await assert.rejects(repository.beginCaseDiscussionTurn(...scope,{expectedRevision:1,userInput:'写入'}),{code:'CHAT_CLOSED'});
+ });

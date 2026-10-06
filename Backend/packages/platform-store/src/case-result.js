@@ -32,8 +32,8 @@ export function createCaseResultRepository({transaction}){
   for(const app of apps.slice(0,500)){
    const r=json(app.record),confirmed=app.confirmation&&json(app.confirmation);addTarget(app.channelId,r.TransactionAccountID);
    if(!['CONFIRMED','FAILED'].includes(app.status))pending.push(`申请${app.id}尚未完成TA确认并同步`);
-   evidence.push({id:'application:'+app.id,source:{kind:'APPLICATION_CONFIRMATION',applicationId:app.id,parseId:app.parseId,channelId:app.channelId},
-    values:{status:app.status,returnCode:app.returnCode,transactionAccountId:r.TransactionAccountID,fundCode:r.FundCode??null,
+   evidence.push({id:'application:'+app.id,source:{kind:'APPLICATION_CONFIRMATION',applicationId:app.id,parseId:app.parseId,channelId:app.channelId,fileType:app.fileType,businessDate:r.TransactionDate},
+    values:{status:app.status,returnCode:app.returnCode,transactionAccountId:r.TransactionAccountID,fundCode:r.FundCode??null,shareClass:r.ShareClass??null,
      confirmedAmount:confirmed?.ConfirmedAmount??null,confirmedVolume:confirmed?.ConfirmedVol??null,taAccountId:confirmed?.TAAccountID??null}});
   }
   for(const p of parses.slice(0,100))for(const f of json(p.parsed_json).files)for(const r of f.records){
@@ -81,7 +81,14 @@ export function createCaseResultRepository({transaction}){
   });
   if(incomplete(returnPackages,returnSources) || incomplete(parses,holdingSources))issues.push('原始TA文件包缺失或摘要不一致，需要补齐完整原文件');
   if(returnSources.length>2000 || holdingSources.length>2000)issues.push('原始证据文件超过处理上限');
-  const snapshot={sources:{returns:returnSources,holdings:holdingSources},planVersion:planRow.version_number,plan,evidence,pending:[...new Set(pending)],issues};
+  let preparedAccounts;
+  if(plan.contract){
+   const [draftAccounts]=await db.execute(`SELECT account_no AS transactionAccountId FROM case_generated_accounts
+    WHERE workspace_id=? AND chat_id=? AND case_id=? ORDER BY id LIMIT 101${lock}`,keys);
+   preparedAccounts=draftAccounts;
+   if(draftAccounts.length!==plan.contract.dataSpecification.accounts.length)issues.push('准备账户与已确认数据定义数量不一致');
+  }
+  const snapshot={...(preparedAccounts?{preparedAccounts}:{}),sources:{returns:returnSources,holdings:holdingSources},planVersion:planRow.version_number,plan,evidence,pending:[...new Set(pending)],issues};
   return {...snapshot,sha256:digest(snapshot)};
  }
  async function snapshot(token,input){return transaction(async db=>{const {keys,owner}=await context(db,token,input);if(owner.chat_status!=='ACTIVE'||['PASS','FAIL'].includes(owner.case_status))throw storeError('CASE_NOT_WRITABLE',409,'Chat或Case已结束');return collect(db,keys);});}

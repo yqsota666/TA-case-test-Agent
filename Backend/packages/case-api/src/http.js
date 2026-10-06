@@ -200,6 +200,7 @@ export function createCaseHttpHandler({ repository, discussionService, confirmPl
           if (data.reviewStatus !== 'CONFIRMED') {
             send(response, 409, { error: 'DATA_NOT_CONFIRMED' }); return;
           }
+          if(data.planDataFrozen){send(response,409,{error:'PLAN_DATA_FROZEN',message:'申请数据已在Plan中锁定，请使用申请准备按已确认Plan生成'});return;}
           send(response, 200, await exchangeRepository.stageApplication(token, {
             chatPublicId: application[1], casePublicId: application[2],
             sopVersionId: data.planVersionId, ...body }));
@@ -261,7 +262,8 @@ export function createCaseHttpHandler({ repository, discussionService, confirmPl
       const revisionRequest = action === 'data/confirm';
       const reviewRequest = action === 'data/review';
       const validInput = body && typeof body === 'object' && !Array.isArray(body) &&
-        (versionRequest ? Object.keys(body).length === 1 &&
+        (versionRequest ? Object.keys(body).length === (action==='plan/confirm'?2:1) &&
+          (action!=='plan/confirm' || ['DATA','EXPECTATIONS'].includes(body.section)) &&
           Number.isSafeInteger(body.versionNumber) && body.versionNumber > 0 :
           revisionRequest ? Object.keys(body).length === 1 &&
             Number.isSafeInteger(body.revision) && body.revision >= 0 :
@@ -277,7 +279,7 @@ export function createCaseHttpHandler({ repository, discussionService, confirmPl
       }
       if (action === 'plan/confirm') {
         send(response, 200, await confirmPlan({ token, chatPublicId, casePublicId,
-          versionNumber: body.versionNumber }));
+          versionNumber: body.versionNumber, section: body.section }));
       } else if (action === 'data/execute') {
         send(response, 200, await executeData({ token, chatPublicId, casePublicId,
           versionNumber: body.versionNumber }));

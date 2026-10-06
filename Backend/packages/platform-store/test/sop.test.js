@@ -1,3 +1,4 @@
+import { planContract } from '../../case-agent/test/plan-contract-fixture.js';
 import { exchangePlan } from '../../case-agent/test/exchange-plan-fixture.js';
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -8,17 +9,20 @@ const chatPublicId = '9b039fda-601d-4f3c-b065-0f7bf0837ccc';
 const casePublicId = '15d68e0b-6ae6-4ced-9ad8-9b705c4744ef';
 const plan = { objective: '检查规则', preconditions: [],
   scenarios: [{ title: '边界场景', setup: '准备边界数据', action: '执行操作',
-    expected: '观察结果符合规则', evidence: '记录输入输出' }], openQuestions: [], exchangePlan };
+    expected: '确认状态CONFIRMED，观察结果符合规则', evidence: '记录输入输出' }], openQuestions: [], exchangePlan };
 
 function fixture({ chat = { id: 41, status: 'ACTIVE' }, caseRow = { id: 51, status: 'DISCUSSING' } } = {}) {
   const calls = [];
   const versions = [];
+  const confirmations=[];
   const db = { async execute(sql, values) {
     calls.push({ sql, values });
     if (sql.includes('FROM platform_sessions')) return [[{ user_id: 7, workspace_id: 31 }]];
     if (sql.includes('FROM case_chats')) return [[chat]];
     if (sql.includes('FROM cases')) return [[caseRow]];
     if (sql.includes('FROM case_discussion_turns')) return [[undefined]];
+    if (sql.includes('FROM case_plan_section_confirmations')) return [confirmations.filter(r=>r.version===values[3])];
+    if (sql.includes('INSERT INTO case_plan_section_confirmations')) confirmations.push({version:values[3],section:values[4]});
     if (sql.includes('FROM case_sop_versions')) return [[versions.at(-1)]];
     if (sql.includes('INSERT INTO case_sop_versions')) {
       versions.push({ id: versions.length + 1, version_number: values[3],
@@ -36,15 +40,19 @@ function fixture({ chat = { id: 41, status: 'ACTIVE' }, caseRow = { id: 51, stat
 test('proposal revisions invalidate old confirmations; latest approved version locks with a user event', async () => {
   const { repository, versions, caseRow, calls } = fixture();
   const args = [token, chatPublicId, casePublicId];
-  assert.deepEqual(await repository.saveSopProposal(...args, plan),
+  const strictPlan={...plan,contract:planContract(plan)};
+  assert.deepEqual(await repository.saveSopProposal(...args, strictPlan),
     { versionNumber: 1, status: 'PENDING_CONFIRMATION' });
-  assert.deepEqual(await repository.saveSopProposal(...args, plan),
+  assert.deepEqual(await repository.saveSopProposal(...args, strictPlan),
     { versionNumber: 2, status: 'PENDING_CONFIRMATION' });
   assert.equal(versions[0].status, 'DRAFT');
   assert.equal((await repository.getLatestSopProposal(...args)).versionNumber, 2);
   await assert.rejects(repository.confirmSopProposal(...args, 1), { code: 'STALE_PLAN' });
-  assert.deepEqual(await repository.confirmSopProposal(...args, 2),
-    { versionNumber: 2, status: 'LOCKED' });
+  await assert.rejects(repository.confirmSopProposal(...args,2,'EXPECTATIONS'),{code:'PLAN_DATA_CONFIRMATION_REQUIRED'});
+  assert.equal((await repository.confirmSopProposal(...args,2,'DATA')).phase,'AWAITING_EXPECTATIONS');
+  assert.equal(caseRow.status,'SOP_PENDING');
+  assert.deepEqual(await repository.confirmSopProposal(...args, 2,'EXPECTATIONS'),
+    { versionNumber: 2, status: 'LOCKED',phase:'SOP_LOCKED' });
   assert.equal(caseRow.status, 'SOP_LOCKED');
   assert.equal(versions[1].status, 'LOCKED');
   assert.equal(calls.filter(call => call.sql.includes('INSERT INTO case_state_events')).length, 2);

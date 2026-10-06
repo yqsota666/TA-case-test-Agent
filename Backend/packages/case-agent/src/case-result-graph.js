@@ -1,3 +1,4 @@
+import { validPlanContract } from '../../platform-protocol/src/plan-contract.js';
 import { preciseDecimal as numeric, numericQuoteBindings, hasNumericFieldExpectation, hasLiteralExpectation } from '../../platform-protocol/src/numeric-expectations.js';
 import { StateGraph, StateSchema, START, END } from '@langchain/langgraph';
 import { z } from 'zod';
@@ -31,10 +32,37 @@ export function compareCaseResults(snapshot,proposal){
  return {outcome,checks,issues,pending:snapshot.pending,
   explanation:outcome==='WAITING'?'必需回传或同步尚未完成。':outcome==='REVIEW'?'预期或证据不足，请澄清后重新判断。':outcome==='FAIL'?'实际结果与引用的Plan预期存在差异。':'所有已提取断言一致，请人工核对断言是否覆盖完整预期后确认。'};
 }
+export function compareConfirmedExpectations(snapshot) {
+ const c=snapshot.plan.contract,checks=[],issues=[...snapshot.issues];
+ if(!validPlanContract(c,snapshot.plan) || c.missing.length || c.dataSpecification.missing.length) {
+  return {outcome:'REVIEW',checks,issues:['已确认Plan的结构化预期无效'],pending:snapshot.pending,explanation:'请核查Plan结构。'};
+ }
+ for(const a of c.expectations) {
+  const selector=a.selector;
+  const account=selector.transactionAccountId ?? snapshot.preparedAccounts?.[selector.accountIndex]?.transactionAccountId;
+  if(!account){issues.push(`场景${a.scenarioIndex+1}的准备账户尚无对应交易账号`);continue;}
+  const candidates=snapshot.evidence.filter(e=>e.source.kind===a.source && e.values.transactionAccountId===account &&
+   (selector.channelId===null || e.source.channelId===selector.channelId) &&
+   (selector.fundCode===null || e.values.fundCode===selector.fundCode) &&
+   (selector.shareClass===null || e.values.shareClass===selector.shareClass) &&
+   (selector.fileType===null || e.source.fileType===selector.fileType) &&
+   (selector.businessDate===null || e.source.businessDate===selector.businessDate));
+  if(candidates.length!==1){issues.push(`场景${a.scenarioIndex+1}的${a.field}证据${candidates.length?'不唯一':'缺失'}，不能猜选`);continue;}
+  const e=candidates[0],actualValue=e.values[a.field];
+  const numerical=['confirmedAmount','confirmedVolume','totalVolume','availableVolume','frozenVolume'].includes(a.field);
+  const expected=numerical?numeric(a.expectedValue):null,actual=numerical?numeric(actualValue):null;
+  if(actualValue==null || (numerical && (actual===null || expected===null))){issues.push(`场景${a.scenarioIndex+1}的${a.field}实际值不可比较`);continue;}
+  const matched=numerical?(a.operator==='eq'?actual===expected:a.operator==='gte'?actual>=expected:actual<=expected):String(actualValue)===a.expectedValue;
+  checks.push({...a,evidenceId:e.id,actualValue,matched,source:e.source});
+ }
+ const outcome=snapshot.pending.length?'WAITING':issues.length?'REVIEW':checks.some(c=>!c.matched)?'FAIL':'PASS';
+ return {outcome,checks,issues,pending:snapshot.pending,explanation:outcome==='PASS'?'已确认的结构化预期逐项一致，等待人工确认。':outcome==='FAIL'?'实际数据与已确认预期不符。':outcome==='WAITING'?'必需回传或同步尚未完成。':'证据缺失或不唯一，请核查。'};
+}
 export function createCaseResultGraph({collect,complete}){
  const graph=new StateGraph(new StateSchema({snapshot:z.unknown().nullable().default(null),proposal:z.unknown().nullable().default(null),suggestion:z.unknown().nullable().default(null),phase:z.string().default('COLLECTING')}));
  graph.addNode('collect_case_results',async()=>({snapshot:await collect()}));
  graph.addNode('compare_case_expectations',async({snapshot})=>{
+  if(snapshot.plan.contract)return {proposal:null};
   if(snapshot.pending.length || snapshot.issues.length)return {proposal:{assertions:[],uncertainties:snapshot.issues}};
   const input=JSON.stringify({plan:snapshot.plan,evidence:snapshot.evidence});
   if(Buffer.byteLength(input,'utf8')>128*1024)return {proposal:{assertions:[],uncertainties:['Plan或证据超过本次模型输入上限，请缩小Case范围']}};
@@ -43,7 +71,7 @@ export function createCaseResultGraph({collect,complete}){
   try{proposal=Proposal.parse(JSON.parse(text));}catch{proposal={assertions:[],uncertainties:['模型返回格式无效，请重试或澄清预期']};}
   return {proposal};
  });
- graph.addNode('explain_case_result',({snapshot,proposal})=>({suggestion:compareCaseResults(snapshot,proposal)}));
+ graph.addNode('explain_case_result',({snapshot,proposal})=>({suggestion:snapshot.plan.contract?compareConfirmedExpectations(snapshot):compareCaseResults(snapshot,proposal)}));
  graph.addNode('wait_case_result_confirmation',()=>({phase:'AWAITING_CONFIRMATION'}));
  graph.addEdge(START,'collect_case_results').addEdge('collect_case_results','compare_case_expectations').addEdge('compare_case_expectations','explain_case_result').addEdge('explain_case_result','wait_case_result_confirmation').addEdge('wait_case_result_confirmation',END);
  return graph.compile();

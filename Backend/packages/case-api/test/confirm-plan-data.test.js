@@ -1,57 +1,30 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createConfirmPlanWithData } from '../src/confirm-plan-data.js';
-
-const input = { token: 'session', chatPublicId: 'chat', casePublicId: 'case', versionNumber: 2 };
-const pending = { status: 'PENDING_CONFIRMATION', versionNumber: 2,
-  proposal: { objective: '核对数据' } };
-
-test('missing data input leaves the Plan pending so the user can revise it', async () => {
-  const calls = [];
-  const confirmPlan = createConfirmPlanWithData({
-    repository: { getLatestSopProposal: async () => pending },
-    derive: async () => { calls.push('derive'); throw Object.assign(new Error('缺少客户类型'),
-      { code: 'DATA_INPUT_REQUIRED' }); },
-    confirm: async () => { calls.push('confirm'); },
-    executeData: async () => { calls.push('execute'); },
-  });
-  await assert.rejects(confirmPlan(input), { code: 'DATA_INPUT_REQUIRED' });
-  assert.deepEqual(calls, ['derive']);
+import {createConfirmPlanWithData} from '../src/confirm-plan-data.js';
+const input={token:'session',chatPublicId:'chat',casePublicId:'case',versionNumber:2};
+const specification={customers:[],accounts:[],funds:[],holdings:[],missing:[]};
+const pending={status:'PENDING_CONFIRMATION',versionNumber:2,proposal:{contract:{dataSpecification:specification}}};
+test('data confirmation does not derive, lock or execute before expectation confirmation',async()=>{
+ const calls=[];
+ const service=createConfirmPlanWithData({repository:{getLatestSopProposal:async()=>pending},
+  confirm:async a=>{calls.push(a.section);return {phase:'AWAITING_EXPECTATIONS'};},
+  executeData:async()=>{throw new Error('must not execute');}});
+ assert.equal((await service({...input,section:'DATA'})).phase,'AWAITING_EXPECTATIONS');
+ assert.deepEqual(calls,['DATA']);
 });
-
-test('a valid data definition is generated before Plan locking and passed to execution', async () => {
-  const calls = [];
-  const specification = { customers: [{ name: '模拟客户' }] };
-  const confirmPlan = createConfirmPlanWithData({
-    repository: { getLatestSopProposal: async () => pending },
-    derive: async plan => { assert.deepEqual(plan, pending.proposal);
-      calls.push('derive'); return specification; },
-    confirm: async () => { calls.push('confirm'); },
-    executeData: async args => { assert.equal(args.specification, specification);
-      calls.push('execute'); return { reviewStatus: 'PENDING_REVIEW' }; },
-  });
-  const result = await confirmPlan(input);
-  assert.deepEqual(calls, ['derive', 'confirm', 'execute']);
-  assert.equal(result.data.reviewStatus, 'PENDING_REVIEW');
+test('expectation confirmation executes the previously displayed data without calling a model',async()=>{
+ const calls=[];
+ const service=createConfirmPlanWithData({repository:{getLatestSopProposal:async()=>pending},confirm:async()=>calls.push('confirm'),executeData:async a=>{assert.equal(a.specification,specification);calls.push('execute');return {reviewStatus:'PENDING_REVIEW'};}});
+ assert.equal((await service({...input,section:'EXPECTATIONS'})).phase,'DATA_REVIEW');
+ assert.deepEqual(calls,['confirm','execute']);
 });
-
-test('a failed data write can be retried through the same Plan confirmation request', async () => {
-  let status = 'PENDING_CONFIRMATION';
-  let derivations = 0;
-  let attempts = 0;
-  const confirmPlan = createConfirmPlanWithData({
-    repository: { getLatestSopProposal: async () => ({ ...pending, status }) },
-    derive: async () => { derivations += 1; return { customers: [] }; },
-    confirm: async () => { status = 'LOCKED'; },
-    executeData: async () => {
-      attempts += 1;
-      if (attempts === 1) throw new Error('temporary database failure');
-      return { reviewStatus: 'PENDING_REVIEW' };
-    },
-  });
-  await assert.rejects(confirmPlan(input), /temporary database failure/);
-  const result = await confirmPlan(input);
-  assert.equal(result.phase, 'DATA_REVIEW');
-  assert.equal(derivations, 1);
-  assert.equal(attempts, 2);
+test('locked Plan execution retry reuses identical data; legacy pending Plan cannot be newly confirmed',async()=>{
+ let status='PENDING_CONFIRMATION',attempts=0,confirmations=0;
+ const service=createConfirmPlanWithData({repository:{getLatestSopProposal:async()=>({...pending,status})},confirm:async()=>{status='LOCKED';confirmations++;},executeData:async a=>{assert.equal(a.specification,specification);if(++attempts===1)throw new Error('temporary database failure');return {reviewStatus:'PENDING_REVIEW'};}});
+ await assert.rejects(service({...input,section:'EXPECTATIONS'}),/temporary database failure/);
+ assert.equal((await service({...input,section:'EXPECTATIONS'})).phase,'DATA_REVIEW');
+ assert.equal(confirmations,1);
+ const legacy=createConfirmPlanWithData({repository:{getLatestSopProposal:async()=>({...pending,proposal:{}})}});
+ await assert.rejects(legacy({...input,section:'DATA'}),{code:'PLAN_CONTRACT_REQUIRED'});
+ await assert.rejects(service({...input,section:'UNKNOWN'}),{code:'PLAN_SECTION_REQUIRED'});
 });

@@ -1,3 +1,4 @@
+import { planContract } from './plan-contract-fixture.js';
 import { exchangePlan } from './exchange-plan-fixture.js';
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -36,7 +37,7 @@ test('a plan request yields a reviewable proposal without locking it', async () 
   } });
   const result = await proposeDiscussionPlan(graph, { priorTurns, userInput: '请整理为 Plan 提案。' });
   assert.equal(result.phase, 'PROPOSAL_PENDING');
-  assert.equal(result.promptVersion, 'plan-proposal-v2');
+  assert.equal(result.promptVersion, 'plan-proposal-v4');
   assert.deepEqual(result.proposal, proposal);
   assert.match(result.reply, /^测试目标：验证重复确认不会重复入账/);
   assert.match(result.reply, /场景 1：重复上传确认/);
@@ -76,4 +77,19 @@ test('proposal fields reject inline Markdown', () => {
 test('proposal parser accepts plain identifier underscores', () => {
   const identifierProposal = { ...proposal, objective: 'confirm_record_id' };
   assert.deepEqual(parsePlanProposal(JSON.stringify(identifierProposal)), identifierProposal);
+});
+
+test('only independent unconfirmed Chinese TA outcome clauses receive explicit status tokens',()=>{
+ const raw={...proposal,openQuestions:[],scenarios:[{...proposal.scenarios[0],expected:'开户成功；申购失败；总份额100份'}]};
+ const parsed=parsePlanProposal(JSON.stringify(raw));
+ assert.equal(parsed.scenarios[0].expected,'开户申请状态为CONFIRMED（成功确认）；申购申请状态为FAILED（业务失败）；总份额100份');
+ assert.deepEqual(parsed.openQuestions,[]);
+ for(const expected of ['开户不成功','申购成功吗？','开户失败后申购成功','开户状态为CONFIRMED吗？','开户状态为CONFIRMED或FAILED','Case测试通过']){
+  const result=parsePlanProposal(JSON.stringify({...raw,scenarios:[{...raw.scenarios[0],expected}]}));
+  assert.equal(result.scenarios[0].expected,expected);
+  assert.equal(result.openQuestions.length,expected==='Case测试通过'?0:1);
+ }
+ const existing={...proposal,openQuestions:[],scenarios:[{...proposal.scenarios[0],expected:'开户成功；状态CONFIRMED'}]};
+ existing.contract=planContract(existing);
+ assert.deepEqual(parsePlanProposal(JSON.stringify(existing)),existing,'existing contracts are never normalized');
 });

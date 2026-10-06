@@ -65,16 +65,15 @@ const executeData = async ({ token, chatPublicId, casePublicId, versionNumber, s
   }
   const existing = await repository.generatedData(token, chatPublicId, casePublicId);
   if (existing.status === 'VALIDATED') return { ...existing, replayed: true };
-  specification ??= await deriveDataSpecification(completeData, plan.proposal);
+  specification ??= plan.proposal.contract?.dataSpecification ?? await deriveDataSpecification(completeData, plan.proposal);
   return repository.executeGeneratedData(token, chatPublicId, casePublicId,
     versionNumber, specification, (db, scope, data) =>
       createDataGenerationGraph({ db, scope, specification: data }).invoke({}));
 };
 const confirmPlan = createConfirmPlanWithData({ repository,
-  derive: plan => deriveDataSpecification(completeData, plan),
-  confirm: ({ token, chatPublicId, casePublicId, versionNumber }) =>
+  confirm: ({ token, chatPublicId, casePublicId, versionNumber, section }) =>
     decidePlan(createPlanConfirmationGraph({ repository, token, chatPublicId, casePublicId }),
-      { decision: 'CONFIRM', versionNumber }),
+      { decision: 'CONFIRM', versionNumber, section }),
   executeData });
 const reviseData = async ({ token, chatPublicId, casePublicId, revision, userInput }) => {
   const [plan, data, history] = await Promise.all([
@@ -82,6 +81,7 @@ const reviseData = async ({ token, chatPublicId, casePublicId, revision, userInp
     repository.generatedData(token, chatPublicId, casePublicId),
     repository.dataReviewTurns(token, chatPublicId, casePublicId),
   ]);
+  if(plan?.proposal?.contract) throw Object.assign(new Error('Plan数据已锁定；业务修改请新建Case重新确认'),{code:'PLAN_DATA_FROZEN',status:409});
   if (data.reviewStatus !== 'PENDING_REVIEW') {
     const error = new Error('当前数据不能继续修改');
     error.code = 'DATA_NOT_REVIEWABLE'; error.status = 409; throw error;

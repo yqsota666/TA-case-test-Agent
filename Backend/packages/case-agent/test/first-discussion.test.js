@@ -69,3 +69,17 @@ test('Sophnet adapter uses the selected model and keeps model text unchanged', a
   assert.deepEqual(calls[0].messages.map(message => message.role), ['system', 'user']);
   assert.deepEqual(calls[0].messages.map(message => message.content), [FIRST_DISCUSSION_PROMPT, input]);
 });
+
+
+test('explicit low effort is forwarded for structured Plan generation without changing the model',async()=>{
+ const calls=[];
+ const complete=createSophnetCompletion({client:{chat:{completions:{create:async value=>{calls.push(value);return {choices:[{message:{content:'{}'}}]};}}}}});
+ await complete({system:'结构化输出',user:'合成数据',reasoningEffort:'low'});
+ assert.equal(calls[0].reasoning_effort,'low');assert.equal(calls[0].model,'DeepSeek-V4-Pro-0813');
+ await assert.rejects(complete({system:'test',user:'test',reasoningEffort:'invalid'}),TypeError);
+ assert.equal(calls.length,1);
+ await complete({system:'结构化预期',user:'合成数据',thinkingMode:'disabled'});
+ assert.deepEqual(calls[1].thinking,{type:'disabled'});
+ assert.equal(calls[1].reasoning_effort,undefined);
+ await assert.rejects(complete({system:'test',user:'test',thinkingMode:'invalid'}),TypeError);
+});
