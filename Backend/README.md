@@ -169,4 +169,4 @@ GET Case `/workflow` 对账并返回stage/waiting/revision/checkpointId/interrup
 
 准备数据定义只描述初始模拟草稿，不能把02/04/05同步后的最终预期余额倒填成初始持仓。沿用已有正式账户的独立05 Case允许客户/账户/持仓三个数组为空，仅保留所需基金元数据；正式账户由后续引用选择。05能同步总/可用/冻结份额，草稿schema未包含后两字段不应成为missing，最终结果由结构化断言核验。已用保存的合成独立05 Plan进行真实Sophnet两次调用验证：三空、一个基金、零申请、三个固定余额预期、两处missing为空；纯生成校验，未修改原Plan或正式数据，原UNPLANNED时序继续等待明确日期确认。
 
-最终本地复测与真实Sophnet/UI证据见 [全流程验收](docs/full-flow-acceptance-2026-10-06.md)。发布终审另修复等锁后的RR旧快照：草稿revision/确认、父Chat发文门槛、终判封存及轮次幂等、TA reset epoch/cutoff、05较晚04确认量均使用当前锁定读；参见 [写事务审查](docs/repeatable-read-write-audit-2026-10-06.md)。最终常规246项通过、9个opt-in跳过；本地随机临时库9个MySQL测试全部通过，另有05/04真实双连接竞争及前修负控验证。真实TA网络与物理重置仍未接入。
+最终本地复测与真实Sophnet/UI证据见 [全流程验收](docs/full-flow-acceptance-2026-10-06.md)。发布终审另修复等锁后的RR旧快照：草稿revision/确认、父Chat发文门槛、终判封存及轮次幂等、TA reset epoch/cutoff、05较晚04确认量均使用当前锁定读；参见 [写事务审查](docs/repeatable-read-write-audit-2026-10-06.md)。最终常规246项通过、10个opt-in跳过；原有9个独立随机库MySQL测试及新的Chat UUID幂等专项分别通过，另有05/04真实双连接竞争及前修负控验证。真实TA网络与物理重置仍未接入。

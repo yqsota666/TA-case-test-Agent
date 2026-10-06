@@ -49,3 +49,6 @@ Case d51a8e8b-e85e-4a3a-9ab1-33cc12131ad5 / Chat e84c68d2-4362-457c-8b0f-a8e3093
 
 
 最后真实review补齐失败依赖收集上限：两类查询任一返回501条时停止部分映射推导，记录截断issue/摘要并明确REVIEW，禁止确认该结果。500完整/501超限边界测试通过；真实MySQL联动在scoped查询返回后注入501响应哨兵，其他认证/证据/锁读SQL及旧摘要拒绝、耐久阶段验证均真实执行，未声称创建501条真实业务记录。最终发布候选246项常规通过、9个opt-in跳过；9项独立随机库MySQL全部通过、迁移中断恢复及复跑通过、临时库删除。
+
+
+Chat新轮次/关联复测的请求UUID幂等补丁：新键保存小写，历史大写键按source Chat/Workspace范围兼容，重试不新建第二个Chat或Case、不改历史。独立双连接及跨范围/内容冲突测试通过；实际运行库对已有两个合成链接做uppercase NEW_RUN与uppercase RETEST/sourceCase重放，均duplicate=true、复用原target，workspace的Chat/Case/link计数全不变。常规246项通过、10个opt-in跳过；新增幂等专项和既有生命周期各在独立真实随机库通过，最终发布main仍按实际头整体复核。
