@@ -124,7 +124,7 @@ export function createCaseResultRepository({transaction}){
    if(!row)throw storeError('REVIEW_NOT_FOUND',404,'判断记录不存在');
    if(row.final_verdict){if(row.final_verdict!==input.verdict)throw storeError('VERDICT_CONFLICT',409,'最终结论已保存，不能覆盖');return {finalVerdict:row.final_verdict,duplicate:true};}
    if(owner.chat_status!=='ACTIVE'||['PASS','FAIL'].includes(owner.case_status))throw storeError('CASE_NOT_WRITABLE',409,'Chat或Case已结束');
-   const [[latest]]=await db.execute('SELECT CAST(id AS CHAR) AS id FROM case_result_reviews WHERE workspace_id=? AND chat_id=? AND case_id=? ORDER BY id DESC LIMIT 1 FOR UPDATE',keys);
+   const [[latest]]=await db.execute('SELECT CAST(id AS CHAR) AS id FROM case_result_reviews WHERE workspace_id=? AND chat_id=? AND case_id=? ORDER BY case_result_reviews.id DESC LIMIT 1 FOR UPDATE',keys);
    if(latest.id!==String(input.reviewId))throw storeError('REVIEW_SUPERSEDED',409,'请确认最新判断版本');
    await db.execute('SELECT id FROM exchange_channels WHERE workspace_id=? ORDER BY id FOR UPDATE',[keys[0]]);
    const current=await collect(db,keys,true);
