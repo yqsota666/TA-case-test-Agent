@@ -16,7 +16,7 @@ export function deriveTerminalTaFailures({plan,order,applications,preparedAccoun
  };
  for(const failed of failures){
   const step=order.plan.steps.find(s=>s.stepId===failed.stepId);
-  if(!step?.required || step.direction!=='RECEIVE' || !['02','04'].includes(step.fileType))continue;
+  if(!step || step.direction!=='RECEIVE' || !['02','04'].includes(step.fileType))continue;
   const account=json(failed.record).TransactionAccountID;
   if(!account || json(failed.confirmation).TransactionAccountID!==account)continue;
   const direct=order.plan.steps.filter(s=>s.required && s.direction==='SEND' && s.fileType==='03' &&
@@ -39,7 +39,7 @@ export function deriveTerminalTaFailures({plan,order,applications,preparedAccoun
 export function unresolvedTerminalTaFailures({plan,order,applications,preparedAccounts=[],failures}) {
  return failures.filter(f=>{
   const source=order.plan.steps.find(s=>s.stepId===f.stepId);
-  if(!source?.required)return false;
+  if(!source || source.direction!=='RECEIVE' || !['02','04'].includes(source.fileType))return false;
   const account=json(f.record).TransactionAccountID;
   return order.plan.steps.some(s=>{
    if(!s.required || s.direction!=='SEND' || s.fileType!=='03' || !s.dependsOn.some(d=>d.stepId===f.stepId && d.condition==='CONFIRMED'))return false;

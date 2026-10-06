@@ -20,8 +20,8 @@ test('applied terminal failure identifies only mandatory same-account descendant
  assert.equal(f.order.events.some(e=>e.stepId==='account'&&e.condition==='CONFIRMED'),false);
  assert.equal(f.order.events.some(e=>e.stepId==='purchase'),false);
 });
-test('unapplied, another account, optional source and already sent target cannot create a terminal blocker',()=>{
- for(const change of [f=>{f.failures=[];},f=>{f.preparedAccounts[0].transactionAccountId='90000000000000002';},f=>{f.order.plan.steps[1].required=false;},f=>{f.order.events.push({stepId:'purchase',condition:'SENT'});},f=>{f.failures[0].confirmation.TransactionAccountID='90000000000000002';}]){
+test('unapplied, another account and already sent target cannot create a terminal blocker',()=>{
+ for(const change of [f=>{f.failures=[];},f=>{f.preparedAccounts[0].transactionAccountId='90000000000000002';},f=>{f.order.events.push({stepId:'purchase',condition:'SENT'});},f=>{f.failures[0].confirmation.TransactionAccountID='90000000000000002';}]){
   const f=fixture();change(f);assert.deepEqual(deriveTerminalTaFailures(f),[]);
  }
 });
@@ -48,4 +48,10 @@ test('different accounts sharing a planned SEND step do not allow one failure to
 test('a mixed receipt success marker does not hide a concrete failed account, while ambiguous mixed SEND mapping requires review',()=>{
  const f=fixture();f.order.events.push({stepId:'account',condition:'CONFIRMED'});assert.equal(deriveTerminalTaFailures(f).length,1);
  f.plan.contract.applications.push({stepId:'purchase',accountIndex:null,transactionAccountId:'90000000000000002'});assert.deepEqual(deriveTerminalTaFailures(f),[]);assert.equal(unresolvedTerminalTaFailures(f).length,1);
+});
+
+test('optional source on an explicit mandatory dependency remains a blocker; an entirely optional path does not',()=>{
+ const f=fixture();f.order.plan.steps[1].required=false;assert.equal(deriveTerminalTaFailures(f).length,1);
+ f.plan.contract.applications.push({stepId:'purchase',accountIndex:null,transactionAccountId:'90000000000000002'});assert.equal(unresolvedTerminalTaFailures(f).length,1);
+ f.order.plan.steps[2].required=false;f.order.plan.steps[3].required=false;assert.deepEqual(deriveTerminalTaFailures(f),[]);assert.deepEqual(unresolvedTerminalTaFailures(f),[]);
 });
