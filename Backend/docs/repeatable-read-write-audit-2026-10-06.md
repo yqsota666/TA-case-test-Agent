@@ -16,7 +16,7 @@
 
 ## 已有保护与观察接口边界
 
-Plan 双确认的最新版本、已有确认记录已有 FOR UPDATE；结果建议保存和人工终判锁住 Workspace 通道后，collect(write=true) 对证据执行当前读，未发现同类绕过。正式 02/04/05 写入及 TA reset 的 epoch/cutoff 由另一个 agent 单独审查，此记录不替代其结果。
+Plan 双确认的最新版本、已有确认记录已有 FOR UPDATE；结果建议保存和人工终判锁住 Workspace 通道后收集证据。本轮交叉审查另补齐05原始文件source查询的FOR UPDATE，修复鉴权旧快照漏读原件；经补齐后collect(write=true)使用当前读。正式 02/04/05 写入及 TA reset 的 epoch/cutoff 由另一个 agent 单独审查，此记录不替代其结果。
 
 耐久 LangGraph 的 Chat/Case 状态已有当前读，关闭 Chat 的恢复写事件被阻断。workflowFacts 的普通读取在等锁后仍可能暂时返回旧阶段；它只更新观察状态和 checkpoint，不执行申请、发文或正式落库。下一次新的 read 事务重新采集并恢复阶段；同 eventId 幂等重放则按已保存历史响应返回，不保证最新阶段。草稿只读展示也可能暂时旧值。这些是显示/重试边界，未将它们误报为正式数据损坏，也未用全局隔离降级隐藏问题。写接口自己的 current-read 校验始终是业务授权依据。
 
