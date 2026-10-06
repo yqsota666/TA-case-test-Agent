@@ -1,6 +1,6 @@
 # Backend
 
-当前 Case／Agent 后端以本仓库 `main` 已合并并验证的实现为准（2026-10-06）；选择本地运行版本前仍核对实时Git和本机版本索引，未合并PR不等同已发布。包含case-agent、case-api、platform-store、platform-protocol；没有前端源码或构建产物。
+本次实现合并并验证后，Case／Agent 后端以本仓库 `main` 为准；合并前选择本地运行版本仍核对实时Git和本机版本索引，未合并PR不等同已发布。包含case-agent、case-api、platform-store、platform-protocol；没有前端源码或构建产物。
 
 ```sh
 cd Backend
