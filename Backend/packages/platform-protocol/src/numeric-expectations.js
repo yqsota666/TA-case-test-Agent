@@ -12,19 +12,28 @@ export function preciseDecimal(value) {
   const [whole, fraction = ''] = String(value).replace(/^-/, '').split('.');
   return (BigInt(whole) * 100000000n + BigInt(fraction.padEnd(8, '0'))) * (String(value).startsWith('-') ? -1n : 1n);
 }
+function fieldPrefix(text, at) {
+  return text.slice(0, at).split(/[，,。；;\n]/).at(-1);
+}
+function negatedPrefix(prefix) {
+  return /(?:不|未|没有|非|\bnot\b)/i.test(prefix.replace(/不(?:少于|低于|超过|高于|多于)/g, ''));
+}
 export function numericQuoteBindings(quote) {
   const text = String(quote).replace(/[−－]/g, '-');
   const matches = [...text.matchAll(marker)], bindings = [];
   for (let i = 0; i < matches.length; i++) {
     const match = matches[i];
+    const prefix = fieldPrefix(text, match.index);
+    if (negatedPrefix(prefix)) continue;
     const segment = text.slice(match.index + match[0].length, matches[i + 1]?.index);
     // A quantity must immediately follow its field, allowing only comparison language and units.
     const parsed = segment.match(/^((?:\s|[=:：≤≥]|>=|<=|应为|应该为|应当为|应达到|为|是|等于|至少|最多|不低于|不少于|大于等于|小于等于|不超过|不高于|不多于)*)([-+]?\d+(?:\.\d+)?)(?!\s*(?:[A-Za-z0-9_.+\-/%％×*÷万亿千百十]|[,，]\d))/);
     const value = parsed?.[2]?.replace(/^\+/, '');
     if (value === undefined || preciseDecimal(value) === null) continue;
     const field = aliases.find(alias => alias.name.toLowerCase() === match[0].toLowerCase()).field;
-    const operator = /(至少|不低于|不少于|大于等于|>=|≥)/.test(parsed[1]) ? 'gte' :
-      /(最多|不高于|不超过|不多于|小于等于|<=|≤)/.test(parsed[1]) ? 'lte' : 'eq';
+    const comparison = (prefix.match(/(?:至少|不低于|不少于|大于等于|>=|≥|最多|不高于|不超过|不多于|小于等于|<=|≤)\s*$/)?.[0] ?? '') + parsed[1];
+    const operator = /(至少|不低于|不少于|大于等于|>=|≥)/.test(comparison) ? 'gte' :
+      /(最多|不高于|不超过|不多于|小于等于|<=|≤)/.test(comparison) ? 'lte' : 'eq';
     bindings.push({ field, value, operator });
   }
   return bindings;
@@ -52,7 +61,7 @@ export function hasLiteralExpectation(value, quote, field) {
   const matches = [...String(quote).matchAll(literalMarker)];
   return matches.some((match, i) => {
     const alias = literalAliases.find(alias => alias.name.toLowerCase() === match[0].toLowerCase());
-    if (alias.field !== field || /(?:不是|不为|非|未|没有|不|not)\s*$/i.test(quote.slice(0, match.index))) return false;
+    if (alias.field !== field || negatedPrefix(fieldPrefix(quote, match.index))) return false;
     const segment = quote.slice(match.index + match[0].length, matches[i + 1]?.index);
     return positive.test(segment);
   });

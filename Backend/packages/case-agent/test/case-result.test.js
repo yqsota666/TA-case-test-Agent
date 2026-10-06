@@ -67,3 +67,10 @@ test('invalid numeric formats, borrowed field literals and negation cannot recom
   assert.equal(compareCaseResults(state,{assertions:[{...proposal.assertions[0],expectedQuote:quote,field,expectedValue:value}],uncertainties:[]}).outcome,'REVIEW',quote);
  }
 });
+
+test('the full scenario preserves negation even when a model shortens its quote',()=>{
+ for(const [expected,quote,field,value] of [['不要总份额100','总份额100','totalVolume','100'],['不期望状态CONFIRMED','状态CONFIRMED','status','CONFIRMED']]){
+  const state={...snapshot,plan:{scenarios:[{expected}]},evidence:[{...snapshot.evidence[0],values:{[field]:value}}]};
+  assert.equal(compareCaseResults(state,{assertions:[{...proposal.assertions[0],expectedQuote:quote,field,expectedValue:value}],uncertainties:[]}).outcome,'REVIEW');
+ }
+});

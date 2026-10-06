@@ -30,3 +30,11 @@ test('literal values belong to their stated field and positive comparison',()=>{
  assert.equal(hasLiteralExpectation('000001','基金代码000001','taAccountId'),false);
  for(const quote of ['状态不是CONFIRMED','状态不为CONFIRMED','状态NOT_CONFIRMED','不是状态CONFIRMED','status not CONFIRMED'])assert.equal(hasLiteralExpectation('CONFIRMED',quote,'status'),false,quote);
 });
+
+test('recognized negation in the current clause cannot be removed by shortening the quotation',()=>{
+ assert.deepEqual(numericQuoteBindings('不要总份额100'),[]);
+ assert.equal(hasLiteralExpectation('CONFIRMED','不期望状态CONFIRMED','status'),false);
+ assert.equal(hasNumericFieldExpectation('totalVolume','100','不要开户，总份额100','eq'),true);
+ assert.equal(hasNumericFieldExpectation('totalVolume','100','总份额不少于100','gte'),true);
+ assert.equal(hasNumericFieldExpectation('totalVolume','100','不少于总份额100','gte'),true);
+});
