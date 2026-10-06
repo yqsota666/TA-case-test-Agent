@@ -51,7 +51,7 @@ export function createChatLifecycleRepository({transaction}){
   });
  }
  async function startRun(token,input,kind){
-  identifier(input.requestId);const reason=reasonText(input.reason);
+  identifier(input.requestId);const requestId=input.requestId.toLowerCase(),reason=reasonText(input.reason);
   if(kind==='RETEST')identifier(input.casePublicId);
   const sourceId=input.casePublicId?.toLowerCase()??null;
   if(kind==='NEW_RUN'&&input.confirmPreserveFormalData!==true)fail('PRESERVATION_CONFIRMATION_REQUIRED','新轮次保留正式数据及历史，请显式确认',400);
@@ -61,7 +61,7 @@ export function createChatLifecycleRepository({transaction}){
     FROM chat_run_links l JOIN case_chats t ON t.workspace_id=l.workspace_id AND t.id=l.target_chat_id
     LEFT JOIN cases k ON k.workspace_id=l.workspace_id AND k.chat_id=l.source_chat_id AND k.id=l.source_case_id
     LEFT JOIN cases n ON n.workspace_id=l.workspace_id AND n.chat_id=l.target_chat_id AND n.id=l.target_case_id
-    WHERE l.workspace_id=? AND l.source_chat_id=? AND l.request_id=? FOR UPDATE`,[...keys,input.requestId]);
+    WHERE l.workspace_id=? AND l.source_chat_id=? AND LOWER(l.request_id)=? ORDER BY l.id LIMIT 1 FOR UPDATE`,[...keys,requestId]);
    if(prior){if(prior.kind!==kind||prior.reason!==reason||(prior.source_case_public_id??null)!==sourceId)fail('RUN_REQUEST_CONFLICT','同一请求标识已用于其他操作');return {chatPublicId:prior.chatPublicId,casePublicId:prior.casePublicId,duplicate:true,formalDataPreserved:true};}
    const rows=await cases(db,keys,true);
    let source=null;
@@ -84,7 +84,7 @@ export function createChatLifecycleRepository({transaction}){
     const [added]=await db.execute('INSERT INTO cases(public_id,workspace_id,chat_id,title,predecessor_case_id) VALUES (?,?,?,?,?)',[targetCase,auth.workspace_id,nextId,source.title,source.id]);targetId=added.insertId;
     await db.execute(`INSERT INTO case_state_events(workspace_id,chat_id,case_id,to_status,actor_user_id,reason) VALUES (?,?,?,'DISCUSSING',?,?)`,[auth.workspace_id,nextId,targetId,auth.user_id,'RETEST: '+reason]);
    }
-   await db.execute(`INSERT INTO chat_run_links(workspace_id,source_chat_id,source_case_id,target_chat_id,target_case_id,request_id,kind,reason,actor_user_id) VALUES (?,?,?,?,?,?,?,?,?)`,[...keys,source?.id??null,nextId,targetId,input.requestId,kind,reason,auth.user_id]);
+   await db.execute(`INSERT INTO chat_run_links(workspace_id,source_chat_id,source_case_id,target_chat_id,target_case_id,request_id,kind,reason,actor_user_id) VALUES (?,?,?,?,?,?,?,?,?)`,[...keys,source?.id??null,nextId,targetId,requestId,kind,reason,auth.user_id]);
    return {chatPublicId:publicId,casePublicId:targetCase,duplicate:false,formalDataPreserved:true};
   });
  }
