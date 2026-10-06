@@ -8,7 +8,15 @@ export async function verifyCaseResultReviews({db,transaction,token,scope,worksp
  const previous=typeof planRow.plan_json==='string'?JSON.parse(planRow.plan_json):planRow.plan_json;
  const plan={...previous,exchangePlan:{...previous.exchangePlan,steps:previous.exchangePlan.steps.map(s=>({...s,required:false}))},objective:'核验正式余额',preconditions:[],openQuestions:[],scenarios:[{title:'余额',setup:'已确认账户',action:'接收05',expected:'总份额700份',evidence:'正式余额'}]};
  await db.execute('UPDATE case_sop_versions SET plan_json=? WHERE id=?',[JSON.stringify(plan),planRow.id]);
- const repository=createCaseResultRepository({transaction});const initial=await repository.snapshot(token,scope);
+ const sourceReads=[];
+ const observedTransaction=work=>transaction(connection=>work(new Proxy(connection,{get(target,key){
+  if(key==='execute')return async(sql,values)=>{
+   if(sql.includes('FROM case_holdings_return_files'))sourceReads.push(sql);
+   return target.execute(sql,values);
+  };
+  const value=Reflect.get(target,key);return typeof value==='function'?value.bind(target):value;
+ }})));
+ const repository=createCaseResultRepository({transaction:observedTransaction});const initial=await repository.snapshot(token,scope);
  assert.equal(initial.pending.length,0);assert.equal(initial.issues.length,0);
  const holding=initial.evidence.find(e=>e.values.fundCode==='000001' && e.values.totalVolume==='700.00');assert.ok(holding);
  // Missing source must never be silently accepted merely because remaining file hashes match.
@@ -56,7 +64,9 @@ export async function verifyCaseResultReviews({db,transaction,token,scope,worksp
  await assert.rejects(changing.evaluate(token,scope),{code:'CASE_RESULT_CHANGED'});
  await db.execute(`UPDATE sales_confirmed_holdings SET total_volume='700.00' WHERE workspace_id=? AND account_id=? AND fund_code='000001'`,[workspaceId,holding.values.accountId]);
  const service=createCaseResultService({repository,complete});
+ sourceReads.length=0;
  const first=await service.evaluate(token,scope);assert.equal(first.suggestion.outcome,'PASS');
+ assert.ok(sourceReads.some(sql=>sql.endsWith(' FOR UPDATE')),'saving a review must read latest locked raw holdings sources');
  const [[before]]=await db.execute('SELECT status FROM cases WHERE id=?',[planRow.case_id]);assert.equal(before.status,'SOP_LOCKED');
  const key=[workspaceId,holding.values.accountId,'000001'];
  await db.execute(`UPDATE sales_confirmed_holdings SET total_volume='690.00' WHERE workspace_id=? AND account_id=? AND fund_code=?`,key);
@@ -65,8 +75,9 @@ export async function verifyCaseResultReviews({db,transaction,token,scope,worksp
  await db.execute(`UPDATE sales_confirmed_holdings SET total_volume='700.00' WHERE workspace_id=? AND account_id=? AND fund_code=?`,key);
  const latest=await service.evaluate(token,scope);
  await assert.rejects(repository.confirm(token,{...scope,reviewId:fail.reviewId,verdict:'FAIL',reason:'旧版本'}),{code:'REVIEW_SUPERSEDED'});
- await db.query('SAVEPOINT result_final');
+ await db.query('SAVEPOINT result_final');sourceReads.length=0;
  assert.equal((await repository.confirm(token,{...scope,reviewId:latest.reviewId,verdict:'PASS',reason:'人工核对余额'})).finalVerdict,'PASS');
+ assert.ok(sourceReads.some(sql=>sql.endsWith(' FOR UPDATE')),'confirming a review must read latest locked raw holdings sources');
  assert.equal((await repository.confirm(token,{...scope,reviewId:latest.reviewId,verdict:'PASS',reason:'重复'})).duplicate,true);
  await assert.rejects(repository.confirm(token,{...scope,reviewId:latest.reviewId,verdict:'FAIL',reason:'覆盖'}),{code:'VERDICT_CONFLICT'});
  await db.query('ROLLBACK TO SAVEPOINT result_final');
