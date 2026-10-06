@@ -34,6 +34,16 @@ test('MySQL: post-lock draft revisions, full Chat barrier, human verdict and run
    try{await snapshot.ready;await new Promise(r=>setTimeout(r,50));assert.equal(settled,false);await mutate();await writer.commit();return await pending;}
    finally{await writer.rollback();reader.execute=original;await pending;}
   };
+  const replay=await fixture();await writer.execute('DELETE FROM case_data_executions WHERE workspace_id=? AND chat_id=? AND case_id=?',replay.keys);
+  const replayResult=await race(replay,async()=>{
+   await writer.execute("INSERT INTO case_data_executions(workspace_id,chat_id,case_id,sop_version_id,specification_json) VALUES (?,?,?,?,'{}')",[...replay.keys,replay.plan]);
+   await writer.execute("INSERT INTO case_generated_funds(workspace_id,chat_id,case_id,fund_code,fund_name,share_class,nav) VALUES (?,?,?,'880031','synthetic replay','A',1)",replay.keys);
+   await writer.execute("INSERT INTO case_data_edit_events(workspace_id,chat_id,case_id,revision,edit_json) VALUES (?,?,?,2,'{}')",replay.keys);
+   await writer.execute('INSERT INTO case_data_confirmations(workspace_id,chat_id,case_id,revision,actor_user_id) VALUES (?,?,?,2,?)',[...replay.keys,user.insertId]);
+  },tx=>createCaseRepository({transaction:tx}).executeGeneratedData(token,replay.chatId,replay.caseId,1,{},async()=>{throw Error('replay must not execute graph');}));
+  assert.equal(replayResult.result?.status,'VALIDATED','replay reads the committed execution after waiting');
+  assert.equal(replayResult.result.replayed,true);assert.equal(replayResult.result.funds[0].fund_code,'880031');
+  assert.equal(replayResult.result.revision,2);assert.equal(replayResult.result.reviewStatus,'CONFIRMED');
   const draft=await fixture();let outcome=await race(draft,()=>writer.execute("INSERT INTO case_data_edit_events(workspace_id,chat_id,case_id,revision,edit_json) VALUES (?,?,?,1,'{}')",draft.keys),tx=>createCaseRepository({transaction:tx}).confirmGeneratedData(token,draft.chatId,draft.caseId,0));
   assert.equal(outcome.error?.code,'DATA_EDIT_CONFLICT','old revision cannot confirm new draft');
   const edited=await fixture();await writer.execute("INSERT INTO case_data_edit_events(workspace_id,chat_id,case_id,revision,edit_json) VALUES (?,?,?,1,'{}')",edited.keys);
