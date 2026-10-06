@@ -49,6 +49,19 @@ export async function verifyUnifiedReceipts({db,transaction,token,channelId,scop
   const five=result.results.find(r=>r.fileType==='05');
   assert.equal((await holdings.apply(token,{...scope,parseId:five.parseId,exchangeStepId:'unified05'})).businessApplied,true);
   assert.equal((await holdings.apply(token,{...scope,parseId:five.parseId,exchangeStepId:'unified05'})).duplicate,true);
+  plan.exchangePlan.steps.push({...plan.exchangePlan.steps.find(s=>s.stepId==='unified05'),stepId:'unified05Second',roundId:'holdingSecond'});
+  await db.execute('UPDATE case_sop_versions SET plan_json=? WHERE id=?',[JSON.stringify(plan),row.id]);
+  const secondRoutes=[...input.routes.slice(0,2),{fileType:'05',exchangeStepId:'unified05Second'}];
+  await assert.rejects(unified.parse(token,{...input,routes:secondRoutes}),{code:'EXCHANGE_STEP_CONFLICT'});
+  const second05=buildDataFile({creator:'27',receiver:'306',date:'20261007',version:'22',fileType:'05',sequence:882,records:[{...record05,TotalVolOfDistributorInTA:'201.00',AvailableVol:'171.00'}]}).toString('base64');
+  const nextData=files.map(f=>f.fileName.includes('_05_')?{fileName:dataFileName({creator:'27',receiver:'306',date:'20261007',fileType:'05',sequence:882}),base64:second05}:f);
+  const nextFiles=nextData;
+  const beforeNext=await confirmations.salesData(token);
+  const nextReceipt=await unified.parse(token,{...input,files:nextFiles,routes:secondRoutes});
+  assert.equal(nextReceipt.results.find(r=>r.fileType==='05').duplicate,false);
+  assert.deepEqual(await confirmations.salesData(token),beforeNext);
+  assert.ok((await unified.parse(token,{...input,files:nextFiles,routes:secondRoutes})).results.every(r=>r.duplicate));
+
   await assert.rejects(unified.parse(token,{...input,channelId:'99999999'}),{code:'CHANNEL_NOT_FOUND'});
   await assert.rejects(unified.read(token,{...scope,casePublicId:'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'}),{code:'CASE_NOT_FOUND'});
  }finally {await db.query('ROLLBACK TO SAVEPOINT unified_receipts_fixture');}

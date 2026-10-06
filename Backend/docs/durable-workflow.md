@@ -23,3 +23,5 @@ GET `/api/chats/:chat/cases/:case/workflow` 认证后对账并返回 `{stage,wai
 结果确认阶段要求最新建议为PASS/FAIL，并在相同事务复用结果仓储重新收集当前完整证据：Plan版本、证据SHA必须一致，无pending/issues。旧证据、WAITING或REVIEW建议都返回EVALUATE_RESULT，不能以“有一条review”推断可确认。业务最终确认仍独立再次检查证据，防止读取之后发生变化。
 
 补充验证：193常规测试通过；独立MySQL增加仅可选05未上传仍进入评估、当前PASS建议可确认、证据定义变化后退回评估、最新REVIEW不可确认。合成review元数据仅用于状态协调测试，不声称模型或业务判定验收。
+
+通知eventId严格接收字符串UUID，存储统一小写；在当前workspace/chat/case内以大小写无关的锁读兼容历史大写。原通知expectedStage不可变，大小写重放不新增事件。若历史已存在多个大小写变体，明确返回WORKFLOW_EVENT_CONFLICT，不重写旧响应或猜测原通知。真实MySQL覆盖双实例混合大小写、历史大写重放、内容冲突及歧义拒绝；原封存拒绝和过期阶段对账行为保留。
