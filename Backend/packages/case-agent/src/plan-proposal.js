@@ -22,6 +22,28 @@ export const PlanProposalSchema = z.object({
   contract: z.unknown().optional(),
 }).strict().refine(p=>p.contract===undefined || validPlanContract(p.contract,p));
 
+function normalizeUnconfirmedStatusExpectations(proposal) {
+  if(proposal.contract!==undefined)return proposal;
+  const questions=[...proposal.openQuestions];
+  const scenarios=proposal.scenarios.map((scenario,index)=>{
+    const expected=scenario.expected.split(/([；;，,。])/).map(clause=>{
+      const match=clause.match(/^(\s*)(开户|申购)(成功|失败)(\s*)$/);
+      if(match){
+        const status=match[3]==='成功'?'CONFIRMED':'FAILED';
+        return `${match[1]}${match[2]}申请状态为${status}（${match[3]==='成功'?'成功确认':'业务失败'}）${match[4]}`;
+      }
+      if(/(?:开户|申购)/.test(clause) && /(?:成功|失败)/.test(clause) &&
+         !/状态(?:均为|为|是|[:：])?(?:CONFIRMED|FAILED)/.test(clause) && questions.length<50){
+        const question=`请澄清场景${index+1}的TA业务确认结果：${clause.trim()}`;
+        if(!questions.includes(question))questions.push(question);
+      }
+      return clause;
+    }).join('');
+    return {...scenario,expected};
+  });
+  return {...proposal,scenarios,openQuestions:questions};
+}
+
 export function parsePlanProposal(reply) {
   if (typeof reply !== 'string' || reply.length > 100000) {
     const error = new Error('Plan 提案必须是 JSON 对象');
@@ -30,7 +52,10 @@ export function parsePlanProposal(reply) {
   }
   try {
     const parsed = PlanProposalSchema.safeParse(JSON.parse(reply));
-    if (parsed.success && parsed.data.exchangePlan) return parsed.data;
+    if (parsed.success && parsed.data.exchangePlan) {
+      const normalized=PlanProposalSchema.safeParse(normalizeUnconfirmedStatusExpectations(parsed.data));
+      if(normalized.success)return normalized.data;
+    }
   } catch { /* Invalid JSON is reported below. */ }
   const error = new Error('Plan 提案缺少必填字段或不是有效 JSON');
   error.code = 'MODEL_OUTPUT_FORMAT';
