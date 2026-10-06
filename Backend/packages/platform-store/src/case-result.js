@@ -70,7 +70,7 @@ export function createCaseResultRepository({transaction}){
    }
   }catch(e){if(e.code!=='EXCHANGE_PLAN_REQUIRED')throw e;issues.push('Plan尚无已确认文件时序');}
   const [returnSources]=await db.execute(`SELECT CAST(parse_id AS CHAR) AS parseId,file_name AS fileName,content_sha256 AS expectedHash,SHA2(raw_bytes,256) AS actualHash FROM case_return_parse_files WHERE workspace_id=? AND chat_id=? AND case_id=? ORDER BY parse_id,file_name LIMIT 2001${lock}`,keys);
-  const [holdingSources]=await db.execute(`SELECT CAST(parse_id AS CHAR) AS parseId,file_name AS fileName,content_sha256 AS expectedHash,SHA2(raw_bytes,256) AS actualHash FROM case_holdings_return_files WHERE workspace_id=? AND chat_id=? AND case_id=? ORDER BY parse_id,file_name LIMIT 2001`,keys);
+  const [holdingSources]=await db.execute(`SELECT CAST(parse_id AS CHAR) AS parseId,file_name AS fileName,content_sha256 AS expectedHash,SHA2(raw_bytes,256) AS actualHash FROM case_holdings_return_files WHERE workspace_id=? AND chat_id=? AND case_id=? ORDER BY parse_id,file_name LIMIT 2001${lock}`,keys);
   if([...returnSources,...holdingSources].some(s=>s.expectedHash!==s.actualHash))issues.push('原始TA文件摘要不一致，需要人工核查');
   const [returnPackages]=await db.execute(`SELECT CAST(id AS CHAR) AS id,content_sha256 FROM case_return_parses
    WHERE workspace_id=? AND chat_id=? AND case_id=? ORDER BY id LIMIT 501${lock}`,keys);
