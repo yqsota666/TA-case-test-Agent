@@ -288,7 +288,9 @@ flowchart TD
   FORMAL_TRADE --> FILES
   FORMAL_ACCOUNT --> FILES
   SNAPSHOT --> FILES
-  FAILED_APP --> FILES
+  FAILED_APP --> BLOCKED_CHECK{已应用的同账户失败是否阻断必需后续}
+  BLOCKED_CHECK -->|是：保留诊断证据，不伪造完成| COLLECT
+  BLOCKED_CHECK -->|否：继续其他必需分支| FILES
   FILES -->|必需步骤及申请已终结，可选05未传不阻挡| COLLECT[collect_case_results：当前Plan、本Case证据、完整原包摘要]
   COLLECT --> COMPARE[compare_case_expectations：严格Plan固定断言；旧Plan模型解释]
   COMPARE --> EXPLAIN[explain_case_result：精确比较与理由]
@@ -321,7 +323,7 @@ flowchart TD
   RECONCILE -.-> HUMAN
 ```
 
-格式、归属、顺序、绑定、身份和不支持业务等错误不进入正式生效节点；业务事务回滚并返回明确错误，用户修正后重试。失败的02/04是申请终态，可以参加预期判断，但不满足依赖里的成功CONFIRMED；若后续必需步骤只接受成功而已失败，当前Plan无法继续，不能由协调器伪造成功，需人工处理或新Case重规划。
+格式、归属、顺序、绑定、身份和不支持业务等错误不进入正式生效节点；业务事务回滚并返回明确错误，用户修正后重试。失败的02/04是申请终态，可以参加预期判断，但不满足依赖里的成功CONFIRMED。已应用且本Case当前轮次的TA业务失败，若通过receipt/binding、原申请账户及固定03定义精确证明使同账户必需后续不可执行，则保存TA_DEPENDENCY_FAILURE阻断证据，移除这些不可执行步骤的等待项；其他必需分支仍须完成。此时结果建议为诊断FAIL，不能生成03或伪造未来04，也不修改正式数据；只允许人工FAIL并显式创建同父Chat关联后续Case重新讨论。只解析未应用失败仍WAITING；可选或无关账户失败不封死Case。旧Plan仅在已有固定03申请可精确证明同账户时使用该通路，不根据单一草稿猜测。单个SEND步骤绑定多个账户而不能唯一映射时保守REVIEW，不能整步推断所有账户失败；不同账户各有明确SEND步骤时只阻断已失败账户。正常已存在的CONFIRMED与FAILED对照保留，未来未产生的03/04不伪造检查结果。原文/证据异常仍REVIEW，保存和人工确认继续持锁核验完整原件与SHA；关联后续读取失败原因和阻断证据。
 
 ## 耐久编排与等待节点
 

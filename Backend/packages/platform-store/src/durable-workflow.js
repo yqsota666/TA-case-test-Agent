@@ -36,12 +36,17 @@ export async function workflowFacts(db,{owner,keys},token,input) {
 
  }
 
+ let resultSnapshot=null;
+ if(order && owner.chat_status==='ACTIVE' && !['PASS','FAIL'].includes(owner.case_status)) {
+  resultSnapshot=await createCaseResultRepository({transaction:action=>action(db)}).snapshot(token,input);
+  order.blockers=resultSnapshot.blockers??[];
+ }
  let latestReview=null;
  if(review) {
   latestReview={id:review.id,confirmable:false};
   const suggestion=json(review.suggestion_json);
   if(['PASS','FAIL'].includes(suggestion?.outcome) && owner.chat_status==='ACTIVE' && !['PASS','FAIL'].includes(owner.case_status) && plan?.status==='LOCKED' && Number(review.plan_version)===Number(plan.version)) {
-   const current=await createCaseResultRepository({transaction:action=>action(db)}).snapshot(token,input);
+   const current=resultSnapshot??await createCaseResultRepository({transaction:action=>action(db)}).snapshot(token,input);
    latestReview.confirmable=current.sha256===review.evidence_sha256 && !current.pending.length && !current.issues.length;
    latestReview.currentEvidenceHash=current.sha256;
   }

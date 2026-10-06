@@ -5,7 +5,14 @@ import { z } from 'zod';
 const Assertion=z.object({scenarioIndex:z.number().int().nonnegative(),expectedQuote:z.string().min(1).max(1000),
  evidenceId:z.string().max(100),field:z.string().max(60),operator:z.enum(['eq','gte','lte']),expectedValue:z.string().min(1).max(100)}).strict();
 const Proposal=z.object({assertions:z.array(Assertion).max(300),uncertainties:z.array(z.string().max(500)).max(100)}).strict();
+export function terminalFailureSuggestion(snapshot) {
+ if(snapshot.unresolvedFailures?.length)return {outcome:'REVIEW',checks:[],issues:snapshot.issues,pending:snapshot.pending,unresolvedFailures:snapshot.unresolvedFailures,explanation:'TA失败账户与必需后续申请不能唯一关联，请澄清映射；未推断其他账户失败。'};
+ if(!snapshot.blockers?.length || snapshot.pending.length || snapshot.issues.length)return null;
+ return {outcome:'FAIL',checks:[],issues:[],pending:[],blockers:snapshot.blockers,
+  explanation:'已应用的TA业务失败使本Case的必需后续步骤无法执行；没有生成未来文件或修改正式数据。请核对阻断证据，人工确认失败后关联新Case重新规划。'};
+}
 export function compareCaseResults(snapshot,proposal){
+ const terminal=terminalFailureSuggestion(snapshot);if(terminal)return terminal;
  const checks=[],issues=[...proposal.uncertainties];
  for(const a of proposal.assertions){
   const scenario=(snapshot.plan.scenarios??[])[a.scenarioIndex],evidence=snapshot.evidence.find(e=>e.id===a.evidenceId);
@@ -37,6 +44,7 @@ export function compareConfirmedExpectations(snapshot) {
  if(!validPlanContract(c,snapshot.plan) || c.missing.length || c.dataSpecification.missing.length) {
   return {outcome:'REVIEW',checks,issues:['已确认Plan的结构化预期无效'],pending:snapshot.pending,explanation:'请核查Plan结构。'};
  }
+ const terminal=terminalFailureSuggestion(snapshot);
  for(const a of c.expectations) {
   const selector=a.selector;
   const account=selector.transactionAccountId ?? snapshot.preparedAccounts?.[selector.accountIndex]?.transactionAccountId;
@@ -55,6 +63,7 @@ export function compareConfirmedExpectations(snapshot) {
   const matched=numerical?(a.operator==='eq'?actual===expected:a.operator==='gte'?actual>=expected:actual<=expected):String(actualValue)===a.expectedValue;
   checks.push({...a,evidenceId:e.id,actualValue,matched,source:e.source});
  }
+ if(terminal)return {...terminal,checks,...(issues.length?{unavailableExpectations:issues}:{})};
  const outcome=snapshot.pending.length?'WAITING':issues.length?'REVIEW':checks.some(c=>!c.matched)?'FAIL':'PASS';
  return {outcome,checks,issues,pending:snapshot.pending,explanation:outcome==='PASS'?'已确认的结构化预期逐项一致，等待人工确认。':outcome==='FAIL'?'实际数据与已确认预期不符。':outcome==='WAITING'?'必需回传或同步尚未完成。':'证据缺失或不唯一，请核查。'};
 }
@@ -62,7 +71,7 @@ export function createCaseResultGraph({collect,complete}){
  const graph=new StateGraph(new StateSchema({snapshot:z.unknown().nullable().default(null),proposal:z.unknown().nullable().default(null),suggestion:z.unknown().nullable().default(null),phase:z.string().default('COLLECTING')}));
  graph.addNode('collect_case_results',async()=>({snapshot:await collect()}));
  graph.addNode('compare_case_expectations',async({snapshot})=>{
-  if(snapshot.plan.contract)return {proposal:null};
+  if(snapshot.plan.contract || terminalFailureSuggestion(snapshot))return {proposal:null};
   if(snapshot.pending.length || snapshot.issues.length)return {proposal:{assertions:[],uncertainties:snapshot.issues}};
   const input=JSON.stringify({plan:snapshot.plan,evidence:snapshot.evidence});
   if(Buffer.byteLength(input,'utf8')>128*1024)return {proposal:{assertions:[],uncertainties:['Plan或证据超过本次模型输入上限，请缩小Case范围']}};
