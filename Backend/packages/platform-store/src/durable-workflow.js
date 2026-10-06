@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { authenticateSession,storeError } from './index.js';
+import { createCaseResultRepository } from './case-result.js';
 import { exchangeOrderContext } from './exchange-order.js';
 import { SqlWorkflowSaver,createDurableWorkflowGraph,reconcileWorkflow,workflowPosition } from '../../case-agent/src/durable-workflow.js';
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -13,12 +14,12 @@ export async function workflowScope(db,token,scope) {
  if(!owner)throw storeError('CASE_NOT_FOUND',404,'Case不存在');
  return {owner,keys:[auth.workspace_id,owner.chat_id,owner.case_id]};
 }
-export async function workflowFacts(db,{owner,keys}) {
+export async function workflowFacts(db,{owner,keys},token,input) {
  const [[plan]]=await db.execute(`SELECT version_number AS version,status FROM case_sop_versions WHERE workspace_id=? AND chat_id=? AND case_id=? ORDER BY version_number DESC LIMIT 1`,keys);
  const [[section]]=await db.execute(`SELECT COUNT(*) AS n FROM case_plan_section_confirmations WHERE workspace_id=? AND chat_id=? AND case_id=? AND version_number=? AND section='DATA'`,[...keys,plan?.version??0]);
  const [[draft]]=await db.execute(`SELECT EXISTS(SELECT 1 FROM case_data_executions WHERE workspace_id=? AND chat_id=? AND case_id=?) AS hasDraft,
  EXISTS(SELECT 1 FROM case_data_confirmations WHERE workspace_id=? AND chat_id=? AND case_id=?) AS confirmed`,[...keys,...keys]);
- const [[review]]=await db.execute(`SELECT CAST(id AS CHAR) AS id,evidence_sha256 FROM case_result_reviews WHERE workspace_id=? AND chat_id=? AND case_id=? ORDER BY id DESC LIMIT 1`,keys);
+ const [[review]]=await db.execute(`SELECT CAST(id AS CHAR) AS id,evidence_sha256,plan_version,suggestion_json FROM case_result_reviews WHERE workspace_id=? AND chat_id=? AND case_id=? ORDER BY id DESC LIMIT 1`,keys);
  let order=null;
  if(plan?.status==='LOCKED')try {order=await exchangeOrderContext(db,keys,false);} catch(e) {if(e.code!=='EXCHANGE_PLAN_REQUIRED')throw e;}
  if(order) {
@@ -35,7 +36,17 @@ export async function workflowFacts(db,{owner,keys}) {
 
  }
 
- const facts={chatStatus:owner.chat_status,caseStatus:owner.case_status,plan:plan??null,dataConfirmed:Number(section.n)>0,generated:Number(draft.hasDraft)>0,draftConfirmed:Number(draft.confirmed)>0,review:review??null,order};
+ let latestReview=null;
+ if(review) {
+  latestReview={id:review.id,confirmable:false};
+  const suggestion=json(review.suggestion_json);
+  if(['PASS','FAIL'].includes(suggestion?.outcome) && owner.chat_status==='ACTIVE' && !['PASS','FAIL'].includes(owner.case_status) && plan?.status==='LOCKED' && Number(review.plan_version)===Number(plan.version)) {
+   const current=await createCaseResultRepository({transaction:action=>action(db)}).snapshot(token,input);
+   latestReview.confirmable=current.sha256===review.evidence_sha256 && !current.pending.length && !current.issues.length;
+   latestReview.currentEvidenceHash=current.sha256;
+  }
+ }
+ const facts={chatStatus:owner.chat_status,caseStatus:owner.case_status,plan:plan??null,dataConfirmed:Number(section.n)>0,generated:Number(draft.hasDraft)>0,draftConfirmed:Number(draft.confirmed)>0,review:latestReview,order};
  facts.revision=crypto.createHash('sha256').update(JSON.stringify(facts)).digest('hex');return facts;
 }
 export function createDurableWorkflowRepository({pool,lockTimeout=5}) {
@@ -57,7 +68,7 @@ export function createDurableWorkflowRepository({pool,lockTimeout=5}) {
     }
    }
    const [[row]]=await db.execute(`SELECT saver_blob FROM case_workflow_checkpoints WHERE workspace_id=? AND chat_id=? AND case_id=?`,scope.keys);
-   const facts=await workflowFacts(db,scope);
+   const facts=await workflowFacts(db,scope,token,input);
    if(event && facts.chatStatus!=='ACTIVE')throw storeError('CHAT_CLOSED',409,'Chat已结束，仅可读取工作流');
    const saver=new SqlWorkflowSaver(db,scope.keys,row?.saver_blob);
    const graph=createDurableWorkflowGraph({checkpointer:saver,readFacts:async()=>facts});

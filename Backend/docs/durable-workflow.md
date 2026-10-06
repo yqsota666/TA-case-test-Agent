@@ -15,3 +15,9 @@ GET `/api/chats/:chat/cases/:case/workflow` 认证后对账并返回 `{stage,wai
 02/04已实际应用且全部相关申请为CONFIRMED或FAILED时，该接收步骤完成；失败不满足后续要求CONFIRMED的成功依赖。05完成来自独立解析记录的applied_at，而非伪造TA成功事件。若剩余步骤都依赖未取得的成功确认，FILE_EXCHANGE的waiting为空，需要人工处理失败或新建Case重规划。
 
 验证：191常规测试通过，5个MySQL选测默认跳过；单独真实MySQL测试覆盖新库/复跑、图服务重建、同UUID双实例恢复、checkpoint与事件写入中途失败回滚、锁竞争超时和恢复、双确认→草稿→文件等待、跨workspace/chat隔离、过期会话、关闭后只读。使用可删除独立数据库，不写运行业务库。
+
+阶段只由required步骤阻挡。必需步骤完成后，未上传的可选05不阻止结果评估；合法可操作的可选步骤单独返回optionalActions，未满足依赖不提供操作。DRAFT旧Plan始终回到讨论/重新提案；只有PENDING_CONFIRMATION进入两段确认。
+
+结果确认阶段要求最新建议为PASS/FAIL，并在相同事务复用结果仓储重新收集当前完整证据：Plan版本、证据SHA必须一致，无pending/issues。旧证据、WAITING或REVIEW建议都返回EVALUATE_RESULT，不能以“有一条review”推断可确认。业务最终确认仍独立再次检查证据，防止读取之后发生变化。
+
+补充验证：193常规测试通过；独立MySQL增加仅可选05未上传仍进入评估、当前PASS建议可确认、证据定义变化后退回评估、最新REVIEW不可确认。合成review元数据仅用于状态协调测试，不声称模型或业务判定验收。

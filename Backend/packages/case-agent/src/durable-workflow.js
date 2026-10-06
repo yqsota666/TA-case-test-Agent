@@ -4,19 +4,21 @@ import { z } from 'zod';
 export function workflowPosition(facts) {
   if (facts.chatStatus !== 'ACTIVE') return { stage:'CHAT_CLOSED', waiting:[] };
   if (['PASS','FAIL'].includes(facts.caseStatus)) return {stage:'CASE_FINAL', waiting:[]};
-  if (!facts.plan) return {stage:'DISCUSSION', waiting:['DISCUSS','PROPOSE_PLAN']};
+  if (!facts.plan || facts.plan.status==='DRAFT') return {stage:'DISCUSSION', waiting:['DISCUSS','PROPOSE_PLAN']};
   if (facts.plan.status !== 'LOCKED') return {stage:facts.dataConfirmed ? 'CONFIRM_EXPECTATIONS':'CONFIRM_PLAN_DATA', waiting:['PLAN_CONFIRM','DISCUSS']};
   if (!facts.generated) return {stage:'PREPARE_DATA',waiting:['DATA_EXECUTE']};
   if (!facts.draftConfirmed) return {stage:'CONFIRM_DRAFT',waiting:['DATA_CONFIRM']};
   if (!facts.order) return {stage:'DEFINE_EXCHANGE_ORDER',waiting:['EXCHANGE_PLAN_CONFIRM']};
   const completed = (id,condition) => facts.order.events.some(e=>e.stepId===id && e.condition===condition);
   const outstanding = facts.order.plan.steps.filter(s=>!(s.direction==='SEND'?completed(s.stepId,'SENT'):(completed(s.stepId,'CONFIRMED') || completed(s.stepId,'APPLIED'))));
-  if (outstanding.length) {
+  if (outstanding.some(s=>s.required!==false)) {
     const waiting = outstanding.filter(s=>s.dependsOn.every(d=>completed(d.stepId,d.condition))).map(s=>({stepId:s.stepId,fileType:s.fileType,
       action:s.direction==='SEND'?'GENERATE_AND_DELIVER':completed(s.stepId,'PARSED')?'APPLY_RETURN':'UPLOAD_AND_PARSE'}));
     return {stage:'FILE_EXCHANGE',waiting};
   }
-  return {stage:facts.review ? 'CONFIRM_RESULT':'EVALUATE_RESULT',waiting:[facts.review?'RESULT_CONFIRM':'RESULT_EVALUATE']};
+  const optionalActions=outstanding.filter(s=>s.required===false && s.dependsOn.every(d=>completed(d.stepId,d.condition))).map(s=>({stepId:s.stepId,fileType:s.fileType,action:s.direction==='SEND'?'GENERATE_AND_DELIVER':completed(s.stepId,'PARSED')?'APPLY_RETURN':'UPLOAD_AND_PARSE'}));
+  const confirmable=facts.review?.confirmable===true;
+  return {stage:confirmable ? 'CONFIRM_RESULT':'EVALUATE_RESULT',waiting:[confirmable?'RESULT_CONFIRM':'RESULT_EVALUATE'],optionalActions};
 }
 
 // The graph observes committed business facts. Replayed interrupt nodes cannot

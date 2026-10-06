@@ -16,7 +16,7 @@ test('native interrupt resumes durable facts after graph recreation; external in
  assert.equal((await reconcileWorkflow(graph,config)).stage,'CONFIRM_PLAN_DATA');
  facts={...facts,dataConfirmed:true,revision:'3'};
  assert.equal((await reconcileWorkflow(graph,config)).stage,'CONFIRM_EXPECTATIONS');
- facts={...facts,plan:{status:'LOCKED'},generated:true,draftConfirmed:true,order:{plan:{steps:[]},events:[]},review:{id:'1'},revision:'4'};
+ facts={...facts,plan:{status:'LOCKED'},generated:true,draftConfirmed:true,order:{plan:{steps:[]},events:[]},review:{id:'1',confirmable:true},revision:'4'};
  assert.equal((await reconcileWorkflow(graph,config)).stage,'CONFIRM_RESULT');
  facts={...facts,caseStatus:'PASS',revision:'5'};assert.equal((await reconcileWorkflow(graph,config)).interrupted,false);
 });
@@ -42,4 +42,23 @@ test('failed receipt finishes its own step without satisfying a downstream succe
  assert.equal(workflowPosition(facts).stage,'EVALUATE_RESULT');
  facts.order.plan.steps.push({stepId:'buy',fileType:'03',direction:'SEND',dependsOn:[{stepId:'account',condition:'CONFIRMED'}]});
  assert.deepEqual(workflowPosition(facts).waiting,[]);
+});
+
+test('mandatory exchange completed resumes evaluation with optional 05 available only when dependencies hold',async()=>{
+ let facts={...base,plan:{status:'LOCKED'},generated:true,draftConfirmed:true,order:{plan:{steps:[
+  {stepId:'trade',fileType:'04',direction:'RECEIVE',required:true,dependsOn:[]},
+  {stepId:'optional',fileType:'05',direction:'RECEIVE',required:false,dependsOn:[{stepId:'trade',condition:'CONFIRMED'}]}
+ ]},events:[]}};
+ const graph=createDurableWorkflowGraph({checkpointer:new MemorySaver(),readFacts:async()=>facts});const config={configurable:{thread_id:'optional',checkpoint_ns:''}};
+ let state=await reconcileWorkflow(graph,config);assert.deepEqual(state.waiting.map(s=>s.fileType),['04']);
+ facts={...facts,revision:'2',order:{...facts.order,events:[{stepId:'trade',condition:'CONFIRMED'}]}};
+ state=await reconcileWorkflow(graph,config);assert.equal(state.stage,'EVALUATE_RESULT');assert.equal(state.optionalActions[0].fileType,'05');
+ facts.order.plan.steps[1].dependsOn=[{stepId:'absent',condition:'CONFIRMED'}];facts.revision='3';
+ state=await reconcileWorkflow(graph,config);assert.equal(state.stage,'EVALUATE_RESULT');assert.deepEqual(state.optionalActions,[]);
+});
+test('only current confirmable PASS/FAIL review permits manual final; DRAFT proposal requires new discussion',()=>{
+ const facts={...base,plan:{status:'LOCKED'},generated:true,draftConfirmed:true,order:{plan:{steps:[]},events:[]}};
+ for(const review of [null,{id:'1',confirmable:false}])assert.equal(workflowPosition({...facts,review}).stage,'EVALUATE_RESULT');
+ assert.equal(workflowPosition({...facts,review:{id:'2',confirmable:true}}).stage,'CONFIRM_RESULT');
+ assert.equal(workflowPosition({...facts,plan:{status:'DRAFT'},dataConfirmed:true}).stage,'DISCUSSION');
 });

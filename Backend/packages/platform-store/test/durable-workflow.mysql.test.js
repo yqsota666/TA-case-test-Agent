@@ -7,6 +7,7 @@ import {planContract} from '../../case-agent/test/plan-contract-fixture.js';
 import {exchangePlan} from '../../case-agent/test/exchange-plan-fixture.js';
 import {createDataGenerationGraph} from '../../case-agent/src/data-generation.js';
 import {createCaseRepository,sessionTokenHash} from '../src/index.js';
+import {createCaseResultRepository} from '../src/case-result.js';
 import {createDurableWorkflowRepository,workflowScope} from '../src/durable-workflow.js';
 
 test('MySQL durable workflow: restart, multi-instance event replay, rollback, isolation, expiry and lock timeout',
@@ -48,6 +49,20 @@ test('MySQL durable workflow: restart, multi-instance event replay, rollback, is
  assert.equal((await repo.read(token,scope)).stage,'CONFIRM_DRAFT');
  await business.confirmGeneratedData(...args,0);const exchange=await restarted.read(token,scope);assert.equal(exchange.stage,'FILE_EXCHANGE');assert.equal(exchange.waiting[0].fileType,'03');
 
+ const evidenceCase=await business.createCase(token,chat.publicId,'可选05及证据过期合成测试');
+ const evidenceScope={chatPublicId:chat.publicId,casePublicId:evidenceCase.publicId},evidenceArgs=[token,chat.publicId,evidenceCase.publicId];
+ const optionalPlan={objective:'独立05可选测试',preconditions:[],scenarios:[{title:'账户',setup:'已有账户',action:'只读核查',expected:'网点306',evidence:'正式账户'}],openQuestions:[],exchangePlan:{status:'READY',openQuestions:[],steps:[{stepId:'optional05',roundId:'optionalRound',direction:'RECEIVE',fileType:'05',businessTime:{kind:'DATE',value:'20261006'},required:false,dependsOn:[]}]}};
+ optionalPlan.contract=planContract(optionalPlan);optionalPlan.contract.expectations=[{scenarioIndex:0,expectedQuote:'网点306',source:'FORMAL_ACCOUNT',selector:{accountIndex:null,transactionAccountId:'90000000000000001',channelId:null,fundCode:null,shareClass:null,fileType:null,businessDate:null},field:'branchCode',operator:'eq',expectedValue:'306'}];
+ await business.saveSopProposal(...evidenceArgs,optionalPlan);await business.confirmSopProposal(...evidenceArgs,1,'DATA');await business.confirmSopProposal(...evidenceArgs,1,'EXPECTATIONS');
+ await business.executeGeneratedData(...evidenceArgs,1,optionalPlan.contract.dataSpecification,(db,scope,specification)=>createDataGenerationGraph({db,scope,specification}).invoke({}));await business.confirmGeneratedData(...evidenceArgs,0);
+ let evidenceState=await repo.read(token,evidenceScope);assert.equal(evidenceState.stage,'EVALUATE_RESULT');assert.equal(evidenceState.optionalActions[0].fileType,'05');
+ const resultsRepo=createCaseResultRepository({transaction});let snapshot=await resultsRepo.snapshot(token,evidenceScope);
+ // Synthetic review metadata tests workflow freshness; this is not a model verdict or business acceptance.
+ await resultsRepo.save(token,evidenceScope,{snapshot,phase:'AWAITING_CONFIRMATION',suggestion:{outcome:'PASS'}});
+ assert.equal((await repo.read(token,evidenceScope)).stage,'CONFIRM_RESULT');
+ await pool.execute("UPDATE case_sop_versions v JOIN cases k ON k.workspace_id=v.workspace_id AND k.chat_id=v.chat_id AND k.id=v.case_id SET v.plan_json=JSON_SET(v.plan_json,'$.preconditions',JSON_ARRAY('合成规则变更')) WHERE k.public_id=?",[evidenceCase.publicId]);
+ assert.equal((await restarted.read(token,evidenceScope)).stage,'EVALUATE_RESULT');
+ snapshot=await resultsRepo.snapshot(token,evidenceScope);await resultsRepo.save(token,evidenceScope,{snapshot,phase:'AWAITING_CONFIRMATION',suggestion:{outcome:'REVIEW'}});assert.equal((await repo.read(token,evidenceScope)).stage,'EVALUATE_RESULT');
  const lockDb=await pool.getConnection();
  try {
  const {keys}=await workflowScope(lockDb,token,scope);const name='case-workflow:'+crypto.createHash('sha256').update(keys.join(':')).digest('hex').slice(0,48);
