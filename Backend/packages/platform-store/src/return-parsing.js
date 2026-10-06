@@ -31,7 +31,7 @@ export function createReturnParsingRepository({ transaction }) {
       JOIN exchange_files f ON f.workspace_id=b.workspace_id AND f.chat_id=b.chat_id
         AND f.batch_id=b.id AND f.direction='OUTBOUND' AND f.file_type=a.file_type
       JOIN exchange_channels h ON h.workspace_id=b.workspace_id AND h.id=b.channel_id
-      WHERE a.workspace_id=? AND a.chat_id=? AND a.case_id=? ORDER BY b.id,f.file_type,f.file_name`, keys);
+      WHERE a.workspace_id=? AND a.chat_id=? AND a.case_id=? ORDER BY b.id,f.file_type,f.file_name${write ? ' FOR UPDATE' : ''}`, keys);
     const targets = [];
     for (const row of rows) {
       const expectedType = row.file_type === '01' ? '02' : '04';
@@ -64,12 +64,20 @@ export function createReturnParsingRepository({ transaction }) {
     if (!uuid.test(input.batchPublicId ?? '') || !['02', '04'].includes(input.expectedType)) {
       throw storeError('INVALID_INPUT', 400, '批次或回传类型无效');
     }
+    const target = await transaction(async db => {
+      const { targets } = await context(db, token, input);
+      return targets.find(item => item.batchPublicId === input.batchPublicId && item.expectedType === input.expectedType);
+    });
+    if (!target) throw storeError('RETURN_NOT_EXPECTED', 409, '当前 Case 尚未生成对应的 01 或 03 文件');
+    const state = await runGraph(target);
+    const { rawFiles, result } = state.parsed;
     return transaction(async db => {
       const { auth, keys, targets } = await context(db, token, input, true);
-      const target = targets.find(item => item.batchPublicId === input.batchPublicId && item.expectedType === input.expectedType);
-      if (!target) throw storeError('RETURN_NOT_EXPECTED', 409, '当前 Case 尚未生成对应的 01 或 03 文件');
-      const state = await runGraph(target);
-      const { rawFiles, result } = state.parsed;
+      const current = targets.find(item => item.batchPublicId === input.batchPublicId && item.expectedType === input.expectedType);
+      if (!current) throw storeError('RETURN_NOT_EXPECTED', 409, '当前 Case 尚未生成对应的 01 或 03 文件');
+      if (current.batchId !== target.batchId || JSON.stringify(current.channel) !== JSON.stringify(target.channel)) {
+        throw storeError('RETURN_CONTEXT_CHANGED', 409, '回传通道已变化，请重新上传');
+      }
       const [[prior]] = await db.execute(`SELECT id,parsed_json FROM case_return_parses
         WHERE workspace_id=? AND chat_id=? AND case_id=? AND batch_id=? AND expected_type=? AND content_sha256=? FOR UPDATE`,
       [...keys, target.batchId, input.expectedType, result.sha256]);

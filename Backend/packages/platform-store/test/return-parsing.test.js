@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createReturnParsingRepository } from '../src/return-parsing.js';
 import { createReturnParsingService } from '../../case-api/src/return-parsing.js';
-import { buildDataFile } from '../../platform-protocol/src/index.js';
+import { buildDataFile, parseReturnFiles } from '../../platform-protocol/src/index.js';
 const scope = { chatPublicId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', casePublicId: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb' };
 const batchPublicId = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
 const token = 'a'.repeat(43);
@@ -32,8 +32,12 @@ function fixture({ owner = { chat_id: 41, case_id: 51, chat_status: 'ACTIVE', ca
     }
     throw new Error('Unexpected SQL: ' + sql);
   } };
-  const repo = createReturnParsingRepository({ transaction: action => action(db) });
-  return { calls, repo, service: createReturnParsingService({ repository: repo }) };
+  let transactionOpen = false;
+  const repo = createReturnParsingRepository({ transaction: async action => {
+    transactionOpen = true;
+    try { return await action(db); } finally { transactionOpen = false; }
+  } });
+  return { calls, repo, isTransactionOpen: () => transactionOpen, service: createReturnParsingService({ repository: repo }) };
 }
 
 test('direct03 creates only a wait04 path; a different Case cannot read the target', async () => {
@@ -59,7 +63,20 @@ test('parsing stores raw bytes and complete result but never modifies applicatio
   assert.deepEqual(writes[0].values.slice(0, 5), [31, 41, 51, '61', '04']);
   assert.equal(writes[0].values.at(-1), 7);
   assert.deepEqual(writes[1].values.at(-1), Buffer.from(input('04').files[0].base64, 'base64'));
-  assert.match(f.calls.find(c => c.sql.includes('FROM case_chats c')).sql, /FOR UPDATE/);
+  assert.match(f.calls.filter(c => c.sql.includes('FROM case_chats c')).at(-1).sql, /FOR UPDATE/);
+});
+
+test('CPU parsing holds no transaction; a Case closed during parsing cannot persist the result', async () => {
+  const owner = { chat_id: 41, case_id: 51, chat_status: 'ACTIVE', case_status: 'EXECUTING' };
+  const f = fixture({ owner });
+  const request = input('04');
+  await assert.rejects(f.repo.parse(token, request, async target => {
+    assert.equal(f.isTransactionOpen(), false);
+    const parsed = parseReturnFiles(request.files, { expectedType: '04', channel: target.channel });
+    owner.chat_status = 'CLOSED';
+    return { parsed, phase: 'PARSED' };
+  }), { code: 'CASE_NOT_WRITABLE' });
+  assert.ok(!f.calls.some(call => call.sql.startsWith('INSERT')));
 });
 
 test('replay deduplicates only the scoped parse; read restores persisted results after service recreation', async () => {
