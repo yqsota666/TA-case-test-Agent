@@ -129,3 +129,10 @@ TotalVolOfDistributorInTA是余额，WholeFlag=0增量传输也按该账户基�
 - POST 同路径 `/confirm`，请求 `{reviewId,verdict:"PASS"或"FAIL",reason}`：人工核对完整断言后确认最新版本。WAITING/REVIEW返回409 RESULT_NOT_READY；证据变化409 CASE_RESULT_CHANGED；旧版本409 REVIEW_SUPERSEDED；其他结论覆盖409 VERDICT_CONFLICT。401会话无效，404非本Workspace/Chat的Case或不存在记录，400输入无效，403Origin无效。
 
 迁移017保存Plan版本、证据摘要与完整快照、建议、人工最终结论/说明/确认人/时间。AI建议不会改变销售数据或Case最终状态；最终确认才把Case状态设为PASS/FAIL。重复同一最终确认幂等。当前自由文本预期由模型解释为原文引用和字面值断言；引用不可信、证据不足、模型格式无效等为REVIEW，缺少必需回传或应用为WAITING。后端精确比较数量金额，不信任模型给出的PASS。自然语言完整语义覆盖仍需人工核对，不宣称Plan严格结构补丁已经完成。正式持仓是本次收集时引用账户的当前读数，证据明确标注来源，不能当作原TA文件的某行值。
+
+
+### 本地Plan严格结构补丁
+
+新提案展示contract（V2.2准备数据、固定01/001与03/022申请字段、业务假设、结构化结果断言）。POST Case `/plan/confirm`必须提交 `{versionNumber,section:"DATA"}` 再 `{versionNumber,section:"EXPECTATIONS"}`，第二次确认才锁定并写草稿。GET Plan返回对应版本confirmations。执行重试使用保存数据；新严格Plan的草稿/申请业务字段冻结，修改需新Case；旧已锁定Plan保留兼容，旧待确认Plan需重新提案。
+
+错误包括PLAN_DATA_CONFIRMATION_REQUIRED、PLAN_CONTRACT_REQUIRED、PLAN_DATA_MISMATCH、PLAN_DATA_FROZEN、PLAN_PROTOCOL_UNSUPPORTED。结果核对消费已确认断言，证据缺失/多义要求核查；最终结论仍需人工确认。迁移018新增两处人工确认审计表。本地Frontend展示与测试，不纳入后端PR。

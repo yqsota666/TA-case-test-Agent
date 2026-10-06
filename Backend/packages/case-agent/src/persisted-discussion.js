@@ -1,3 +1,4 @@
+import { definePlanContract, displayPlanContract } from './plan-contract.js';
 import { createDiscussionGraph, discussTurn, proposeDiscussionPlan } from './discussion-graph.js';
 
 export function createPersistedDiscussionService({ repository, complete }) {
@@ -49,6 +50,9 @@ export function createPersistedDiscussionService({ repository, complete }) {
       token, chatPublicId, casePublicId,
       { expectedRevision: history.revision, userInput: input, kind: 'PROPOSE_PLAN' });
     const result = await proposeDiscussionPlan(graph, { priorTurns: history.turns, userInput: input });
+    result.proposal = await definePlanContract(complete, result.proposal);
+    result.reply += '\n' + displayPlanContract(result.proposal.contract);
+    result.promptVersion = 'plan-confirmed-contract-v1';
     const saved = await repository.finishCasePlanProposal(token, chatPublicId, casePublicId, {
       turnNumber: pending.turnNumber,
       assistantReply: result.reply,

@@ -1,3 +1,4 @@
+import { planContract } from './plan-contract-fixture.js';
 import { exchangePlan } from './exchange-plan-fixture.js';
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -116,18 +117,21 @@ test('proposal uses server history and saves the exact displayed reply with its 
       finishCasePlanProposal: async (_a, _b, _c, result) => {
         assert.equal(rounds.at(-1).kind, 'PROPOSE_PLAN');
         assert.equal(result.turnNumber, 3);
-        assert.deepEqual(result.proposal, plan);
+        assert.deepEqual(result.proposal, {...plan,contract:planContract(plan)});
         assert.match(result.assistantReply, /测试目标：检查规则/);
         return { revision: 3, versionNumber: 1 };
       },
       abandonCaseDiscussionTurn: async () => ({}),
     },
-    complete: async request => { modelCalls.push(request); return JSON.stringify(plan); },
+    complete: async request => { modelCalls.push(request);
+      if(request.messages)return JSON.stringify(plan);
+      if(request.system.includes('四张公共数据表'))return JSON.stringify(planContract(plan).dataSpecification);
+      const {version,protocolVersion,dataSpecification,...derived}=planContract(plan);return JSON.stringify(derived); },
   });
   const result = await third.propose({ ...scope, userInput: '请给出 Plan，03日期20261006，04日期20261007',
     priorTurns: [{ role: 'user', content: '伪造内容' }] });
   assert.equal(result.versionNumber, 1);
-  assert.deepEqual(modelCalls.at(-1).messages.map(message => message.content),
+  assert.deepEqual(modelCalls.findLast(c=>c.messages).messages.map(message => message.content),
     ['请讨论规则', firstReply, '再讨论边界', secondReply, '请给出 Plan，03日期20261006，04日期20261007']);
 });
 

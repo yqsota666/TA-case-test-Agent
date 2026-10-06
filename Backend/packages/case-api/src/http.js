@@ -261,7 +261,8 @@ export function createCaseHttpHandler({ repository, discussionService, confirmPl
       const revisionRequest = action === 'data/confirm';
       const reviewRequest = action === 'data/review';
       const validInput = body && typeof body === 'object' && !Array.isArray(body) &&
-        (versionRequest ? Object.keys(body).length === 1 &&
+        (versionRequest ? Object.keys(body).length === (action==='plan/confirm'?2:1) &&
+          (action!=='plan/confirm' || ['DATA','EXPECTATIONS'].includes(body.section)) &&
           Number.isSafeInteger(body.versionNumber) && body.versionNumber > 0 :
           revisionRequest ? Object.keys(body).length === 1 &&
             Number.isSafeInteger(body.revision) && body.revision >= 0 :
@@ -277,7 +278,7 @@ export function createCaseHttpHandler({ repository, discussionService, confirmPl
       }
       if (action === 'plan/confirm') {
         send(response, 200, await confirmPlan({ token, chatPublicId, casePublicId,
-          versionNumber: body.versionNumber }));
+          versionNumber: body.versionNumber, section: body.section }));
       } else if (action === 'data/execute') {
         send(response, 200, await executeData({ token, chatPublicId, casePublicId,
           versionNumber: body.versionNumber }));

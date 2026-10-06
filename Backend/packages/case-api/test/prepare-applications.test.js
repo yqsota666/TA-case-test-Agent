@@ -12,14 +12,14 @@ const trade = { ...opening, key: 'trade1', fileType: '03', businessCode: '022', 
 const input = { token: 'session', chatPublicId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
   casePublicId: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb' };
 function fixture({ intents = [opening, trade], confirmed = true, failOnce = false, fileError = null,
-  mysqlJsonOrder = false, reply = '按方案准备', channels = [{ id: '7', distributorCode: '306', protocolVersion: '22' }] } = {}) {
+  strictPlan=null, mysqlJsonOrder = false, reply = '按方案准备', channels = [{ id: '7', distributorCode: '306', protocolVersion: '22' }] } = {}) {
   let saved = { phase: 'NOT_STARTED', revision: 0, intents: [], turns: [], stagedKeys: [], files: [] };
   const applications = [], files = [], bindings = [], calls = [];
   const repository = { generatedData: async () => ({ reviewStatus: confirmed ? 'CONFIRMED' : 'PENDING_REVIEW',
     planVersionId: '5', customers: [{ id: '1', name: '测试客户', investor_type: '1' }],
     accounts: [{ id: '2', customer_id: '1', account_no: 'TESTACCOUNT1', branch_code: '306' }],
     funds: [{ id: '3', fund_code: '000001', share_class: 'A' }], holdings: [] }),
-  getLatestSopProposal: async () => ({ status: 'LOCKED', proposal: { objective: '开户后申购' } }) };
+  getLatestSopProposal: async () => ({ status: 'LOCKED', proposal: strictPlan ?? { objective: '开户后申购' } }) };
   const preparations = { read: async () => structuredClone(saved), save: async (token, args) => {
     assert.equal(args.revision, saved.revision);
     saved = { ...boundPreparationHistory(structuredClone(args.state)), revision: saved.revision + 1 };
@@ -213,4 +213,19 @@ test('file sequence exhaustion persists an operational recovery state and retrie
   assert.doesNotMatch(recovered.reply, /文件序号已用尽/);
   assert.equal(f.files.length, 1); assert.equal(f.applications.length, 1);
   assert.equal(f.calls.filter(call => call[0] === 'derive').length, 1);
+});
+
+
+test('strict Plan generates only locked application material without model reinterpretation',async()=>{
+ const steps=[{stepId:'open',fileType:'01',businessTime:{kind:'DATE',value:'20261005'}},{stepId:'buy',fileType:'03',businessTime:{kind:'DATE',value:'20261005'}}];
+ const strictPlan={exchangePlan:{steps},contract:{protocolVersion:'22',dataSpecification:{funds:[{fundCode:'000001',shareClass:'A'}]},applications:[
+  {key:'open',stepId:'open',businessCode:'001',accountIndex:0,transactionAccountId:null,fundIndex:null,fields:opening.fields},
+  {key:'buy',stepId:'buy',businessCode:'022',accountIndex:0,transactionAccountId:null,fundIndex:0,fields:{...trade.fields,ApplicationAmount:'350.00'}}]}};
+ const f=fixture({strictPlan});
+ const first=await f.service.prepare(input);assert.equal(first.phase,'WAITING_TA');
+ f.bindings.push({channelId:'7',transactionAccountId:'TESTACCOUNT1',taAccountId:'TA000001'});
+ const result=await f.service.prepare(input);assert.equal(result.phase,'GENERATED');
+ assert.equal(result.intents.find(i=>i.key==='buy').fields.ApplicationAmount,'350.00');
+ assert.equal(f.calls.some(c=>c[0]==='derive'),false);
+ await assert.rejects(f.service.prepare({...input,userInput:'把金额改成900元'}),{code:'PLAN_DATA_FROZEN'});
 });

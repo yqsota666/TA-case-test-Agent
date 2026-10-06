@@ -174,7 +174,7 @@ test('a Plan can be proposed, reviewed, and explicitly confirmed by version', as
   const read = await fetch(base + planRoute, { headers });
   assert.equal((await read.json()).status, 'PENDING_CONFIRMATION');
   const confirmed = await fetch(base + planRoute + '/confirm', { method: 'POST', headers,
-    body: JSON.stringify({ versionNumber: 1 }) });
+    body: JSON.stringify({ versionNumber: 1,section:'EXPECTATIONS' }) });
   assert.equal((await confirmed.json()).phase, 'SOP_LOCKED');
   assert.deepEqual(calls.map(call => call[0]), ['propose', 'plan', 'confirm']);
   assert.equal(calls[2][1].versionNumber, 1);
@@ -369,4 +369,14 @@ test('result-review endpoints require authentication, origin and exact bodies',a
   assert.equal((await fetch(base+path+'/'+action,{method:'POST',headers:{...headers,origin:'https://foreign.example'},body:JSON.stringify(body)})).status,403);
   assert.equal((await fetch(base+path+'/'+action,{method:'POST',headers,body:JSON.stringify({...body,workspaceId:'99'})})).status,400);
  }
+});
+
+test('Plan confirmation requires an explicit data or expectation section and rejects legacy one-click payloads',async t=>{
+ const {base,calls}=await fixture(t);
+ const headers={cookie:'case_session=abcdefghijklmnopqrstuvwxyz012345',origin:allowedOrigin,'content-type':'application/json'};
+ for(const body of [{versionNumber:1},{versionNumber:1,section:'ALL'},{versionNumber:1,section:'DATA',confirmed:true}]){
+  const r=await fetch(base+planRoute+'/confirm',{method:'POST',headers,body:JSON.stringify(body)});assert.equal(r.status,400);
+ }
+ assert.equal(calls.length,0);
+ const r=await fetch(base+planRoute+'/confirm',{method:'POST',headers,body:JSON.stringify({versionNumber:1,section:'DATA'})});assert.equal(r.status,200);assert.equal(calls[0][1].section,'DATA');
 });

@@ -11,7 +11,7 @@ export function createApplicationPreparationService({ repository, preparations, 
       repository.getLatestSopProposal(token, chatPublicId, casePublicId),
       exchangeRepository.listChannels(token), exchangeRepository.listCaseBindings(token, scope),
     ]);
-    const data = confirmedSales ? await confirmedSales.applicationData(token, scope, draftData) : draftData;
+    let data = confirmedSales ? await confirmedSales.applicationData(token, scope, draftData) : draftData;
     if (data.reviewStatus !== 'CONFIRMED' || plan?.status !== 'LOCKED') {
       throw error('DATA_NOT_CONFIRMED', '须先确认 Plan 和当前 Case 的四张数据表');
     }
@@ -29,19 +29,42 @@ export function createApplicationPreparationService({ repository, preparations, 
         phase: 'NEEDS_INPUT', reply: '请先选择这份申请使用的交换通道。', questions: ['请选择交换通道'],
       } });
     }
+    if(plan.proposal.contract && channel.protocolVersion!==plan.proposal.contract.protocolVersion) {
+      throw error('PLAN_PROTOCOL_UNSUPPORTED','当前严格Plan限定V2.2通道，请选择匹配通道');
+    }
     if (previous.stagedKeys.length && previous.channelId !== channelId) {
       throw error('APPLICATION_ALREADY_STAGED', '已有申请进入原通道，不能切换通道');
     }
     userInput = [previous.pendingUserInput, userInput].filter(Boolean).join('\n');
     const recovering = ['PREPARING', 'WAITING_OPERATION', 'WAITING_TA'].includes(previous.phase) && previous.intents.length && !userInput;
     const history = boundPreparationHistory(previous);
-    const suggestion = recovering ?
+    if(plan.proposal.contract && data!==draftData){
+      data={...data,customers:[...draftData.customers,...data.customers],accounts:[...draftData.accounts.filter(a=>!data.accounts.some(r=>r.account_no===a.account_no)),...data.accounts]};
+    }
+    let confirmedSuggestion;
+    if(plan.proposal.contract){
+      if(userInput)throw error('PLAN_DATA_FROZEN','申请数据已在Plan中锁定；修改业务内容请新建Case重新确认');
+      const intents=plan.proposal.contract.applications.map(a=>{
+        const step=plan.proposal.exchangePlan.steps.find(s=>s.stepId===a.stepId);
+        const accountNo=a.transactionAccountId ?? draftData.accounts[a.accountIndex]?.account_no;
+        const account=data.accounts.find(r=>r.account_no===accountNo);
+        if(!account)throw error('PLAN_ACCOUNT_REQUIRED','请先选择Plan指定的已有正式账户');
+        const fund=a.fundIndex===null?null:plan.proposal.contract.dataSpecification.funds[a.fundIndex];
+        const actualFund=fund && data.funds.find(r=>r.fund_code===fund.fundCode && r.share_class===fund.shareClass);
+        if(fund && !actualFund)throw error('PLAN_DATA_MISMATCH','Plan指定基金不在准备数据中');
+        return {key:a.key,fileType:step.fileType,businessCode:a.businessCode,accountId:String(account.id),
+          targetAccountId:null,fundId:actualFund?String(actualFund.id):null,targetFundId:null,
+          businessDate:step.businessTime.value,fields:a.fields};
+      });
+      confirmedSuggestion={intents,reply:'按已确认Plan的申请数据生成文件。',questions:[]};
+    }
+    const suggestion = confirmedSuggestion ?? (recovering ?
       { intents: previous.intents, reply: previous.resumeReply ?? previous.reply, questions: previous.modelQuestions ?? [] } :
       await derive({ plan: plan.proposal,
         data: { customers: data.customers, accounts: data.accounts, funds: data.funds, holdings: data.holdings },
         channel, bindings: bindingResult.bindings, catalog: preparationCatalog(channel.protocolVersion),
         previous: { intents: previous.intents, stagedKeys: previous.stagedKeys,
-          turns: history.turns, turnsOmitted: history.turnsOmitted ?? 0 }, userInput });
+          turns: history.turns, turnsOmitted: history.turnsOmitted ?? 0 }, userInput }));
     for (const key of previous.stagedKeys) {
       const before = previous.intents.find(item => item.key === key);
       const after = suggestion.intents.find(item => item.key === key);

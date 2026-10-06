@@ -1,3 +1,5 @@
+import { isDeepStrictEqual } from 'node:util';
+import { validPlanContract } from '../../platform-protocol/src/plan-contract.js';
 import crypto from 'node:crypto';
 import { validExchangePlan } from '../../platform-protocol/src/exchange-plan.js';
 
@@ -34,6 +36,10 @@ function hasExactKeys(value, keys) {
 }
 
 function validSopPlan(plan) {
+  if (plan && Object.hasOwn(plan, 'contract')) {
+    const { contract, ...base } = plan;
+    return validSopPlan(base) && validPlanContract(contract, base);
+  }
   return (hasExactKeys(plan, ['objective', 'preconditions', 'scenarios', 'openQuestions']) ||
       (hasExactKeys(plan, ['objective', 'preconditions', 'scenarios', 'openQuestions', 'exchangePlan']) && validExchangePlan(plan.exchangePlan))) &&
     validPlanText(plan.objective) &&
@@ -193,13 +199,16 @@ export function createCaseRepository({ transaction }) {
         ORDER BY version_number DESC LIMIT 1`,
       [auth.workspace_id, chat.id, caseRow.id]);
       if (!latest) return null;
-      return { versionNumber: latest.version_number, status: latest.status,
+      const [confirmations] = await db.execute(`SELECT section,confirmed_at AS confirmedAt FROM case_plan_section_confirmations
+        WHERE workspace_id=? AND chat_id=? AND case_id=? AND version_number=? ORDER BY section`,
+      [auth.workspace_id,chat.id,caseRow.id,latest.version_number]);
+      return { confirmations, versionNumber: latest.version_number, status: latest.status,
         proposal: typeof latest.plan_json === 'string' ? JSON.parse(latest.plan_json) : latest.plan_json,
         lockedAt: latest.locked_at, sourceTurnNumber: latest.source_turn_number };
     });
   }
 
-  async function confirmSopProposal(token, chatPublicId, casePublicId, versionNumber) {
+  async function confirmSopProposal(token, chatPublicId, casePublicId, versionNumber, section) {
     chatPublicId = requiredUuid(chatPublicId, 'Chat');
     casePublicId = requiredUuid(casePublicId, 'Case');
     if (!Number.isSafeInteger(versionNumber) || versionNumber < 1) {
@@ -235,6 +244,25 @@ export function createCaseRepository({ transaction }) {
       if (plan.openQuestions.length) {
         throw storeError('PLAN_HAS_OPEN_QUESTIONS', 409, '请先解决 Plan 中的待确认事项');
       }
+      if (!plan.contract || !validPlanContract(plan.contract,plan)) {
+        throw storeError('PLAN_CONTRACT_REQUIRED',409,'请重新生成带准备数据和结构化预期的Plan');
+      }
+      if (![ 'DATA','EXPECTATIONS' ].includes(section)) {
+        throw storeError('PLAN_SECTION_REQUIRED',400,'请明确确认准备数据或预期结果');
+      }
+      if (plan.contract.dataSpecification.missing.length || (section==='EXPECTATIONS' && plan.contract.missing.length)) {
+        throw storeError('PLAN_HAS_OPEN_QUESTIONS',409,'准备数据或预期还有待澄清事项');
+      }
+      const keys=[auth.workspace_id,chat.id,caseRow.id,versionNumber];
+      const [confirmed] = await db.execute(`SELECT section FROM case_plan_section_confirmations
+        WHERE workspace_id=? AND chat_id=? AND case_id=? AND version_number=? FOR UPDATE`,keys);
+      if (section==='EXPECTATIONS' && !confirmed.some(r=>r.section==='DATA')) {
+        throw storeError('PLAN_DATA_CONFIRMATION_REQUIRED',409,'请先确认准备数据');
+      }
+      if (!confirmed.some(r=>r.section===section)) await db.execute(`INSERT INTO case_plan_section_confirmations
+        (workspace_id,chat_id,case_id,version_number,section,actor_user_id) VALUES (?,?,?,?,?,?)`,
+      [...keys,section,auth.user_id]);
+      if (section==='DATA') return {versionNumber,status:'PENDING_CONFIRMATION',phase:'AWAITING_EXPECTATIONS'};
       await db.execute(`UPDATE case_sop_versions SET status='LOCKED',locked_at=UTC_TIMESTAMP(3)
         WHERE workspace_id=? AND chat_id=? AND case_id=? AND id=?`,
       [auth.workspace_id, chat.id, caseRow.id, latest.id]);
@@ -245,7 +273,7 @@ export function createCaseRepository({ transaction }) {
         (workspace_id,chat_id,case_id,from_status,to_status,actor_user_id,reason)
         VALUES (?,?,?,'SOP_PENDING','SOP_LOCKED',?,'USER_CONFIRMED_PLAN')`,
       [auth.workspace_id, chat.id, caseRow.id, auth.user_id]);
-      return { versionNumber, status: 'LOCKED' };
+      return { versionNumber, status: 'LOCKED', phase: 'SOP_LOCKED' };
     });
   }
 
@@ -534,10 +562,14 @@ export function createCaseRepository({ transaction }) {
       if (caseRow.status !== 'SOP_LOCKED') {
         throw storeError('PLAN_NOT_CONFIRMED', 409, '须先确认 Plan');
       }
-      const [[plan]] = await db.execute(`SELECT id FROM case_sop_versions
+      const [[plan]] = await db.execute(`SELECT id,plan_json FROM case_sop_versions
         WHERE workspace_id=? AND chat_id=? AND case_id=? AND version_number=? AND status='LOCKED'`,
       [...keys, versionNumber]);
       if (!plan) throw storeError('PLAN_VERSION_CONFLICT', 409, '已确认的 Plan 版本不匹配');
+      const lockedPlan=typeof plan.plan_json==='string'?JSON.parse(plan.plan_json):plan.plan_json;
+      if (lockedPlan?.contract && !isDeepStrictEqual(specification,lockedPlan.contract.dataSpecification)) {
+        throw storeError('PLAN_DATA_MISMATCH',409,'必须使用已确认Plan中的原始数据定义');
+      }
       await db.execute(`INSERT INTO case_data_executions
         (workspace_id,chat_id,case_id,sop_version_id,specification_json)
         VALUES (?,?,?,?,?)`, [...keys, plan.id, JSON.stringify(specification)]);
@@ -549,7 +581,10 @@ export function createCaseRepository({ transaction }) {
   }
 
   async function readGeneratedData(db, keys) {
-    const [[execution]] = await db.execute(`SELECT sop_version_id,created_at
+    const [[execution]] = await db.execute(`SELECT sop_version_id,created_at,
+      (SELECT JSON_CONTAINS_PATH(v.plan_json,'one','$.contract') FROM case_sop_versions v
+       WHERE v.workspace_id=case_data_executions.workspace_id AND v.chat_id=case_data_executions.chat_id
+        AND v.case_id=case_data_executions.case_id AND v.id=case_data_executions.sop_version_id) AS plan_data_frozen
       FROM case_data_executions WHERE workspace_id=? AND chat_id=? AND case_id=?`, keys);
     if (!execution) return { status: 'NOT_STARTED', reviewStatus: 'NOT_STARTED', revision: 0,
       customers: [], accounts: [], funds: [], holdings: [] };
@@ -566,7 +601,7 @@ export function createCaseRepository({ transaction }) {
       FROM case_data_edit_events WHERE workspace_id=? AND chat_id=? AND case_id=?`, keys);
     const [[confirmation]] = await db.execute(`SELECT revision,confirmed_at
       FROM case_data_confirmations WHERE workspace_id=? AND chat_id=? AND case_id=?`, keys);
-    return { status: 'VALIDATED', purpose: 'APPLICATION_DRAFT', businessApplied: false, planVersionId: String(execution.sop_version_id),
+    return { ...(Number(execution.plan_data_frozen)?{planDataFrozen:true}:{}),status: 'VALIDATED', purpose: 'APPLICATION_DRAFT', businessApplied: false, planVersionId: String(execution.sop_version_id),
       reviewStatus: confirmation ? 'CONFIRMED' : 'PENDING_REVIEW',
       confirmedAt: confirmation?.confirmed_at ?? null,
       createdAt: execution.created_at, revision: Number(edit.revision), customers, accounts, funds, holdings };
@@ -589,6 +624,10 @@ export function createCaseRepository({ transaction }) {
       const [[execution]] = await db.execute(`SELECT sop_version_id FROM case_data_executions
         WHERE workspace_id=? AND chat_id=? AND case_id=? FOR UPDATE`, keys);
       if (!execution) throw storeError('DATA_NOT_STARTED', 409, '请先生成数据');
+      const [[locked]] = await db.execute(`SELECT plan_json FROM case_sop_versions
+        WHERE workspace_id=? AND chat_id=? AND case_id=? AND id=?`,[...keys,execution.sop_version_id]);
+      const lockedPlan=typeof locked?.plan_json==='string'?JSON.parse(locked.plan_json):locked?.plan_json;
+      if (lockedPlan?.contract) throw storeError('PLAN_DATA_FROZEN',409,'准备数据已在Plan中确认并锁定；请新建Case讨论修改后的方案');
       const [[confirmation]] = await db.execute(`SELECT revision FROM case_data_confirmations
         WHERE workspace_id=? AND chat_id=? AND case_id=?`, keys);
       if (confirmation) throw storeError('DATA_ALREADY_CONFIRMED', 409, '数据已确认，不能继续修改');

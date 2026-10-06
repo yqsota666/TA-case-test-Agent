@@ -26,7 +26,7 @@ test('a structured user decision controls confirmation without another model cal
   assert.equal(calls.length, 1);
   assert.deepEqual(await decidePlan(graph, { decision: 'CONFIRM', versionNumber: 2 }),
     { phase: 'SOP_LOCKED', versionNumber: 2 });
-  assert.deepEqual(calls[1], ['confirm', 'session', 'chat', 'case', 2]);
+  assert.deepEqual(calls[1], ['confirm', 'session', 'chat', 'case', 2,'EXPECTATIONS']);
   await assert.rejects(decidePlan(graph, { decision: 'maybe', versionNumber: 2 }), TypeError);
   await assert.rejects(stagePlanProposal(repository, { ...scope, proposal: { ...proposal, scenarios: [] } }),
     { code: 'INVALID_PLAN' });
