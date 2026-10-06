@@ -41,3 +41,16 @@ test('unresolved/truncated dependency diagnostics evaluate when no necessary act
  order.plan.steps[1].required=true;assert.equal(workflowPosition(facts).stage,'FILE_EXCHANGE');assert.equal(workflowPosition(facts).waiting[0].stepId,'optional05');
  order.plan.steps[1].required=false;order.plan.steps[0].dependsOn=[{stepId:'optional05',condition:'CONFIRMED'}];assert.equal(workflowPosition(facts).stage,'FILE_EXCHANGE');
 });
+
+test('confirmation readiness revalidates persisted suggestions with current deterministic rules without a model',async()=>{
+ const {planContract}=await import('./plan-contract-fixture.js'),{exchangePlan}=await import('./exchange-plan-fixture.js');
+ const {canConfirmCaseResult}=await import('../src/case-result-graph.js');
+ const plan={exchangePlan,scenarios:[{expected:'状态CONFIRMED'}]};plan.contract=planContract(plan);
+ const snapshot={plan,evidence:[],pending:[],issues:[]};
+ assert.equal(canConfirmCaseResult(snapshot,{outcome:'FAIL'}),false);
+ const evidence={id:'app',source:{kind:'APPLICATION_CONFIRMATION',fileType:'03',businessDate:'20261006'},values:{transactionAccountId:'90000000000000001',status:'CONFIRMED'}};
+ snapshot.evidence=[evidence];assert.equal(canConfirmCaseResult(snapshot,{outcome:'PASS'}),true);assert.equal(canConfirmCaseResult(snapshot,{outcome:'FAIL'}),false);
+ evidence.values.status='FAILED';assert.equal(canConfirmCaseResult(snapshot,{outcome:'FAIL'}),true);assert.equal(canConfirmCaseResult(snapshot,{outcome:'PASS'}),false);
+ snapshot.evidence=[];snapshot.blockers=[{transactionAccountId:'90000000000000001',channelId:'7',blockedStepIds:['send03','receive04']}];assert.equal(canConfirmCaseResult(snapshot,{outcome:'FAIL'}),true);
+ snapshot.pending=['其他必需分支未完成'];assert.equal(canConfirmCaseResult(snapshot,{outcome:'FAIL'}),false);
+});

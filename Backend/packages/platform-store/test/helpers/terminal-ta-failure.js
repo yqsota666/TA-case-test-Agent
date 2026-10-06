@@ -59,6 +59,14 @@ export async function verifyTerminalTaFailure({db,transaction,token,scope,channe
   if(!independent){assert.ok(incomplete.unresolvedFailures.length);assert.equal(workflowPosition(await facts()).stage,'EVALUATE_RESULT');assert.equal((await readNative()).stage,'EVALUATE_RESULT');}
   const pendingReview=await results.save(token,scope,review);assert.equal((await facts()).review.confirmable,false);
   await assert.rejects(results.confirm(token,{...scope,reviewId:pendingReview.reviewId,verdict:'FAIL',reason:'独立缺证据或映射歧义不可封存'}),{code:'RESULT_NOT_READY'});
+  if(independent){
+   const legacySuggestion={...review.suggestion,outcome:'FAIL',issues:[],unavailableExpectations:review.suggestion.issues};
+   await db.execute('UPDATE case_result_reviews SET suggestion_json=? WHERE workspace_id=? AND chat_id=? AND case_id=? AND id=?',[JSON.stringify(legacySuggestion),...keys,pendingReview.reviewId]);
+   assert.equal((await results.read(token,scope)).suggestion.outcome,'FAIL');assert.equal((await results.snapshot(token,scope)).sha256,incomplete.sha256);
+   const oldFacts=await facts();
+   await assert.rejects(results.confirm(token,{...scope,reviewId:pendingReview.reviewId,verdict:'FAIL',reason:'升级前同SHA旧FAIL须重新核对'}),{code:'RESULT_NOT_READY'});
+   assert.equal(oldFacts.review.confirmable,false);assert.equal(workflowPosition(oldFacts).stage,'EVALUATE_RESULT');assert.equal((await readNative()).stage,'EVALUATE_RESULT');
+  }
   await db.query('ROLLBACK TO SAVEPOINT terminal_review_issue');
  }
  await assert.rejects(results.confirm(token,{...scope,reviewId:stale.reviewId,verdict:'FAIL',reason:'合成旧9版不能覆盖新版11'}),{code:'REVIEW_SUPERSEDED'});
@@ -66,6 +74,7 @@ export async function verifyTerminalTaFailure({db,transaction,token,scope,channe
  await db.query('SAVEPOINT terminal_source');await db.execute('UPDATE case_return_parse_files SET raw_bytes=CONCAT(raw_bytes,?) WHERE workspace_id=? AND chat_id=? AND case_id=? AND parse_id=?',[Buffer.from('x'),...keys,parseId]);
  await assert.rejects(results.confirm(token,{...scope,reviewId:saved.reviewId,verdict:'FAIL',reason:'合成失效证据不得确认'}),{code:'CASE_RESULT_CHANGED'});await db.query('ROLLBACK TO SAVEPOINT terminal_source');
  assert.equal((await results.confirm(token,{...scope,reviewId:saved.reviewId,verdict:'FAIL',reason:'合成02业务失败，03/04无法执行'})).finalVerdict,'FAIL');
+ assert.equal((await results.read(token,scope)).finalVerdict,'FAIL');assert.equal((await results.confirm(token,{...scope,reviewId:saved.reviewId,verdict:'FAIL',reason:'合成已封存重放'})).duplicate,true);
  const next=await createChatLifecycleRepository({transaction}).retest(token,{...scope,requestId:crypto.randomUUID(),reason:'合成修正后重新讨论'});assert.equal(next.chatPublicId,scope.chatPublicId);assert.notEqual(next.casePublicId,scope.casePublicId);
  const [[child]]=await db.execute('SELECT status FROM cases WHERE public_id=?',[next.casePublicId]);assert.equal(child.status,'DISCUSSING');
  const context=await createCaseRepository({transaction}).readCaseDiscussion(token,scope.chatPublicId,next.casePublicId);assert.equal(context.sourceContext.suggestion.outcome,'FAIL');assert.equal(context.sourceContext.suggestion.blockers[0].parseId,parseId);assert.equal(context.sourceContext.contextIsReadOnly,true);assert.equal(context.sourceContext.evidence.some(e=>e.source.kind==='TA_DEPENDENCY_FAILURE'),true);

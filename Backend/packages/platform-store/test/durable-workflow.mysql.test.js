@@ -67,11 +67,20 @@ test('MySQL durable workflow: restart, multi-instance event replay, rollback, is
 
  const evidenceCase=await business.createCase(token,chat.publicId,'可选05及证据过期合成测试');
  const evidenceScope={chatPublicId:chat.publicId,casePublicId:evidenceCase.publicId},evidenceArgs=[token,chat.publicId,evidenceCase.publicId];
- const optionalPlan={objective:'独立05可选测试',preconditions:[],scenarios:[{title:'账户',setup:'已有账户',action:'只读核查',expected:'网点306',evidence:'正式账户'}],openQuestions:[],exchangePlan:{status:'READY',openQuestions:[],steps:[{stepId:'optional05',roundId:'optionalRound',direction:'RECEIVE',fileType:'05',businessTime:{kind:'DATE',value:'20261006'},required:false,dependsOn:[]}]}};
- optionalPlan.contract=planContract(optionalPlan);optionalPlan.contract.expectations=[{scenarioIndex:0,expectedQuote:'网点306',source:'FORMAL_ACCOUNT',selector:{accountIndex:null,transactionAccountId:'90000000000000001',channelId:null,fundCode:null,shareClass:null,fileType:null,businessDate:null},field:'branchCode',operator:'eq',expectedValue:'306'}];
+ const optionalPlan={objective:'独立05可选测试',preconditions:[],scenarios:[{title:'账户',setup:'已有账户',action:'只读核查',expected:'状态FAILED',evidence:'合成终态申请'}],openQuestions:[],exchangePlan:{status:'READY',openQuestions:[],steps:[{stepId:'optional05',roundId:'optionalRound',direction:'RECEIVE',fileType:'05',businessTime:{kind:'DATE',value:'20261006'},required:false,dependsOn:[]}]}};
+ optionalPlan.exchangePlan.steps.push({stepId:'optional03',roundId:'syntheticTrade',direction:'SEND',fileType:'03',businessTime:{kind:'DATE',value:'20261006'},required:false,dependsOn:[]});
+ optionalPlan.contract=planContract(optionalPlan);optionalPlan.contract.expectations[0].expectedValue='FAILED';
  await business.saveSopProposal(...evidenceArgs,optionalPlan);await business.confirmSopProposal(...evidenceArgs,1,'DATA');await business.confirmSopProposal(...evidenceArgs,1,'EXPECTATIONS');
  await business.executeGeneratedData(...evidenceArgs,1,optionalPlan.contract.dataSpecification,(db,scope,specification)=>createDataGenerationGraph({db,scope,specification}).invoke({}));await business.confirmGeneratedData(...evidenceArgs,0);
  let evidenceState=await repo.read(token,evidenceScope);assert.equal(evidenceState.stage,'EVALUATE_RESULT');assert.equal(evidenceState.optionalActions[0].fileType,'05');
+ // Persist a synthetic terminal application so the freshness test uses a genuinely comparable strict expectation.
+ await transaction(async db=>{
+  const {keys}=await workflowScope(db,token,evidenceScope);
+  const [[sop]]=await db.execute('SELECT id FROM case_sop_versions WHERE workspace_id=? AND chat_id=? AND case_id=? AND version_number=1',keys);
+  const [channel]=await db.execute("INSERT INTO exchange_channels(workspace_id,channel_name,ta_environment,ta_code,distributor_code,protocol_version) VALUES (?,'合成证据','synthetic','27','306','22')",[keys[0]]);
+  const record={TransactionAccountID:'90000000000000001',TransactionDate:'20261006',FundCode:'000001',ShareClass:'0'};
+  await db.execute("INSERT INTO applications(public_id,workspace_id,chat_id,case_id,sop_version_id,channel_id,business_date,file_type,business_code,app_no,record_json,snapshot_hash,status) VALUES (?,?,?,?,?,?,'2026-10-06','03','022',?, ?,?,'FAILED')",[crypto.randomUUID(),...keys,sop.id,channel.insertId,crypto.randomBytes(12).toString('hex'),JSON.stringify(record),'0'.repeat(64)]);
+ });
  const resultsRepo=createCaseResultRepository({transaction});let snapshot=await resultsRepo.snapshot(token,evidenceScope);
  // Synthetic review metadata tests workflow freshness; this is not a model verdict or business acceptance.
  await resultsRepo.save(token,evidenceScope,{snapshot,phase:'AWAITING_CONFIRMATION',suggestion:{outcome:'PASS'}});
