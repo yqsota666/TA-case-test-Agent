@@ -92,9 +92,9 @@ export function compareConfirmedExpectations(snapshot) {
  return {outcome,checks,issues,pending:snapshot.pending,explanation:outcome==='PASS'?'已确认的结构化预期逐项一致，等待人工确认。':outcome==='FAIL'?'实际数据与已确认预期不符。':outcome==='WAITING'?'必需回传或同步尚未完成。':'证据缺失或不唯一，请核查。'};
 }
 export function canConfirmCaseResult(snapshot,suggestion) {
- if(!['PASS','FAIL'].includes(suggestion?.outcome) || snapshot.pending.length || snapshot.issues.length)return false;
- const current=snapshot.plan.contract?compareConfirmedExpectations(snapshot):terminalFailureSuggestion(snapshot);
- return !current || (['PASS','FAIL'].includes(current.outcome) && current.outcome===suggestion.outcome);
+ if(!['PASS','FAIL'].includes(suggestion?.outcome) || suggestion.issues?.length || suggestion.uncertainties?.length || snapshot.pending.length || snapshot.issues.length)return false;
+ const current=snapshot.plan.contract?compareConfirmedExpectations(snapshot):terminalFailureSuggestion(snapshot)??compareCaseResults(snapshot,{assertions:suggestion.checks??[],uncertainties:[]});
+ return ['PASS','FAIL'].includes(current.outcome) && current.outcome===suggestion.outcome;
 }
 export function createCaseResultGraph({collect,complete}){
  const graph=new StateGraph(new StateSchema({snapshot:z.unknown().nullable().default(null),proposal:z.unknown().nullable().default(null),suggestion:z.unknown().nullable().default(null),phase:z.string().default('COLLECTING')}));

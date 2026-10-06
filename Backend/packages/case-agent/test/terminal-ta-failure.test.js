@@ -54,3 +54,18 @@ test('confirmation readiness revalidates persisted suggestions with current dete
  snapshot.evidence=[];snapshot.blockers=[{transactionAccountId:'90000000000000001',channelId:'7',blockedStepIds:['send03','receive04']}];assert.equal(canConfirmCaseResult(snapshot,{outcome:'FAIL'}),true);
  snapshot.pending=['其他必需分支未完成'];assert.equal(canConfirmCaseResult(snapshot,{outcome:'FAIL'}),false);
 });
+
+
+test('legacy confirmation rechecks saved assertions using current evidence and literal rules',async()=>{
+ const {canConfirmCaseResult}=await import('../src/case-result-graph.js');
+ const snapshot={plan:{scenarios:[{expected:'确认份额100份'}]},evidence:[{id:'holding',source:{kind:'FORMAL_HOLDING'},values:{confirmedVolume:'100'}}],pending:[],issues:[]};
+ const check={scenarioIndex:0,expectedQuote:'确认份额100份',evidenceId:'holding',field:'confirmedVolume',operator:'eq',expectedValue:'100'};
+ assert.equal(canConfirmCaseResult(snapshot,{outcome:'PASS',checks:[check]}),true);
+ assert.equal(canConfirmCaseResult(snapshot,{outcome:'PASS',checks:[check],uncertainties:['未解决']}),false);
+ assert.equal(canConfirmCaseResult(snapshot,{outcome:'PASS',checks:[check],issues:['证据未完整']}),false);
+ snapshot.evidence[0].values.confirmedVolume='90';
+ assert.equal(canConfirmCaseResult(snapshot,{outcome:'PASS',checks:[check]}),false);
+ assert.equal(canConfirmCaseResult(snapshot,{outcome:'FAIL',checks:[check]}),true);
+ assert.equal(canConfirmCaseResult(snapshot,{outcome:'FAIL',checks:[{...check,expectedValue:'10'}]}),false);
+ assert.equal(canConfirmCaseResult(snapshot,{outcome:'FAIL',checks:[]}),false);
+});
