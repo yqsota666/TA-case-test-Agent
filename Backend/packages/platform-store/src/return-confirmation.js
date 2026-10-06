@@ -69,7 +69,7 @@ export function createReturnConfirmationRepository({ transaction }) {
 
   async function inboundRecord(db, keys, channelId, parseId, file, localIndex, record, app) {
     const [[raw]] = await db.execute(`SELECT raw_bytes,content_sha256 FROM case_return_parse_files
-      WHERE workspace_id=? AND chat_id=? AND case_id=? AND parse_id=? AND file_name=?`,
+      WHERE workspace_id=? AND chat_id=? AND case_id=? AND parse_id=? AND file_name=? FOR UPDATE`,
     [...keys, parseId, file.fileName]);
     if (!raw || raw.content_sha256 !== file.sha256 || crypto.createHash('sha256').update(raw.raw_bytes).digest('hex') !== file.sha256) {
       throw error('RETURN_SOURCE_INVALID', '原始回传文件缺失或摘要不一致');

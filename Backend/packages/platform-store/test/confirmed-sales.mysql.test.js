@@ -156,11 +156,12 @@ test('MySQL: draft -> delivered 01 -> confirmed 02 -> delivered 03 -> confirmed 
     assert.equal((await confirmations.apply(token,{ ...reuse.scope,parseId:failed04.parseId,recordIndexes:[0] })).results[0].outcome,'FAILED');
     assert.deepEqual(await confirmations.salesData(token),sales);
     if (process.env.CASE_CONFIRMATION_RACE === '1') {
-      assert.match(migrationConfig().database, /^ta_case_agent_test_race[a-f0-9]+$/);
+      assert.match(migrationConfig().database, /^ta_case_agent_testrace[a-f0-9]+$/);
       const racing = await createCase(false);
       await confirmations.selectAccount(token,{ ...racing.scope,accountPublicId:sales.accounts[0].publicId });
       await verifyAccountSelectionRace({db,token,scope:racing.scope,channelId,planVersionId:racing.data.planVersionId,
         accountPublicId:sales.accounts[0].publicId,trade});
+      await db.beginTransaction();
     }
     const otherUserId = crypto.randomUUID();
     const [other] = await db.execute(`INSERT INTO platform_users(public_id,email,password_hash,display_name) VALUES (?,?,?,'隔离测试')`,
