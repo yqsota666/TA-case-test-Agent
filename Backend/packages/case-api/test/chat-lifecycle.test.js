@@ -30,3 +30,14 @@ test('sealed Case model endpoints fail before executing discussion or preparatio
  }
  assert.equal(guards,5);assert.equal(modelCalls,0);
 });
+
+test('TA reset is an explicit scoped declaration and rejects payload drift',async t=>{
+ const calls=[];const server=createCaseHttpServer({repository:{},discussionService:{},confirmPlan:()=>{},executeData:()=>{},reviseData:()=>{},allowedOrigin:'http://127.0.0.1:5188',taReset:{read:async(token,input)=>{calls.push(input);return {epoch:0};},confirm:async(token,input)=>{calls.push(input);return {physicalResetPerformedByPlatform:false};}}});
+ server.listen(0,'127.0.0.1');await once(server,'listening');t.after(()=>{server.closeAllConnections();server.close();});
+ const url=`http://127.0.0.1:${server.address().port}/api/exchange/channels/42/ta-reset`;
+ const headers={origin:'http://127.0.0.1:5188',cookie:'case_session=synthetic','content-type':'application/json'};
+ assert.equal((await fetch(url,{headers})).status,200);
+ assert.equal((await fetch(url+'/confirm',{method:'POST',headers,body:JSON.stringify({reason:'已重置'})})).status,400);
+ const response=await fetch(url+'/confirm',{method:'POST',headers,body:JSON.stringify({requestId:'id',reason:'已重置',confirmation:'TA_RESET_CONFIRMED'})});
+ assert.equal(response.status,200);assert.equal((await response.json()).physicalResetPerformedByPlatform,false);assert.equal(calls[1].channelId,'42');
+});

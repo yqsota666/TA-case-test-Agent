@@ -1,3 +1,4 @@
+import {assertTaAccountActive} from './ta-reset.js';
 import { checkExchangeOrder, recordExchangeEvent } from './exchange-order.js';
 import crypto from 'node:crypto';
 import { authenticateSession, storeError } from './index.js';
@@ -202,6 +203,7 @@ export function createReturnConfirmationRepository({ transaction }) {
                 AND channel_id=? AND transaction_account_id=? AND ta_account_id=? FOR UPDATE`,
               [keys[0], parsed.channel_id, record.TransactionAccountID, record.TAAccountID]);
               if (!account) throw error('SALES_ACCOUNT_UNCONFIRMED', '销售正式账户尚无成功开户确认');
+              await assertTaAccountActive(db,keys[0],parsed.channel_id,account.id);
               await db.execute(`INSERT INTO sales_confirmed_transactions
                 (workspace_id,channel_id,account_id,confirmation_id,business_code,fund_code,share_class,confirmed_amount,confirmed_volume,nav,confirmation_date)
                 VALUES (?,?,?,?,?,?,?,?,?,?,?)`, [keys[0], parsed.channel_id, account.id, saved.insertId, app.business_code,
@@ -237,6 +239,8 @@ export function createReturnConfirmationRepository({ transaction }) {
       const [[account]] = await db.execute(`SELECT id,channel_id FROM sales_confirmed_accounts
         WHERE workspace_id=? AND public_id=? FOR UPDATE`, [keys[0],input.accountPublicId]);
       if (!account) throw storeError('SALES_ACCOUNT_NOT_FOUND', 404, '已确认账户不存在');
+      await db.execute('SELECT id FROM exchange_channels WHERE workspace_id=? AND id=? FOR UPDATE',[keys[0],account.channel_id]);
+      await assertTaAccountActive(db,keys[0],account.channel_id,account.id);
       await db.execute(`DELETE FROM case_sales_account_refs WHERE workspace_id=? AND chat_id=? AND case_id=?`,keys);
       await db.execute(`INSERT INTO case_sales_account_refs
         (workspace_id,chat_id,case_id,channel_id,account_id) VALUES (?,?,?,?,?)`, [...keys,account.channel_id,account.id]);
@@ -251,6 +255,7 @@ export function createReturnConfirmationRepository({ transaction }) {
         FROM case_sales_account_refs r JOIN sales_confirmed_accounts s
           ON s.workspace_id=r.workspace_id AND s.channel_id=r.channel_id AND s.id=r.account_id
         WHERE r.workspace_id=? AND r.chat_id=? AND r.case_id=? ORDER BY s.id`, keys);
+      for(const account of accounts) await assertTaAccountActive(db,keys[0],account.channel_id,account.id);
       const referenceId = id => String(8000000000000000000n + BigInt(id));
       if (!accounts.length) return drafts;
       const [holdings] = await db.execute(`SELECT h.account_id,h.fund_code,h.share_class,h.total_volume FROM case_sales_account_refs r
@@ -272,7 +277,9 @@ export function createReturnConfirmationRepository({ transaction }) {
       const [accounts] = await db.execute(`SELECT public_id AS publicId,CAST(channel_id AS CHAR) AS channelId,
         transaction_account_id AS transactionAccountId,ta_account_id AS taAccountId,investor_name AS investorName,
         investor_type AS investorType,certificate_type AS certificateType,certificate_no AS certificateNo,
-        branch_code AS branchCode FROM sales_confirmed_accounts WHERE workspace_id=? ORDER BY id`, [auth.workspace_id]);
+        branch_code AS branchCode,
+        id>COALESCE((SELECT MAX(e.account_id_cutoff) FROM ta_reset_events e WHERE e.workspace_id=sales_confirmed_accounts.workspace_id AND e.channel_id=sales_confirmed_accounts.channel_id),0) AS taBindingActive
+        FROM sales_confirmed_accounts WHERE workspace_id=? ORDER BY id`, [auth.workspace_id]);
       const [transactions] = await db.execute(`SELECT a.public_id AS applicationPublicId,CAST(t.channel_id AS CHAR) AS channelId,
         s.transaction_account_id AS transactionAccountId,s.ta_account_id AS taAccountId,t.business_code AS businessCode,
         t.fund_code AS fundCode,t.share_class AS shareClass,t.confirmed_amount AS confirmedAmount,
