@@ -16,7 +16,7 @@ const filesPath = /^\/api\/chats\/([0-9a-f-]{36})\/files(?:\/([1-9]\d*))?$/i;
 const supplementPath = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/exchange-plan\/confirm$/i;
 const confirmationPath = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/return-confirmation(?:\/(delivery|apply|account))?$/i;
 const workflowPath = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/workflow(?:\/(resume))?$/i;
-const resultPath = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/result-review(?:\/(evaluate|confirm))?$/i;
+const resultPath = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/result-review(?:\/(evaluate|confirm|business-output))?$/i;
 const receiptsPath = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/ta-receipts(?:\/(parse))?$/i;
 const holdingsPath = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/holdings-return(?:\/(parse|apply))?$/i;
 const parsingPath = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/return-parsing(?:\/(02|04))?$/i;
@@ -81,7 +81,7 @@ export function createCaseHttpHandler({ planContentComplete, repository, discuss
     const workflow=durableWorkflow && workflowPath.exec(pathname);
     const workflowRoute=Boolean(workflow && ((!workflow[3] && request.method==='GET') || (workflow[3] && request.method==='POST')));
     const resultReview=caseResult && resultPath.exec(pathname);
-    const resultRoute=Boolean(resultReview && ((!resultReview[3] && request.method==='GET') || (resultReview[3] && request.method==='POST')));
+    const resultRoute=Boolean(resultReview && (((!resultReview[3] || resultReview[3]==='business-output') && request.method==='GET') || (resultReview[3] && request.method==='POST')));
     const receipts=taReceipts && receiptsPath.exec(pathname);
     const receiptsRoute=Boolean(receipts && ((!receipts[3] && request.method==='GET') || (receipts[3] && request.method==='POST')));
     const holdings = holdingsReturn && holdingsPath.exec(pathname);
@@ -162,12 +162,13 @@ export function createCaseHttpHandler({ planContentComplete, repository, discuss
       }
       if(resultRoute){
         const scope={chatPublicId:resultReview[1],casePublicId:resultReview[2]};
-        if(request.method==='GET'){send(response,200,await caseResult.read(token,scope));return;}
+        if(request.method==='GET'){send(response,200,await caseResult[resultReview[3]==='business-output'?'readBusinessOutput':'read'](token,scope));return;}
         if(request.headers.origin!==allowedOrigin){send(response,403,{error:'INVALID_ORIGIN'});return;}
         if(!/^application\/json(?:\s*;|$)/i.test(request.headers['content-type']??'')){send(response,415,{error:'UNSUPPORTED_MEDIA_TYPE'});return;}
-        const body=await jsonBody(request,4096);const keys=resultReview[3]==='evaluate'?[]:['reviewId','verdict','reason'];
+        const businessOutput=resultReview[3]==='business-output';
+        const body=await jsonBody(request,businessOutput?256*1024:4096);const keys=businessOutput?['requestId','planVersion','sourceKind','content']:resultReview[3]==='evaluate'?[]:['reviewId','verdict','reason'];
         if(!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).length!==keys.length||!keys.every(k=>Object.hasOwn(body,k))){send(response,400,{error:'INVALID_INPUT'});return;}
-        send(response,200,await caseResult[resultReview[3]](token,{...scope,...body}));return;
+        send(response,200,await caseResult[businessOutput?'saveBusinessOutput':resultReview[3]](token,{...scope,...body}));return;
       }
       if(receiptsRoute) {
         const scope={chatPublicId:receipts[1],casePublicId:receipts[2]};
