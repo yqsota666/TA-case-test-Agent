@@ -202,3 +202,13 @@ test('temporary contract model failure retains the same proposal intent for retr
   assert.equal(rounds.length, 3);
   assert.equal(rounds.at(-1).status, 'COMPLETE');
 });
+
+
+test('a completed proposal request replays its saved version without another model call',async()=>{
+ const history={revision:5,pending:null,turns:[{role:'user',content:'请整理方案'},{role:'assistant',content:'保存的提案回复'}]};
+ const repository={readCaseDiscussion:async()=>history,getLatestSopProposal:async()=>({sourceTurnNumber:5,versionNumber:1,proposal:plan}),
+ beginCaseDiscussionTurn:async()=>{throw new Error('must not create another turn');},finishCaseDiscussionTurn:async()=>{},finishCasePlanProposal:async()=>{},abandonCaseDiscussionTurn:async()=>{}};
+ const service=createPersistedDiscussionService({repository,complete:async()=>{throw new Error('must not call model');}});
+ const result=await service.propose({...scope,userInput:'请整理方案'});
+ assert.equal(result.replayed,true);assert.equal(result.versionNumber,1);assert.equal(result.revision,5);assert.equal(result.reply,'保存的提案回复');
+});

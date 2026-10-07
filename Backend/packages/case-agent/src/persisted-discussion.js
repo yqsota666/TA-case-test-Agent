@@ -54,6 +54,13 @@ export function createPersistedDiscussionService({ repository, complete }) {
       error.code = 'DISCUSSION_IN_PROGRESS';
       throw error;
     }
+    if (!history.pending && history.turns.at(-2)?.content === input && repository.getLatestSopProposal) {
+      const latest=await repository.getLatestSopProposal(token,chatPublicId,casePublicId);
+      if(latest?.sourceTurnNumber===history.revision) {
+        return {reply:history.turns.at(-1).content,proposal:latest.proposal,phase:'PROPOSAL_PENDING',
+          promptVersion:'plan-confirmed-contract-v1',revision:history.revision,versionNumber:latest.versionNumber,replayed:true};
+      }
+    }
     if (history.turns.length < 4) throw new Error('Plan 提案前至少需要两轮完整讨论');
     const pending = history.pending ?? await repository.beginCaseDiscussionTurn(
       token, chatPublicId, casePublicId,

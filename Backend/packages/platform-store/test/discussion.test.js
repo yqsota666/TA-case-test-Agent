@@ -167,3 +167,10 @@ test('discussion exposes persisted start and completion times without inventing 
   assert.equal(history.turns[1].createdAt,'2026-10-07T01:01:19.000Z');
   assert.equal(history.turns[1].durationMs,79000);
 });
+
+
+test('proposal turns expose their kind so historical proposals are not rendered as ordinary chat',async()=>{
+ const {repository}=fixture({initialTurns:[{turn_number:1,status:'COMPLETE',turn_kind:'PROPOSE_PLAN',user_text:'请整理方案',assistant_text:reply}]});
+ const history=await repository.readCaseDiscussion(...scope);
+ assert.equal(history.turns[1].kind,'PROPOSE_PLAN');
+});

@@ -328,6 +328,7 @@ export function createCaseRepository({ transaction }) {
           turns.push({ role: 'user', content: row.user_text,
               ...(hasStart ? {createdAt:started.toISOString()} : {}) },
             { role: 'assistant', content: row.assistant_text,
+              ...(row.turn_kind === 'PROPOSE_PLAN' ? {kind:'PROPOSE_PLAN'} : {}),
               ...(hasFinish ? {createdAt:finished.toISOString()} : {}),
               ...(hasStart && hasFinish && finished >= started ? {durationMs:finished-started} : {}) });
         } else if (row.status === 'PENDING' && index === rows.length - 1) {
