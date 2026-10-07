@@ -33,7 +33,7 @@ async function passwordMatches(password,encoded) {
 export function accountCookie(token,{secure=false}={}) {
   return `case_session=${encodeURIComponent(token??'')}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${token?ttl/1000:0}${secure?'; Secure':''}`;
 }
-export function createAccountAuth({transaction}) {
+export function createAccountAuth({transaction,initializeWorkspace}) {
   let dummyHash;
   async function issue(db,user) {
     const token=crypto.randomBytes(32).toString('base64url');
@@ -47,7 +47,8 @@ export function createAccountAuth({transaction}) {
       try {return await transaction(async db=>{
         const id=crypto.randomUUID();
         const [saved]=await db.execute('INSERT INTO platform_users(public_id,email,password_hash,display_name) VALUES (?,?,?,?)',[id,email,hash,name]);
-        await db.execute('INSERT INTO workspaces(public_id,owner_user_id) VALUES (?,?)',[crypto.randomUUID(),saved.insertId]);
+        const [workspace]=await db.execute('INSERT INTO workspaces(public_id,owner_user_id) VALUES (?,?)',[crypto.randomUUID(),saved.insertId]);
+        if(initializeWorkspace)await initializeWorkspace(db,workspace.insertId);
         return issue(db,{id:saved.insertId,public_id:id,display_name:name,email});
       });} catch(error) {
         if(error.code==='ER_DUP_ENTRY')throw fail('ACCOUNT_EXISTS',409,'该邮箱已注册，请登录');
@@ -77,8 +78,8 @@ export function createAccountAuth({transaction}) {
         if(user.password_hash.startsWith('scrypt$')&&!await passwordMatches(input.currentPassword,user.password_hash))throw fail('LOGIN_REJECTED',401,'当前密码不正确');
         const hash=await passwordHash(input.newPassword);
         await db.execute('UPDATE platform_users SET password_hash=? WHERE id=?',[hash,user_id]);
-        await db.execute('DELETE FROM platform_sessions WHERE user_id=? AND token_hash<>?',[user_id,sessionTokenHash(token)]);
-        return {token,user:publicUser({...user,password_hash:hash})};
+        await db.execute('DELETE FROM platform_sessions WHERE user_id=?',[user_id]);
+        return issue(db,{...user,password_hash:hash});
       });
     },
     async logout(token) {return transaction(async db=>{
