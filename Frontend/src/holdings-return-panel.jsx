@@ -1,6 +1,7 @@
 import React,{useEffect,useRef,useState} from 'react';
 import {Upload} from 'lucide-react';
 import {requestCase} from './live-case-api.js';
+import {exchangeStepTime} from './plan-language.js';
 import {holdingsParseForStep,holdingsReviewRows} from './holdings-review.js';
 const quantity=value=>value==null?'—':value;
 const date=value=>/^\d{8}$/.test(value??'')?`${value.slice(0,4)}-${value.slice(4,6)}-${value.slice(6)}`:value;
@@ -30,7 +31,7 @@ export function HoldingsReturnPanel({path,steps,locked,channelId,readOnly,onChan
   const entry=holdingsParseForStep(data,step),rows=holdingsReviewRows(entry,holdings);
   const disabled=busy||readOnly||!locked||!data||!channelId;
   return <div className="cw-exchange-return" key={step.stepId}>
-   <div className="cw-exchange-heading"><strong>持仓余额回传（05）</strong>{step.businessDate&&<span className="cw-exchange-muted">{date(step.businessDate)}</span>}</div>
+   <div className="cw-exchange-heading"><strong>持仓余额回传（05）</strong>{exchangeStepTime(step)&&<span className="cw-exchange-muted">{exchangeStepTime(step)}</span>}</div>
    <label className={`cw-exchange-drop ${disabled?'is-disabled':''} ${dragging===step.stepId?'is-dragging':''}`} onDragOver={event=>{event.preventDefault();if(!disabled)setDragging(step.stepId);}} onDragLeave={()=>setDragging('')} onDrop={event=>{event.preventDefault();setDragging('');if(!disabled)upload(Array.from(event.dataTransfer.files??[]),step);}}>
     <Upload size={26} strokeWidth={1.4}/><strong>拖入 05 文件，或点击选择</strong><small>{!locked?'确认方案后可接收':readOnly?'已结束，可查看解析结果':'TXT 文件，可附原始 OFI 索引'}</small>
     <input type="file" accept=".txt,.TXT" multiple aria-label="选择 05 持仓余额文件" disabled={disabled} onChange={event=>{const files=Array.from(event.target.files??[]);event.target.value='';if(files.length)upload(files,step);}}/>
