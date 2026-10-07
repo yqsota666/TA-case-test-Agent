@@ -7,7 +7,7 @@ export function createAccountHttpHandler({accountAuth,allowedOrigin,secureCookie
     const path=new URL(request.url,'http://localhost').pathname;
     if(!path.startsWith('/api/auth/'))return false;
     const action=path.slice('/api/auth/'.length);
-    if(!accountAuth||!['me','register','login','logout','password'].includes(action)||(action==='me'?request.method!=='GET':request.method!=='POST')){send(response,404,{error:'NOT_FOUND'});return true;}
+    if(!accountAuth||!['me','register','login','demo','logout','password'].includes(action)||(action==='me'?request.method!=='GET':request.method!=='POST')){send(response,404,{error:'NOT_FOUND'});return true;}
     const cookie=String(request.headers.cookie??'').split(';').map(value=>value.trim()).find(value=>value.startsWith('case_session='));
     let token;try {token=cookie&&decodeURIComponent(cookie.slice(13));}catch {}
     try {
@@ -18,7 +18,7 @@ export function createAccountHttpHandler({accountAuth,allowedOrigin,secureCookie
       const chunks=[];let size=0;
       for await(const chunk of request){size+=chunk.length;if(size>4096)throw Object.assign(new Error('请求内容过长'),{status:413,code:'REQUEST_TOO_LARGE'});chunks.push(chunk);}
       let input;try{input=JSON.parse(Buffer.concat(chunks).toString('utf8'));}catch{throw Object.assign(new Error('请求格式不正确'),{status:400,code:'INVALID_JSON'});}
-      if(['register','login'].includes(action)){
+      if(['register','login','demo'].includes(action)){
         const now=Date.now();
         for(const [key,value] of attempts)if(now-value.started>15*60*1000)attempts.delete(key);
         const key=request.socket.remoteAddress??'unknown';

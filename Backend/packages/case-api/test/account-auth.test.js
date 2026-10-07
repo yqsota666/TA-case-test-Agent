@@ -29,3 +29,20 @@ test('HTTP auth refuses foreign-origin mutations and never returns token in JSON
   const logout=await fetch(url+'/api/auth/logout',{method:'POST',headers:{origin:'https://agent.example','content-type':'application/json',cookie:'case_session='+token},body:'{}'});assert.equal(logout.status,200);assert.match(logout.headers.get('set-cookie'),/Max-Age=0/);
  }finally{await new Promise(resolve=>server.close(resolve));}
 });
+
+test('demo login is disabled by default and rejects user-chosen identity',async()=>{
+ let calls=0;const transaction=async()=>{calls++;};
+ await assert.rejects(createAccountAuth({transaction}).demo({}),{status:404});
+ await assert.rejects(createAccountAuth({transaction,allowDemo:true}).demo({email:'victim@example.test'}),{status:400});
+ assert.equal(calls,0);
+});
+test('demo login issues a normal session only for the reserved active demo account',async()=>{
+ const saved=[];const auth=createAccountAuth({allowDemo:true,transaction:async action=>action({execute:async(sql,values)=>{
+  if(sql.startsWith('SELECT'))return [[{id:9,public_id:'demo-id',email:'local-demo@ta-agent.example.invalid',display_name:'模拟账户',status:'ACTIVE',password_hash:'scrypt$demo'}]];
+  saved.push({sql,values});return [{insertId:1}];
+ }})});
+ const result=await auth.demo({});assert.equal(result.user.id,'demo-id');assert.equal(result.token.length,43);
+ assert.equal(saved.length,1);assert.match(saved[0].sql,/INSERT INTO platform_sessions/);assert.notEqual(saved[0].values[0],result.token);
+ const blocked=createAccountAuth({allowDemo:true,transaction:async action=>action({execute:async()=>[[{display_name:'其他账户',status:'ACTIVE'}]]})});
+ await assert.rejects(blocked.demo({}),{status:409});
+});

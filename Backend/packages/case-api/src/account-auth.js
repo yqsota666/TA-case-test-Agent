@@ -33,7 +33,7 @@ async function passwordMatches(password,encoded) {
 export function accountCookie(token,{secure=false}={}) {
   return `case_session=${encodeURIComponent(token??'')}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${token?ttl/1000:0}${secure?'; Secure':''}`;
 }
-export function createAccountAuth({transaction,initializeWorkspace}) {
+export function createAccountAuth({transaction,initializeWorkspace,allowDemo=false}) {
   let dummyHash;
   async function issue(db,user) {
     const token=crypto.randomBytes(32).toString('base64url');
@@ -64,6 +64,20 @@ export function createAccountAuth({transaction,initializeWorkspace}) {
         if(!user||!valid||user.status!=='ACTIVE')throw fail('LOGIN_REJECTED',401,'邮箱或密码不正确');
         return issue(db,user);
       });
+    },
+    async demo(input) {
+      if(!allowDemo)throw fail('NOT_FOUND',404,'模拟账户未启用');
+      if(!input||Array.isArray(input)||Object.keys(input).length)throw fail('INVALID_INPUT',400,'请求格式不正确');
+      const email='local-demo@ta-agent.example.invalid';
+      let existing=await transaction(async db=>{
+        const [[user]]=await db.execute('SELECT id,public_id,email,password_hash,display_name,status FROM platform_users WHERE email=?',[email]);
+        if(!user)return null;
+        if(user.status!=='ACTIVE'||user.display_name!=='模拟账户')throw fail('DEMO_UNAVAILABLE',409,'模拟账户暂时不可用');
+        return issue(db,user);
+      });
+      if(existing)return existing;
+      try {return await this.register({email,name:'模拟账户',password:crypto.randomBytes(32).toString('base64url')});}
+      catch(error){if(error.code!=='ACCOUNT_EXISTS')throw error;return this.demo(input);}
     },
     async current(token) {return transaction(async db=>{
       const {user_id}=await authenticateSession(db,token);

@@ -46,7 +46,7 @@ const transaction = async action => {
     throw error;
   } finally { connection.release(); }
 };
-const accountAuth=createAccountAuth({transaction,initializeWorkspace:localWorkspaceInitializer(migrationConfig())});
+const accountAuth=createAccountAuth({transaction,initializeWorkspace:localWorkspaceInitializer(migrationConfig()),allowDemo:Boolean(localWorkspaceInitializer(migrationConfig()))});
 const taReset=createTaResetRepository({transaction});
 const chatLifecycle=createChatLifecycleRepository({transaction});
 const durableWorkflow = createDurableWorkflowRepository({pool});
