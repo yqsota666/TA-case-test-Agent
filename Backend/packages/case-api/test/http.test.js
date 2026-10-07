@@ -43,7 +43,7 @@ async function fixture(t, {orderRejected=false}={}) {
     }, getLatestSopProposal: async (...args) => {
       calls.push(['plan', ...args]); return { versionNumber: 1, status: 'PENDING_CONFIRMATION' };
     } },
-    discussionService: { discuss: async args => {
+    discussionService: { abandon:async args=>{calls.push(['abandon',args]);return {abandoned:true};}, discuss: async args => {
       calls.push(['discuss', args]); return { reply: '请确认', revision: 3 };
     }, propose: async args => {
       calls.push(['propose', args]); return { reply: '测试目标：检查规则', versionNumber: 1 };
@@ -414,4 +414,14 @@ test('strict Plan cannot bypass frozen application values through the legacy man
  const url=`http://127.0.0.1:${server.address().port}/api/chats/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/cases/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/applications`;
  const response=await fetch(url,{method:'POST',headers:{origin:'http://127.0.0.1:5188',cookie:'case_session=synthetic','content-type':'application/json'},body:JSON.stringify({channelId:'1',businessDate:'20261006',fileType:'03',record:{ApplicationAmount:'450.00'}})});
  assert.equal(response.status,409);assert.equal((await response.json()).error,'PLAN_DATA_FROZEN');assert.equal(staged,0);
+});
+
+test('cancelling a pending discussion validates turn and origin before scoped abandonment',async t=>{
+ const {base,calls}=await fixture(t),path=route+'/cancel';
+ const headers={cookie:'case_session=abcdefghijklmnopqrstuvwxyz012345',origin:allowedOrigin,'content-type':'application/json'};
+ assert.equal((await fetch(base+path,{headers})).status,404);
+ for(const body of [null,{turnNumber:0},{turnNumber:3,workspaceId:1}]) assert.equal((await fetch(base+path,{method:'POST',headers,body:JSON.stringify(body)})).status,400);
+ assert.equal((await fetch(base+path,{method:'POST',headers:{...headers,origin:'https://foreign.example'},body:JSON.stringify({turnNumber:3})})).status,403);
+ assert.equal((await fetch(base+path,{method:'POST',headers,body:JSON.stringify({turnNumber:3})})).status,200);
+ assert.equal(calls.filter(c=>c[0]==='abandon').length,1);assert.equal(calls.at(-1)[1].turnNumber,3);
 });

@@ -37,7 +37,7 @@ test('a plan request yields a reviewable proposal without locking it', async () 
   } });
   const result = await proposeDiscussionPlan(graph, { priorTurns, userInput: '请整理为 Plan 提案。' });
   assert.equal(result.phase, 'PROPOSAL_PENDING');
-  assert.equal(result.promptVersion, 'plan-proposal-v5');
+  assert.equal(result.promptVersion, 'plan-proposal-v6');
   assert.deepEqual(result.proposal, proposal);
   assert.match(result.reply, /^测试目标：验证重复确认不会重复入账/);
   assert.match(result.reply, /场景 1：重复上传确认/);
