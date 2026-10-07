@@ -1,4 +1,5 @@
 import {createAccountAuth} from './account-auth.js';
+import {localWorkspaceInitializer} from './local-workspace-profile.js';
 import {dataExchangeRequirementIssues} from '../../platform-protocol/src/data-exchange-requirements.js';
 import {createTaResetRepository} from '../../platform-store/src/ta-reset.js';
 import {createChatLifecycleRepository} from '../../platform-store/src/chat-lifecycle.js';
@@ -45,7 +46,7 @@ const transaction = async action => {
     throw error;
   } finally { connection.release(); }
 };
-const accountAuth=createAccountAuth({transaction});
+const accountAuth=createAccountAuth({transaction,initializeWorkspace:localWorkspaceInitializer(migrationConfig())});
 const taReset=createTaResetRepository({transaction});
 const chatLifecycle=createChatLifecycleRepository({transaction});
 const durableWorkflow = createDurableWorkflowRepository({pool});
