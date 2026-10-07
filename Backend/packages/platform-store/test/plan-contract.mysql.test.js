@@ -48,6 +48,17 @@ test('MySQL: same-version dual confirmation freezes drafts, survives retries and
   await repo.saveSopProposal(...noFileArgs,unsupported);
   await repo.confirmSopProposal(...noFileArgs,2,'DATA');
   await assert.rejects(repo.confirmSopProposal(...noFileArgs,2,'EXPECTATIONS'),{code:'NO_EXCHANGE_WORKFLOW_UNSUPPORTED'});
+  const reviewedCase=await repo.createCase(token,chat.publicId,'业务预期审阅');
+  const reviewedArgs=[token,chat.publicId,reviewedCase.publicId];
+  const reviewed=structuredClone(noFilePlan);
+  reviewed.scenarios[0].expected='字段变化后按用户规则返回结果';
+  reviewed.contract={...reviewed.contract,version:2,missing:[],businessExpectations:[{scenarioIndex:0,expectedQuote:reviewed.scenarios[0].expected}]};
+  await repo.saveSopProposal(...reviewedArgs,reviewed);
+  await assert.rejects(repo.confirmSopProposal(...reviewedArgs,1,'EXPECTATIONS'),{code:'PLAN_DATA_CONFIRMATION_REQUIRED'});
+  await repo.confirmSopProposal(...reviewedArgs,1,'DATA');
+  await repo.confirmSopProposal(...reviewedArgs,1,'EXPECTATIONS');
+  assert.equal((await repo.getLatestSopProposal(...reviewedArgs)).status,'LOCKED');
+  assert.equal((await repo.generatedData(...reviewedArgs)).status,'NOT_STARTED');
   const unplanned=structuredClone(noFilePlan);
   unplanned.exchangePlan={status:'UNPLANNED',steps:[],openQuestions:['需要明确文件时间']};
   await repo.saveSopProposal(...noFileArgs,unplanned);

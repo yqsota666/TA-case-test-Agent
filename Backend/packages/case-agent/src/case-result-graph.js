@@ -90,6 +90,7 @@ export function compareConfirmedExpectations(snapshot) {
   checks.push({...a,evidenceId:e.id,actualValue,matched,source:e.source});
  }
  if(terminal)return {...terminal,...(terminal.outcome==='FAIL' && issues.length?{outcome:'REVIEW',issues,explanation:'独立预期证据缺失、不唯一或不可比较，请核查；不能仅依据另一分支的TA失败封存。'}:{}),checks,...(unavailable.length?{unavailableExpectations:unavailable}:{})};
+ if(c.businessExpectations?.length)issues.push('业务预期尚需实际结果与用户补充信息核对，未执行自动业务计算');
  const outcome=snapshot.pending.length?'WAITING':issues.length?'REVIEW':checks.some(c=>!c.matched)?'FAIL':'PASS';
  return {outcome,checks,issues,pending:snapshot.pending,explanation:outcome==='PASS'?'已确认的结构化预期逐项一致，等待人工确认。':outcome==='FAIL'?'实际数据与已确认预期不符。':outcome==='WAITING'?'必需回传或同步尚未完成。':'证据缺失或不唯一，请核查。'};
 }

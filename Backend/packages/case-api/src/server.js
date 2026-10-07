@@ -108,6 +108,6 @@ const applicationPreparation = createApplicationPreparationService({ repository,
   exchangeRepository, confirmedSales: returnConfirmation, derive: context => deriveApplicationPreparation(completeData, context) });
 const confirmData = ({ token, chatPublicId, casePublicId, revision }) =>
   repository.confirmGeneratedData(token, chatPublicId, casePublicId, revision);
-const server = createCaseHttpServer({ repository, discussionService, confirmPlan,
+const server = createCaseHttpServer({planContentComplete:complete, repository, discussionService, confirmPlan,
   executeData, reviseData, exchangeRepository, applicationPreparation, confirmData, returnParsing, returnConfirmation, holdingsReturn, taReceipts, caseResult, exchangePlanSupplement, chatLifecycle, durableWorkflow, taReset, allowedOrigin });
 server.listen(Number(process.env.CASE_API_PORT ?? 3100), '127.0.0.1');

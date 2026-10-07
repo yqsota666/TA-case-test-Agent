@@ -86,7 +86,7 @@ export function createCaseResultRepository({transaction}){
      if(!accepted.length || accepted.some(e=>!parses.find(p=>p.id===e.holdingsParseId)?.applied_json))pending.push(`步骤${s.stepId}的05尚未确认同步`);
     }
    }
-  }catch(e){if(e.code!=='EXCHANGE_PLAN_REQUIRED')throw e;issues.push('Plan尚无已确认文件时序');}
+  }catch(e){if(e.code!=='EXCHANGE_PLAN_REQUIRED')throw e;if(plan.exchangePlan?.status!=='NOT_REQUIRED')issues.push('Plan尚无已确认文件时序');}
   const [returnSources]=await db.execute(`SELECT CAST(parse_id AS CHAR) AS parseId,file_name AS fileName,content_sha256 AS expectedHash,SHA2(raw_bytes,256) AS actualHash FROM case_return_parse_files WHERE workspace_id=? AND chat_id=? AND case_id=? ORDER BY parse_id,file_name LIMIT 2001${lock}`,keys);
   const [holdingSources]=await db.execute(`SELECT CAST(parse_id AS CHAR) AS parseId,file_name AS fileName,content_sha256 AS expectedHash,SHA2(raw_bytes,256) AS actualHash FROM case_holdings_return_files WHERE workspace_id=? AND chat_id=? AND case_id=? ORDER BY parse_id,file_name LIMIT 2001${lock}`,keys);
   if([...returnSources,...holdingSources].some(s=>s.expectedHash!==s.actualHash))issues.push('原始TA文件摘要不一致，需要人工核查');

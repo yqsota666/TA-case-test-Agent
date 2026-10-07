@@ -14,7 +14,7 @@ test('strict Plan validates linked drafts, typed expectations and fixed applicat
  }
  const calls=[],context=[{role:'user',content:'这些是原讨论已明确的条件'}];
  const result=await definePlanContract(async input=>{calls.push(input);if(calls.length===1)return JSON.stringify(contract.dataSpecification);const {version,protocolVersion,dataSpecification,...derived}=contract;return JSON.stringify(derived);},plan,context);
- assert.deepEqual(result.contract,contract);assert.equal(calls.length,2);
+ assert.deepEqual(result.contract,{...contract,version:2,businessExpectations:[]});assert.equal(calls.length,2);
  assert.deepEqual(JSON.parse(calls[0].user).plan,plan);
  for(const call of calls){assert.deepEqual(JSON.parse(call.user).discussionContext,context);assert.ok(!call.system.includes(context[0].content));}
  await assert.rejects(definePlanContract(async()=>'{invalid',plan),{code:'DATA_SPEC_INVALID'});
@@ -160,7 +160,7 @@ test('contract graph repairs a malformed evidence binding once while retaining s
   const {version,protocolVersion,dataSpecification,...derived}=calls.length===2?invalid:contract;
   return JSON.stringify(derived);
  },plan);
- assert.deepEqual(result.contract,contract);assert.equal(calls.length,3);
+ assert.deepEqual(result.contract,{...contract,version:2,businessExpectations:[]});assert.equal(calls.length,3);
  assert.deepEqual(JSON.parse(calls[2].user).previous.expectations[0].selector.fileType,'04');
  assert.ok(JSON.parse(calls[2].user).validationIssues.length);
 });

@@ -16,7 +16,7 @@ export async function workflowScope(db,token,scope,write=false) {
  return {owner,keys:[auth.workspace_id,owner.chat_id,owner.case_id]};
 }
 export async function workflowFacts(db,{owner,keys},token,input) {
- const [[plan]]=await db.execute(`SELECT version_number AS version,status FROM case_sop_versions WHERE workspace_id=? AND chat_id=? AND case_id=? ORDER BY version_number DESC LIMIT 1`,keys);
+ const [[plan]]=await db.execute(`SELECT version_number AS version,status,plan_json FROM case_sop_versions WHERE workspace_id=? AND chat_id=? AND case_id=? ORDER BY version_number DESC LIMIT 1`,keys);
  const [[section]]=await db.execute(`SELECT COUNT(*) AS n FROM case_plan_section_confirmations WHERE workspace_id=? AND chat_id=? AND case_id=? AND version_number=? AND section='DATA'`,[...keys,plan?.version??0]);
  const [[draft]]=await db.execute(`SELECT EXISTS(SELECT 1 FROM case_data_executions WHERE workspace_id=? AND chat_id=? AND case_id=?) AS hasDraft,
  EXISTS(SELECT 1 FROM case_data_confirmations WHERE workspace_id=? AND chat_id=? AND case_id=?) AS confirmed`,[...keys,...keys]);
@@ -53,6 +53,7 @@ export async function workflowFacts(db,{owner,keys},token,input) {
    latestReview.currentEvidenceHash=current.sha256;
   }
  }
+ if(plan) {plan.proposal=json(plan.plan_json);delete plan.plan_json;}
  const facts={chatStatus:owner.chat_status,caseStatus:owner.case_status,plan:plan??null,dataConfirmed:Number(section.n)>0,generated:Number(draft.hasDraft)>0,draftConfirmed:Number(draft.confirmed)>0,review:latestReview,order};
  facts.revision=crypto.createHash('sha256').update(JSON.stringify(facts)).digest('hex');return facts;
 }

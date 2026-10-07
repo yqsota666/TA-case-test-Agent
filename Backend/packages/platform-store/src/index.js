@@ -276,7 +276,7 @@ export function createCaseRepository({ transaction }) {
       if (plan.contract.dataSpecification.missing.length || (section==='EXPECTATIONS' && plan.contract.missing.length)) {
         throw storeError('PLAN_HAS_OPEN_QUESTIONS',409,'准备数据或预期还有待澄清事项');
       }
-      if (section==='EXPECTATIONS' && plan.exchangePlan.status==='NOT_REQUIRED') {
+      if (section==='EXPECTATIONS' && plan.exchangePlan.status==='NOT_REQUIRED' && plan.contract.version===1) {
         throw storeError('NO_EXCHANGE_WORKFLOW_UNSUPPORTED',409,'当前流程尚未支持无需文件交换的结果核对；准备数据可审阅，方案暂不能锁定');
       }
       const keys=[auth.workspace_id,chat.id,caseRow.id,versionNumber];

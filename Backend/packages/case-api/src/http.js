@@ -1,12 +1,13 @@
 import { createServer } from 'node:http';
 import { DataEditSchema } from '../../case-agent/src/index.js';
+import {revisePreparedPlanContent} from './prepared-plan-content.js';
 import { revisePreparedPlanData } from './prepared-plan-data.js';
 import { parseDataFile } from '../../platform-protocol/src/index.js';
 
 const taResetPath=/^\/api\/exchange\/channels\/([1-9]\d*)\/ta-reset(?:\/(confirm))?$/i;
 const chatCollectionPath=/^\/api\/chats(?:\/([0-9a-f-]{36})\/cases)?$/i;
 const lifecyclePath=/^\/api\/chats\/([0-9a-f-]{36})\/lifecycle(?:\/(close|retest|new-run))?$/i;
-const pathPattern = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/(discussion|discussion\/cancel|plan|plan\/data|plan\/confirm|data|data\/execute|data\/review|data\/confirm|application-preparation)$/i;
+const pathPattern = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/(discussion|discussion\/cancel|plan|plan\/data|plan\/content|plan\/confirm|data|data\/execute|data\/review|data\/confirm|application-preparation)$/i;
 const applicationPath = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/applications$/i;
 const bindingPath = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/ta-bindings$/i;
 const batchPath = /^\/api\/chats\/([0-9a-f-]{36})\/batches(?:\/([0-9a-f-]{36})\/generate)?$/i;
@@ -53,7 +54,7 @@ async function jsonBody(request, limit = 256 * 1024) {
   }
 }
 
-export function createCaseHttpHandler({ repository, discussionService, confirmPlan, executeData,
+export function createCaseHttpHandler({ planContentComplete, repository, discussionService, confirmPlan, executeData,
   reviseData, exchangeRepository, applicationPreparation, confirmData, returnParsing, returnConfirmation, holdingsReturn, taReceipts, caseResult, exchangePlanSupplement, chatLifecycle, durableWorkflow, taReset, allowedOrigin }) {
   if (!repository || !discussionService || !confirmPlan || !executeData || !reviseData || !allowedOrigin) {
     throw new TypeError('API dependencies required');
@@ -98,7 +99,7 @@ export function createCaseHttpHandler({ repository, discussionService, confirmPl
         (files && request.method === 'GET')));
     if (!resetRoute && !workflowRoute && !receiptsRoute && !collectionRoute && !lifecycleRoute && !resultRoute && !holdingsRoute && !supplementRoute && !catalog && !salesRoute && !confirmationRoute && !exchangeRoute && !parsingRoute && (!match || !['GET', 'POST', 'PATCH'].includes(request.method) ||
         (request.method === 'PATCH' && match?.[3] !== 'data') ||
-        (['discussion/cancel','plan/data','plan/confirm', 'data/execute', 'data/confirm'].includes(match?.[3]) && request.method !== 'POST') ||
+        (['discussion/cancel','plan/data','plan/content','plan/confirm', 'data/execute', 'data/confirm'].includes(match?.[3]) && request.method !== 'POST') ||
         (match?.[3] === 'data/review' && !['GET', 'POST'].includes(request.method)) ||
         (match?.[3] === 'data' && !['GET', 'PATCH'].includes(request.method)))) {
       send(response, 404, { error: 'NOT_FOUND' }); return;
@@ -308,6 +309,9 @@ export function createCaseHttpHandler({ repository, discussionService, confirmPl
       if (action === 'discussion/cancel') {
         if(!body || typeof body!=='object' || Array.isArray(body) || Object.keys(body).length!==1 || !Number.isSafeInteger(body.turnNumber) || body.turnNumber<1){send(response,400,{error:'INVALID_INPUT'});return;}
         send(response,200,await discussionService.abandon({token,chatPublicId,casePublicId,turnNumber:body.turnNumber}));return;
+      }
+      if (action === 'plan/content') {
+        send(response,200,await revisePreparedPlanContent({repository,complete:planContentComplete,token,chatPublicId,casePublicId,body}));return;
       }
       if (action === 'plan/data') {
         send(response,200,await revisePreparedPlanData({repository,token,chatPublicId,casePublicId,body})); return;

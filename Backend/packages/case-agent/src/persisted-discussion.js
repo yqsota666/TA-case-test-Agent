@@ -75,7 +75,7 @@ export function createPersistedDiscussionService({ repository, complete }) {
       throw error;
     }
     result.reply += '\n' + displayPlanContract(result.proposal.contract);
-    result.promptVersion = 'plan-confirmed-contract-v1';
+    result.promptVersion = 'plan-confirmed-contract-v2';
     const saved = await repository.finishCasePlanProposal(token, chatPublicId, casePublicId, {
       turnNumber: pending.turnNumber,
       assistantReply: result.reply,
