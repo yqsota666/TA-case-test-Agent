@@ -119,7 +119,7 @@ test('shared times require evidence for each file while unscoped rejection remai
   const result=await proposeDiscussionPlan(graph,{priorTurns,userInput:'整理计划'});
   assert.equal(result.proposal.exchangePlan.status,ready?'READY':'UNPLANNED',messages.join('；'));
   assert.equal(calls,ready?1:2,messages.join('；'));
-  if(missing)assert.deepEqual(result.proposal.exchangePlan.openQuestions.map(question=>question.match(/^请确认 ([^（]+)/)[1]),missing,messages.join('；'));
+  if(missing)assert.deepEqual(result.proposal.exchangePlan.openQuestions.map(question=>question.match(/^请确认 (\d{2}) 文件/)[1]),missing.map(id=>plan.steps.find(step=>step.stepId===id).fileType),messages.join('；'));
  }
 });
 
@@ -154,7 +154,7 @@ test('offset digits and natural rescheduling cannot supply or preserve unrelated
   const result=await proposeDiscussionPlan(graph,{priorTurns,userInput:'整理计划'});
   assert.equal(result.proposal.exchangePlan.status,ready?'READY':'UNPLANNED',messages.join('；'));
   assert.equal(calls,ready?1:2,messages.join('；'));
-  if(missing)assert.deepEqual(result.proposal.exchangePlan.openQuestions.map(question=>question.match(/^请确认 ([^（]+)/)[1]),missing,messages.join('；'));
+  if(missing)assert.deepEqual(result.proposal.exchangePlan.openQuestions.map(question=>question.match(/^请确认 (\d{2}) 文件/)[1]),missing.map(id=>plan.steps.find(step=>step.stepId===id).fileType),messages.join('；'));
  }
 });
 
@@ -179,4 +179,15 @@ test('separate rounds may affirm different dates in one human message, including
  assert.equal(guardExchangeTimeEvidence(proposal,[text,'03日期改为2026-11-06']).exchangePlan.status,'UNPLANNED');
  assert.equal(guardExchangeTimeEvidence(proposal,[text,'03日期取消']).exchangePlan.status,'UNPLANNED');
  assert.equal(guardExchangeTimeEvidence(proposal,[text+'03日期2026-11-02取消；客户乙03业务日期2026-11-04。']).exchangePlan.status,'UNPLANNED');
+});
+
+
+test('batching instructions do not revoke explicit send dates',async()=>{
+ const {guardExchangeTimeEvidence}=await import('../src/plan-proposal.js');
+ const p={exchangePlan:{status:'READY',openQuestions:[],steps:[
+ {stepId:'a',fileType:'01',direction:'SEND',businessTime:{kind:'DATE',value:'20261102'}},
+ {stepId:'b',fileType:'03',direction:'SEND',businessTime:{kind:'DATE',value:'20261104'}}]}};
+ const message='01业务日期为2026-11-02；03业务日期为2026-11-04。不要按客户拆成三次01或三次03，一批01包含全部开户记录，一批03包含全部申购记录。';
+ assert.equal(guardExchangeTimeEvidence(p,[message]).exchangePlan.status,'READY');
+ assert.equal(guardExchangeTimeEvidence(p,[message,'03日期取消，不再分批']).exchangePlan.status,'UNPLANNED');
 });
