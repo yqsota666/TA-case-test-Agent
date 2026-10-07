@@ -1,0 +1,91 @@
+@import './themes/prism.css';
+@import './themes/opal.css';
+@import './themes/glacier.css';
+@import './glass-interaction.css';
+@import './themes/liquid.css';
+@import './themes/obsidian.css';
+@import './themes/porcelain.css';
+@import './themes/folio.css';
+@import './themes/jade.css';
+@import './themes/aurora.css';
+@import './themes/copper.css';
+@import './themes/graphite.css';
+@import './themes/abyss.css';
+
+:root[data-theme] {
+  --cw-surface: var(--study-surface);
+  --cw-sidebar: var(--study-sidebar);
+  --cw-ink: var(--study-ink);
+  --cw-muted: var(--study-muted);
+  --cw-line: var(--study-line);
+  --cw-hover: var(--study-hover);
+  --cw-selected: var(--study-selected);
+  --cw-selected-ink: var(--study-on-selected);
+  --cw-bubble: var(--study-bubble);
+  --cw-accent: var(--study-accent);
+  --cw-accent-light: var(--study-accent);
+  --cw-accent-deep: var(--study-accent-deep);
+  --cw-disabled: var(--study-disabled);
+  --cw-disabled-ink: var(--study-muted);
+  --cw-highlight: var(--study-on-selected);
+  --cw-focus: var(--study-focus);
+  --cw-backdrop: var(--study-backdrop);
+  --cw-font: var(--study-font);
+}
+html[data-theme] {background:var(--study-surface);color-scheme:var(--study-scheme);}
+html[data-theme] ::selection {background:var(--study-selection);color:var(--study-ink);}
+html[data-theme] .cw-shell {background:var(--study-canvas);}
+html[data-theme] .cw-sidebar {background:var(--study-sidebar);box-shadow:inset -1px 0 0 var(--study-line);}
+html[data-theme] .cw-brand,html[data-theme] .cw-header h1 {color:var(--study-ink);}
+html[data-theme] .cw-brand-mark {background:var(--study-mark);color:var(--study-on-selected);box-shadow:var(--study-edge-shadow);}
+html[data-theme] .cw-primary svg,html[data-theme] .cw-set-toggle svg {color:var(--study-icon);}
+html[data-theme] .cw-primary button[aria-current=page] {background:var(--study-hover);color:var(--study-ink);box-shadow:inset 0 0 0 1px var(--study-line);}
+html[data-theme] .cw-list-label,html[data-theme] .cw-user {color:var(--study-muted);}
+html[data-theme] .cw-set-toggle {color:var(--study-ink) !important;}
+html[data-theme] .cw-case.is-selected,html[data-theme] .cw-draft-data.is-selected {background:var(--study-selected);color:var(--study-on-selected) !important;box-shadow:var(--study-selected-shadow);}
+html[data-theme] .cw-user svg {background:var(--study-hover);color:var(--study-icon);}
+html[data-theme] .cw-message-user {background:var(--study-bubble);color:var(--study-ink);border-color:var(--study-line);box-shadow:var(--study-bubble-shadow);}
+html[data-theme] .cw-message-assistant {color:var(--study-ink);}
+html[data-theme] .cw-result {background:var(--study-document) !important;border-color:var(--study-line) !important;box-shadow:var(--study-document-shadow);}
+html[data-theme] .cw-result:hover {border-color:var(--study-focus) !important;box-shadow:var(--study-document-hover-shadow);}
+html[data-theme] .cw-result-icon {background:var(--study-document-icon);color:var(--study-icon);box-shadow:var(--study-edge-shadow);}
+html[data-theme] .cw-result-title {color:var(--study-ink);}
+html[data-theme] .cw-result-summary,html[data-theme] .cw-result-action {color:var(--study-muted);}
+html[data-theme] .cw-composer-frame {background:var(--study-composer);border-color:var(--study-composer-edge);box-shadow:var(--study-composer-shadow);}
+html[data-theme] .cw-composer-frame:focus-within {border-color:var(--study-focus);box-shadow:var(--study-composer-focus-shadow);}
+html[data-theme] .cw-composer textarea {caret-color:var(--study-accent);}
+html[data-theme] .cw-composer textarea::placeholder {color:var(--study-muted);opacity:1;}
+html[data-theme] .cw-send {background:var(--study-selected) !important;color:var(--study-on-selected) !important;box-shadow:var(--study-edge-shadow);}
+html[data-theme] .cw-send:disabled {background:var(--study-disabled) !important;color:var(--study-muted) !important;box-shadow:none;}
+html[data-theme] .cw-project-bar {background:var(--study-project-bar);box-shadow:inset 0 -1px 0 var(--study-line);color:var(--study-ink);}
+html[data-theme] .cw-project-bar select {color:var(--study-ink);}
+html[data-theme] .cw-project-bar > svg:last-child {color:var(--study-muted);}
+html[data-theme] .cw-welcome-mark {background:var(--study-bubble);color:var(--study-accent);box-shadow:var(--study-edge-shadow);}
+html[data-theme] .cw-new-conversation h2 {color:var(--study-ink);}
+html[data-theme] .cw-modal {background:var(--study-modal);border-color:var(--study-line);box-shadow:var(--study-modal-shadow);}
+html[data-theme] .cw-modal::backdrop {background:var(--study-backdrop);}
+html[data-theme] .cw-plan-modal > header {border-color:var(--study-line);}
+html[data-theme] .cw-plan-objective,html[data-theme] .cw-plan-fold summary,html[data-theme] .cw-plan-fold-body,
+html[data-theme] .cw-plan-item-fields dd,html[data-theme] .cw-plan-questions li {color:var(--study-ink);}
+html[data-theme] .cw-plan-items,html[data-theme] .cw-plan-comparison {background:var(--study-table);border-color:var(--study-line);}
+html[data-theme] .cw-plan-items-header h3,html[data-theme] .cw-plan-questions h3,
+html[data-theme] .cw-plan-item strong,html[data-theme] .cw-plan-comparison tbody th {color:var(--study-ink);}
+html[data-theme] .cw-plan-item-expected,html[data-theme] .cw-plan-item-fields dt,
+html[data-theme] .cw-plan-table-detail summary,html[data-theme] .cw-plan-item summary svg,
+html[data-theme] .cw-plan-fold summary svg {color:var(--study-muted);}
+html[data-theme] .cw-plan-item + .cw-plan-item,html[data-theme] .cw-plan-fold,
+html[data-theme] .cw-plan-comparison tbody tr + tr {border-color:var(--study-line);}
+html[data-theme] .cw-plan-item[open] summary {background:var(--study-table-head);}
+html[data-theme] .cw-plan-view {background:var(--study-hover);}
+html[data-theme] .cw-plan-view button {color:var(--study-muted);}
+html[data-theme] .cw-plan-view button[aria-pressed=true] {background:var(--study-table);color:var(--study-ink);box-shadow:var(--study-edge-shadow);}
+html[data-theme] .cw-plan-comparison thead {background:var(--study-table-head);color:var(--study-muted);}
+html[data-theme] .cw-plan-comparison td {color:var(--study-ink);font-variant-numeric:tabular-nums;}
+html[data-theme] .cw-data-pages a:hover {background:var(--study-hover);}
+html[data-theme] .cw-data-pages a[aria-current=page] {background:var(--study-selected);color:var(--study-on-selected);box-shadow:var(--study-selected-shadow);}
+html[data-theme] .cw-data-pages a:focus-visible,html[data-theme] .cw-plan-item summary:focus-visible,
+html[data-theme] .cw-plan-fold summary:focus-visible {outline-color:var(--study-focus);}
+html[data-theme] .cw-node-status {color:var(--study-muted);}
+html[data-theme] .cw-node-error {color:var(--study-error);}
+html[data-theme] .cw-node-error button {background:var(--study-table);border-color:var(--study-line);}
+html[data-theme] .cw-conversation,html[data-theme] .cw-sets,html[data-theme] .cw-plan-document {scrollbar-color:var(--study-scrollbar) transparent;}

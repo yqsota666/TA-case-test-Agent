@@ -1,0 +1,43 @@
+:root[data-theme=jade] {
+  --study-scheme:dark;
+  --study-font:"Helvetica Neue",-apple-system,"PingFang SC",sans-serif;
+  --study-surface:#102723;
+  --study-ink:#dfebe3;
+  --study-muted:#abc7ba;
+  --study-icon:#a1c9b5;
+  --study-line:rgb(169 202 182 / 14%);
+  --study-canvas:radial-gradient(ellipse at 95% 0%,#244c3f,transparent 60%),linear-gradient(130deg,#18352f,#0e231f);
+  --study-sidebar:linear-gradient(120deg,#19352e,#102921 70%,#102720);
+  --study-hover:#264439;
+  --study-selected:linear-gradient(120deg,#bfd7b8,#92bda6);
+  --study-on-selected:#14362b;
+  --study-selected-shadow:inset 0 1px 0 #deead7,0 3px 9px rgb(0 0 0 / 14%);
+  --study-bubble:linear-gradient(135deg,#2d5144,#27473c);
+  --study-bubble-shadow:inset 0 1px 0 rgb(236 255 238 / 8%);
+  --study-accent:#b9d4ad;
+  --study-accent-deep:#8bbaa0;
+  --study-focus:#b9d4ad;
+  --study-disabled:#304a3c;
+  --study-mark:linear-gradient(140deg,#d3e0bd,#9cb898);
+  --study-edge-shadow:inset 0 1px 0 rgb(255 255 255 / 30%),0 3px 9px rgb(0 0 0 / 18%);
+  --study-document:linear-gradient(140deg,#294a3d,#203c32);
+  --study-document-shadow:inset 0 1px 0 rgb(214 236 216 / 6%),0 7px 20px rgb(0 0 0 / 10%);
+  --study-document-hover-shadow:inset 0 1px 0 rgb(214 236 216 / 10%),0 10px 25px rgb(0 0 0 / 16%);
+  --study-document-icon:linear-gradient(145deg,#3b5e48,#294b3b);
+  --study-composer:linear-gradient(150deg,#355448,#294339 55%,#20382f);
+  --study-composer-edge:rgb(186 213 170 / 28%);
+  --study-composer-shadow:inset 0 1px 0 rgb(218 235 198 / 17%),inset 0 -1px 0 rgb(0 0 0 / 15%),0 15px 34px rgb(0 0 0 / 22%);
+  --study-composer-focus-shadow:inset 0 1px 0 rgb(218 235 198 / 22%),0 14px 32px rgb(0 0 0 / 24%);
+  --study-project-bar:linear-gradient(100deg,#3b5545,#2c4439);
+  --study-modal:linear-gradient(140deg,#29483b,#1c342b);
+  --study-modal-shadow:inset 0 1px 0 rgb(218 235 198 / 12%),0 26px 80px rgb(0 0 0 / 44%);
+  --study-table:#234035;
+  --study-table-head:linear-gradient(100deg,#335242,#2b493b);
+  --study-backdrop:rgb(4 19 13 / 70%);
+  --study-selection:#456a50;
+  --study-scrollbar:#5d7e67;
+  --study-error:#f0b4a1;
+}
+html[data-theme=jade] .cw-brand-mark {border-radius:50%;}
+html[data-theme=jade] .cw-result-icon {border-radius:12px;}
+html[data-theme=jade] .cw-composer-frame {box-shadow:var(--study-composer-shadow),inset 0 0 32px rgb(175 206 149 / 3%);}
