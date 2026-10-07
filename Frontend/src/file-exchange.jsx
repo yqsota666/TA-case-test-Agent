@@ -3,6 +3,8 @@ import {Download,Upload,FileText,ChevronRight} from 'lucide-react';
 import {requestCase,casePath} from './live-case-api.js';
 import {exchangeReviewRows} from './exchange-review.js';
 import './file-exchange.css';
+import {HoldingsReturnPanel} from './holdings-return-panel.jsx';
+import {plannedHoldingsSteps} from './holdings-review.js';
 const stamp=value=>value?new Date(value).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}):'';
 export function FileExchangePanel({chatId,caseId,plan,draft,workflow,readOnly,onChanged}) {
   const path=casePath(chatId,caseId),chatPath=`/chats/${chatId}`;
@@ -46,10 +48,13 @@ export function FileExchangePanel({chatId,caseId,plan,draft,workflow,readOnly,on
   const files=data?.preparation.files??[],steps=data?.returns.steps??[];
   const canGenerate=eligible&&(!files.length||workflow?.waiting?.some(action=>action?.action==='GENERATE_AND_DELIVER'));
   const ready=Boolean(data);
+  const holdingsSteps=plannedHoldingsSteps(plan);
+  const selectedChannel=channelId||data?.preparation.channelId||(data?.channels.length===1?String(data.channels[0].id):'');
   return <div className="cw-exchange-panel" aria-busy={busy}>
     <section><div className="cw-exchange-heading"><h3>申请文件</h3>{canGenerate&&<button type="button" className="cw-exchange-button" disabled={busy||!ready||!data?.channels.length} onClick={()=>perform(()=>requestCase(path+'/application-preparation',{revision:data?.preparation.revision,...(channelId?{channelId}:{})}))}>生成可用文件</button>}</div>
       {ready&&eligible&&!data.channels.length&&<p role="alert" className="cw-exchange-error">当前项目尚未配置 TA 交换通道，暂时无法生成申请文件。</p>}
       {ready&&data.channels.length>1&&<label className="cw-exchange-channel">交换通道<select value={channelId||data.preparation.channelId||''} disabled={busy||readOnly} onChange={event=>setChannelId(event.target.value)}><option value="">请选择</option>{data.channels.map(channel=><option key={channel.id} value={channel.id}>{channel.name}</option>)}</select></label>}
+      {data?.preparation.phase==='WAITING_CHAT'&&<p role="status" className="cw-exchange-muted">等待项目中的其他 Case 确认数据后，统一生成申请文件。</p>}
       {ready&&data.preparation.questions?.length>0&&data.channels.length>0&&<p role="alert" className="cw-exchange-error">{data.preparation.questions.join('；')}</p>}
       {!files.length&&<p className="cw-exchange-muted">{eligible?'尚未生成申请文件。':'确认方案与草稿后，可生成申请文件。'}</p>}
       {files.map(file=><div className="cw-exchange-file" key={file.id}>
@@ -58,7 +63,7 @@ export function FileExchangePanel({chatId,caseId,plan,draft,workflow,readOnly,on
       </div>)}
       {preview&&<div className="cw-exchange-table" tabIndex={0} aria-label="申请文件内容"><table><thead><tr><th>申请单号</th><th>交易账号</th><th>基金</th><th>申请金额</th></tr></thead><tbody>{(data?.records[preview]??[]).map((r,i)=><tr key={i}><td>{r.AppSheetSerialNo}</td><td>{r.TransactionAccountID}</td><td>{r.FundCode??'—'}</td><td>{r.ApplicationAmount??'—'}</td></tr>)}</tbody></table></div>}
     </section>
-    <section><h3>TA 返回文件</h3>{!steps.length&&<div className="cw-exchange-drop is-disabled" aria-disabled="true"><Upload size={26} strokeWidth={1.4}/><strong>接收 TA 返回文件</strong><small>生成并交付申请文件后，可拖入或选择对应回传</small></div>}
+    <section><h3>TA 返回文件</h3>{!steps.length&&!holdingsSteps.length&&<div className="cw-exchange-drop is-disabled" aria-disabled="true"><Upload size={26} strokeWidth={1.4}/><strong>接收 TA 返回文件</strong><small>生成并交付申请文件后，可拖入或选择对应回传</small></div>}
       {steps.map(step=>{
         const delivered=['DELIVERED','RECEIVED'].includes(data.confirmation.batches.find(b=>b.batchPublicId===step.batchPublicId)?.status);
         const entry=step.parses.at(-1),requests=step.outboundFiles.flatMap(name=>data.records[name]??[]);
@@ -85,6 +90,7 @@ export function FileExchangePanel({chatId,caseId,plan,draft,workflow,readOnly,on
         </div>;
       })}
     </section>
+    {holdingsSteps.length>0&&<HoldingsReturnPanel key={path} path={path} steps={holdingsSteps} locked={plan?.status==='LOCKED'} channelId={selectedChannel} readOnly={readOnly} onChanged={onChanged}/>}
     {busy&&<p role="status" className="cw-exchange-muted">正在处理…</p>}{error&&<p role="alert" className="cw-exchange-error">{error}</p>}
   </div>;
 }

@@ -46,10 +46,13 @@ export function createHoldingsReturnRepository({ transaction }) {
       const [parses]=await db.execute(`SELECT CAST(id AS CHAR) AS parseId,CAST(channel_id AS CHAR) AS channelId,
         parsed_json AS parsed,applied_at AS appliedAt,applied_json AS applied FROM case_holdings_return_parses
         WHERE workspace_id=? AND chat_id=? AND case_id=? ORDER BY id`,keys);
-      let steps=[];let planningError=null;
-      try { const ctx=await exchangeOrderContext(db,keys,false);steps=ctx.plan.steps.filter(s=>s.direction==='RECEIVE' && s.fileType==='05'); }
+      let steps=[];let planningError=null;let planVersion=null;
+      try { const ctx=await exchangeOrderContext(db,keys,false);planVersion=ctx.version;steps=ctx.plan.steps.filter(s=>s.direction==='RECEIVE' && s.fileType==='05'); }
       catch(e) { if(e.code!=='EXCHANGE_PLAN_REQUIRED')throw e;planningError={error:e.code,message:e.message}; }
-      return {steps,planningError,parses:parses.map(p=>({...p,parsed:json(p.parsed),applied:p.applied&&json(p.applied)}))};
+      const [receipts]=await db.execute(`SELECT CAST(parse_id AS CHAR) AS parseId,plan_version AS planVersion,step_id AS stepId
+        FROM case_holdings_plan_receipts WHERE workspace_id=? AND chat_id=? AND case_id=? ORDER BY plan_version,step_id`,keys);
+      return {steps,planningError,planVersion,parses:parses.map(p=>({...p,parsed:json(p.parsed),applied:p.applied&&json(p.applied),
+        receipts:receipts.filter(r=>String(r.parseId)===String(p.parseId))}))};
     });
   }
   async function parse(token,input,runParsing) {
