@@ -16,7 +16,7 @@ test('unplanned exchange goes through AI timing question; complete plan skips ex
  const graph=createDiscussionGraph({complete:async args=>{calls.push(args);return calls.length===1?JSON.stringify({...base,exchangePlan:{status:'UNPLANNED',steps:[],openQuestions:['申请和回传分别是哪天？']}}):'当前理解：已有确认账户，需要申购测试。\n建议先测：按确认日期发送03并接收04。\n请你确认：申请和回传分别是哪一天？';}});
  assert.ok(graph.getGraph().nodes.ask_exchange_timing);
  const result=await proposeDiscussionPlan(graph,{priorTurns,userInput:'给我计划'});
- assert.equal(calls.length,2);assert.equal(result.promptVersion,'exchange-timing-v1');assert.match(result.reply,/哪一天/);assert.equal(result.proposal.exchangePlan.status,'UNPLANNED');
+ assert.equal(calls.length,2);assert.ok(!calls[1].system.includes('申请和回传分别是哪天？'));assert.deepEqual(JSON.parse(calls[1].messages.at(-1).content).unresolvedExchangeQuestions,['申请和回传分别是哪天？']);assert.equal(result.promptVersion,'exchange-timing-context-v2');assert.match(result.reply,/哪一天/);assert.equal(result.proposal.exchangePlan.status,'UNPLANNED');
  let count=0;
  await proposeDiscussionPlan(createDiscussionGraph({complete:async()=>{count++;return JSON.stringify({...base,exchangePlan});}}),{priorTurns,userInput:'03日期已确认20261006，04日期已确认20261007'});
  assert.equal(count,1);
