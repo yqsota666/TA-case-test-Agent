@@ -25,6 +25,7 @@ test('HTTP auth refuses foreign-origin mutations and never returns token in JSON
   const bad=await fetch(url+'/api/auth/login',{method:'POST',headers:{origin:'https://evil.example','content-type':'application/json'},body:'{}'});assert.equal(bad.status,403);assert.equal(calls,0);
   const login=await fetch(url+'/api/auth/login',{method:'POST',headers:{origin:'https://agent.example','content-type':'application/json'},body:'{}'});assert.equal(login.status,200);assert.deepEqual(await login.json(),{user});assert.match(login.headers.get('set-cookie'),/HttpOnly/);
   const me=await fetch(url+'/api/auth/me',{headers:{cookie:'case_session='+token}});assert.equal(me.status,200);assert.deepEqual(await me.json(),{user});
+  const stale=await fetch(url+'/api/auth/logout',{method:'POST',headers:{origin:'https://agent.example','content-type':'application/json',cookie:'case_session='+token,'x-case-account':'other-user'},body:'{}'});assert.equal(stale.status,409);
   const logout=await fetch(url+'/api/auth/logout',{method:'POST',headers:{origin:'https://agent.example','content-type':'application/json',cookie:'case_session='+token},body:'{}'});assert.equal(logout.status,200);assert.match(logout.headers.get('set-cookie'),/Max-Age=0/);
  }finally{await new Promise(resolve=>server.close(resolve));}
 });
