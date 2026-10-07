@@ -1,11 +1,12 @@
 import { createServer } from 'node:http';
 import { DataEditSchema } from '../../case-agent/src/index.js';
+import { revisePreparedPlanData } from './prepared-plan-data.js';
 import { parseDataFile } from '../../platform-protocol/src/index.js';
 
 const taResetPath=/^\/api\/exchange\/channels\/([1-9]\d*)\/ta-reset(?:\/(confirm))?$/i;
 const chatCollectionPath=/^\/api\/chats(?:\/([0-9a-f-]{36})\/cases)?$/i;
 const lifecyclePath=/^\/api\/chats\/([0-9a-f-]{36})\/lifecycle(?:\/(close|retest|new-run))?$/i;
-const pathPattern = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/(discussion|plan|plan\/confirm|data|data\/execute|data\/review|data\/confirm|application-preparation)$/i;
+const pathPattern = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/(discussion|plan|plan\/data|plan\/confirm|data|data\/execute|data\/review|data\/confirm|application-preparation)$/i;
 const applicationPath = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/applications$/i;
 const bindingPath = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/ta-bindings$/i;
 const batchPath = /^\/api\/chats\/([0-9a-f-]{36})\/batches(?:\/([0-9a-f-]{36})\/generate)?$/i;
@@ -97,7 +98,7 @@ export function createCaseHttpHandler({ repository, discussionService, confirmPl
         (files && request.method === 'GET')));
     if (!resetRoute && !workflowRoute && !receiptsRoute && !collectionRoute && !lifecycleRoute && !resultRoute && !holdingsRoute && !supplementRoute && !catalog && !salesRoute && !confirmationRoute && !exchangeRoute && !parsingRoute && (!match || !['GET', 'POST', 'PATCH'].includes(request.method) ||
         (request.method === 'PATCH' && match?.[3] !== 'data') ||
-        (['plan/confirm', 'data/execute', 'data/confirm'].includes(match?.[3]) && request.method !== 'POST') ||
+        (['plan/data','plan/confirm', 'data/execute', 'data/confirm'].includes(match?.[3]) && request.method !== 'POST') ||
         (match?.[3] === 'data/review' && !['GET', 'POST'].includes(request.method)) ||
         (match?.[3] === 'data' && !['GET', 'PATCH'].includes(request.method)))) {
       send(response, 404, { error: 'NOT_FOUND' }); return;
@@ -304,6 +305,9 @@ export function createCaseHttpHandler({ repository, discussionService, confirmPl
         send(response, 415, { error: 'UNSUPPORTED_MEDIA_TYPE' }); return;
       }
       const body = await jsonBody(request);
+      if (action === 'plan/data') {
+        send(response,200,await revisePreparedPlanData({repository,token,chatPublicId,casePublicId,body})); return;
+      }
       if (action === 'application-preparation') {
         if (!body || typeof body !== 'object' || Array.isArray(body) ||
           Object.keys(body).some(key => !['revision','userInput','channelId'].includes(key)) ||

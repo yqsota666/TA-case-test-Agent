@@ -29,6 +29,23 @@ export function createPlanContractGraph({ complete, discussionContext=[] }) {
     throw Object.assign(new Error('系统尚未完成方案构造，请重试；无需补充技术字段'),{code:'INVALID_PLAN_CONTRACT',status:422});
   });
   graph.addNode('validate_plan_applications',({plan,contract})=>{
+    return {contract:validatePlanApplications(plan,contract)};
+  });
+  graph.addEdge(START,'define_plan_data').addEdge('define_plan_data','define_plan_expectations').addEdge('define_plan_expectations','validate_plan_applications').addEdge('validate_plan_applications',END);
+  return graph.compile();
+}
+export async function definePlanContract(complete,plan,discussionContext=[]) {
+  const state=await createPlanContractGraph({complete,discussionContext}).invoke({plan});
+  return {...plan,contract:state.contract};
+}
+export function displayPlanContract(contract) {
+  const d=contract.dataSpecification;
+  return ['准备数据（待确认）：',JSON.stringify(d,null,2),'申请数据（待确认）：',JSON.stringify(contract.applications,null,2),'业务假设（待确认）：',...contract.assumptions,
+    '结果预期（待确认）：',...contract.expectations.map(a=>`场景${a.scenarioIndex+1}：${a.expectedQuote}；账户 ${a.selector.transactionAccountId??'准备账户索引'+a.selector.accountIndex}；基金 ${a.selector.fundCode??'无'}；${a.field} ${a.operator} ${a.expectedValue}`),
+    ...[...d.missing,...contract.missing].map(q=>'待澄清：'+q),'请先确认准备数据，再确认预期结果。修改内容需要生成新版本并重新确认。'].join('\n');
+}
+
+export function validatePlanApplications(plan,contract) {
     const d=contract.dataSpecification;
     const data={customers:d.customers.map((c,i)=>({id:String(i+1),name:c.name,investor_type:c.investorType})),
       accounts:d.accounts.map((a,i)=>({id:String(i+1),customer_id:String(a.customerIndex+1),account_no:String(90000000000000000n+BigInt(i)),branch_code:a.branchCode})),
@@ -50,18 +67,5 @@ export function createPlanContractGraph({ complete, discussionContext=[] }) {
         bindings:data.accounts.map(a=>({channelId:'1',transactionAccountId:a.account_no,taAccountId:'SYNTA0001'})),casePublicId:'00000000-0000-4000-8000-000000000001'});
       questions.push(...compiled.questions);
     }
-    return {contract:{...contract,missing:[...new Set([...contract.missing,...questions])]}};
-  });
-  graph.addEdge(START,'define_plan_data').addEdge('define_plan_data','define_plan_expectations').addEdge('define_plan_expectations','validate_plan_applications').addEdge('validate_plan_applications',END);
-  return graph.compile();
-}
-export async function definePlanContract(complete,plan,discussionContext=[]) {
-  const state=await createPlanContractGraph({complete,discussionContext}).invoke({plan});
-  return {...plan,contract:state.contract};
-}
-export function displayPlanContract(contract) {
-  const d=contract.dataSpecification;
-  return ['准备数据（待确认）：',JSON.stringify(d,null,2),'申请数据（待确认）：',JSON.stringify(contract.applications,null,2),'业务假设（待确认）：',...contract.assumptions,
-    '结果预期（待确认）：',...contract.expectations.map(a=>`场景${a.scenarioIndex+1}：${a.expectedQuote}；账户 ${a.selector.transactionAccountId??'准备账户索引'+a.selector.accountIndex}；基金 ${a.selector.fundCode??'无'}；${a.field} ${a.operator} ${a.expectedValue}`),
-    ...[...d.missing,...contract.missing].map(q=>'待澄清：'+q),'请先确认准备数据，再确认预期结果。修改内容需要生成新版本并重新确认。'].join('\n');
+    return {...contract,missing:[...new Set([...contract.missing,...questions])]};
 }

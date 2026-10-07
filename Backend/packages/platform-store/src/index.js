@@ -146,7 +146,7 @@ export function createCaseRepository({ transaction }) {
     });
   }
 
-  async function saveSopProposal(token, chatPublicId, casePublicId, proposal) {
+  async function saveSopProposal(token, chatPublicId, casePublicId, proposal, options = {}) {
     chatPublicId = requiredUuid(chatPublicId, 'Chat');
     casePublicId = requiredUuid(casePublicId, 'Case');
     if (!validSopPlan(proposal)) {
@@ -176,10 +176,11 @@ export function createCaseRepository({ transaction }) {
       if (latestTurn?.status === 'PENDING') {
         throw storeError('DISCUSSION_IN_PROGRESS', 409, '请先完成当前讨论');
       }
-      const [[latest]] = await db.execute(`SELECT id,version_number,status FROM case_sop_versions
+      const [[latest]] = await db.execute(`SELECT id,version_number,status,source_turn_number FROM case_sop_versions
         WHERE workspace_id=? AND chat_id=? AND case_id=?
         ORDER BY version_number DESC LIMIT 1 FOR UPDATE`,
       [auth.workspace_id, chat.id, caseRow.id]);
+      if (options.expectedVersion !== undefined && (Number(latest?.version_number) !== options.expectedVersion || latest?.status !== 'PENDING_CONFIRMATION')) throw storeError('STALE_PLAN',409,'方案已更新或锁定，请刷新后再修改');
       if (latest?.status === 'LOCKED') throw storeError('SOP_LOCKED', 409, 'SOP 已锁定');
       if (latest?.status === 'PENDING_CONFIRMATION') {
         await db.execute(`UPDATE case_sop_versions SET status='DRAFT'
@@ -188,9 +189,9 @@ export function createCaseRepository({ transaction }) {
       }
       const versionNumber = (latest?.version_number ?? 0) + 1;
       await db.execute(`INSERT INTO case_sop_versions
-        (workspace_id,chat_id,case_id,version_number,plan_json,status)
-        VALUES (?,?,?,?,?,'PENDING_CONFIRMATION')`,
-      [auth.workspace_id, chat.id, caseRow.id, versionNumber, planJson]);
+        (workspace_id,chat_id,case_id,version_number,plan_json,status,source_turn_number)
+        VALUES (?,?,?,?,?,'PENDING_CONFIRMATION',?)`,
+      [auth.workspace_id, chat.id, caseRow.id, versionNumber, planJson, options.expectedVersion !== undefined ? latest.source_turn_number : null]);
       if (caseRow.status === 'DISCUSSING') {
         await db.execute(`UPDATE cases SET status='SOP_PENDING'
           WHERE workspace_id=? AND chat_id=? AND id=?`,
