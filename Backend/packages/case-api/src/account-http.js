@@ -11,6 +11,7 @@ export function createAccountHttpHandler({accountAuth,allowedOrigin,secureCookie
     const cookie=String(request.headers.cookie??'').split(';').map(value=>value.trim()).find(value=>value.startsWith('case_session='));
     let token;try {token=cookie&&decodeURIComponent(cookie.slice(13));}catch {}
     try {
+      if(['logout','password'].includes(action)&&request.headers['x-case-account']){const current=await accountAuth.current(token);if(current.user.id!==request.headers['x-case-account'])throw Object.assign(new Error('账户已切换，请重新连接'),{status:409,code:'ACCOUNT_CHANGED'});}
       if(action==='me'){const current=await accountAuth.current(token);response.setHeader('set-cookie',accountCookie(token,{secure:secureCookie}));send(response,200,current);return true;}
       if(request.headers.origin!==allowedOrigin){send(response,403,{error:'INVALID_ORIGIN',message:'请求来源不正确，请从本网站重新登录'});return true;}
       if(!/^application\/json(?:\s*;|$)/i.test(request.headers['content-type']??'')){send(response,415,{error:'UNSUPPORTED_MEDIA_TYPE'});return true;}
