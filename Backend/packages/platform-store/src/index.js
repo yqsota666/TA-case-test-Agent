@@ -261,7 +261,7 @@ export function createCaseRepository({ transaction }) {
       if (!validSopPlan(plan)) {
         throw storeError('INVALID_PLAN', 409, '已保存的 Plan 结构无效，请重新生成');
       }
-      if (!plan.exchangePlan || plan.exchangePlan.status !== 'READY') {
+      if (!plan.exchangePlan || !['READY','NOT_REQUIRED'].includes(plan.exchangePlan.status)) {
         throw storeError('EXCHANGE_PLAN_REQUIRED',409,'请先讨论文件的轮次、业务时间和顺序，再确认 Plan');
       }
       if (plan.openQuestions.length) {
@@ -275,6 +275,9 @@ export function createCaseRepository({ transaction }) {
       }
       if (plan.contract.dataSpecification.missing.length || (section==='EXPECTATIONS' && plan.contract.missing.length)) {
         throw storeError('PLAN_HAS_OPEN_QUESTIONS',409,'准备数据或预期还有待澄清事项');
+      }
+      if (section==='EXPECTATIONS' && plan.exchangePlan.status==='NOT_REQUIRED') {
+        throw storeError('NO_EXCHANGE_WORKFLOW_UNSUPPORTED',409,'当前流程尚未支持无需文件交换的结果核对；准备数据可审阅，方案暂不能锁定');
       }
       const keys=[auth.workspace_id,chat.id,caseRow.id,versionNumber];
       const [confirmed] = await db.execute(`SELECT section FROM case_plan_section_confirmations
