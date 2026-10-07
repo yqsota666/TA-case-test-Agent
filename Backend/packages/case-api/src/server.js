@@ -1,3 +1,4 @@
+import {createAccountAuth} from './account-auth.js';
 import {dataExchangeRequirementIssues} from '../../platform-protocol/src/data-exchange-requirements.js';
 import {createTaResetRepository} from '../../platform-store/src/ta-reset.js';
 import {createChatLifecycleRepository} from '../../platform-store/src/chat-lifecycle.js';
@@ -44,6 +45,7 @@ const transaction = async action => {
     throw error;
   } finally { connection.release(); }
 };
+const accountAuth=createAccountAuth({transaction});
 const taReset=createTaResetRepository({transaction});
 const chatLifecycle=createChatLifecycleRepository({transaction});
 const durableWorkflow = createDurableWorkflowRepository({pool});
@@ -112,5 +114,5 @@ const applicationPreparation = createApplicationPreparationService({ repository,
 const confirmData = ({ token, chatPublicId, casePublicId, revision }) =>
   repository.confirmGeneratedData(token, chatPublicId, casePublicId, revision);
 const server = createCaseHttpServer({planContentComplete:complete, repository, discussionService, confirmPlan,
-  executeData, reviseData, exchangeRepository, applicationPreparation, confirmData, returnParsing, returnConfirmation, holdingsReturn, taReceipts, caseResult, exchangePlanSupplement, chatLifecycle, durableWorkflow, taReset, allowedOrigin });
+  executeData, reviseData, exchangeRepository, applicationPreparation, confirmData, returnParsing, returnConfirmation, holdingsReturn, taReceipts, caseResult, exchangePlanSupplement, chatLifecycle, durableWorkflow, taReset, accountAuth, secureCookie:process.env.NODE_ENV==='production', allowedOrigin });
 server.listen(Number(process.env.CASE_API_PORT ?? 3100), '127.0.0.1');

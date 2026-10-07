@@ -1,3 +1,4 @@
+import {createAccountHttpHandler} from './account-http.js';
 import { createServer } from 'node:http';
 import { DataEditSchema } from '../../case-agent/src/index.js';
 import {revisePreparedPlanContent} from './prepared-plan-content.js';
@@ -55,11 +56,13 @@ async function jsonBody(request, limit = 256 * 1024) {
 }
 
 export function createCaseHttpHandler({ planContentComplete, repository, discussionService, confirmPlan, executeData,
-  reviseData, exchangeRepository, applicationPreparation, confirmData, returnParsing, returnConfirmation, holdingsReturn, taReceipts, caseResult, exchangePlanSupplement, chatLifecycle, durableWorkflow, taReset, allowedOrigin }) {
+  reviseData, exchangeRepository, applicationPreparation, confirmData, returnParsing, returnConfirmation, holdingsReturn, taReceipts, caseResult, exchangePlanSupplement, chatLifecycle, durableWorkflow, taReset, accountAuth, secureCookie, allowedOrigin }) {
   if (!repository || !discussionService || !confirmPlan || !executeData || !reviseData || !allowedOrigin) {
     throw new TypeError('API dependencies required');
   }
+  const accountHandler=createAccountHttpHandler({accountAuth,allowedOrigin,secureCookie});
   return async (request, response) => {
+    if(await accountHandler(request,response))return;
     const pathname = new URL(request.url, 'http://localhost').pathname;
     const reset=taReset && taResetPath.exec(pathname);
     const resetRoute=Boolean(reset && ((!reset[2] && request.method==='GET') || (reset[2] && request.method==='POST')));
