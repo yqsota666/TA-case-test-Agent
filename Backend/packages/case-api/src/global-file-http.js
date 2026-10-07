@@ -1,0 +1,5 @@
+export async function handleGlobalFileCatalog(request,response,token,catalog){
+ const url=new URL(request.url,'http://localhost');if(request.method!=='GET'||!['/api/files/catalog','/api/files/catalog/download'].includes(url.pathname))return false;
+ if(url.pathname.endsWith('/download')){const file=await catalog.downloadFile(token,{kind:url.searchParams.get('kind'),id:url.searchParams.get('id'),fileName:url.searchParams.get('fileName')});response.writeHead(200,{'content-type':'application/octet-stream','content-disposition':`attachment; filename="${file.fileName}"`,'content-length':file.rawBytes.length,'cache-control':'no-store','x-content-type-options':'nosniff'});response.end(file.rawBytes);}
+ else{const value=await catalog.listFiles(token,{q:url.searchParams.get('q')??undefined,offset:url.searchParams.get('offset')??undefined,limit:url.searchParams.get('limit')??undefined});response.writeHead(200,{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'});response.end(JSON.stringify(value));}return true;
+}
