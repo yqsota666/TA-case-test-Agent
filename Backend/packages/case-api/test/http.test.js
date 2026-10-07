@@ -13,11 +13,12 @@ async function fixture(t, {orderRejected=false}={}) {
   const calls = [];
   const server = createCaseHttpServer({
     allowedOrigin,
+    accountAuth:{current:async()=>({user:{id:'expected-account'}})},
     durableWorkflow:{read:async(token,input)=>{calls.push(['workflow-read',token,input]);return {stage:'DISCUSSION'};},resume:async(token,input)=>{calls.push(['workflow-resume',token,input]);return {stage:'FILE_EXCHANGE'};}},
     exchangePlanSupplement:{confirm:async(token,input)=>{calls.push(['supplement',token,input]);return{versionNumber:2,status:'LOCKED',supplemented:true};}},
     returnConfirmation: Object.fromEntries(['read','delivery','apply','salesData','selectAccount'].map(method =>
       [method,async (token,input) => { calls.push(['confirmation-'+method,token,input]); return { ok:true }; }])),
-    caseResult:{read:async(token,scope)=>{calls.push(['result-read',token,scope]);return {reviewId:null};},evaluate:async(token,scope)=>{calls.push(['result-evaluate',token,scope]);return {suggestion:{outcome:'REVIEW'}};},confirm:async(token,input)=>{calls.push(['result-confirm',token,input]);return {finalVerdict:'PASS'};}},
+    caseResult:{readBusinessOutput:async(token,input)=>{calls.push(['business-read',token,input]);return {businessOutput:null};},saveBusinessOutput:async(token,input)=>{calls.push(['business-save',token,input]);return {businessOutput:{id:'1'},duplicate:false};},read:async(token,scope)=>{calls.push(['result-read',token,scope]);return {reviewId:null};},evaluate:async(token,scope)=>{calls.push(['result-evaluate',token,scope]);return {suggestion:{outcome:'REVIEW'}};},confirm:async(token,input)=>{calls.push(['result-confirm',token,input]);return {finalVerdict:'PASS'};}},
     taReceipts:{read:async(token,input)=>{calls.push(['receipts-read',token,input]);return {supportedTypes:['02','04','05']};},parse:async(token,input)=>{calls.push(['receipts-parse',token,input]);return {phase:'PARSED',businessApplied:false};}},
     holdingsReturn: {
       read: async (token,scope)=>{calls.push(['holdings-read',token,scope]);return {steps:[],parses:[]};},
@@ -424,4 +425,22 @@ test('cancelling a pending discussion validates turn and origin before scoped ab
  assert.equal((await fetch(base+path,{method:'POST',headers:{...headers,origin:'https://foreign.example'},body:JSON.stringify({turnNumber:3})})).status,403);
  assert.equal((await fetch(base+path,{method:'POST',headers,body:JSON.stringify({turnNumber:3})})).status,200);
  assert.equal(calls.filter(c=>c[0]==='abandon').length,1);assert.equal(calls.at(-1)[1].turnNumber,3);
+});
+
+
+test('business output routes bind scope, reject changed account and bound JSON uploads',async t=>{
+ const {base,calls}=await fixture(t);const path=route.replace('/discussion','/result-review/business-output');
+ const headers={cookie:'case_session=abcdefghijklmnopqrstuvwxyz012345',origin:allowedOrigin,'content-type':'application/json','x-case-account':'expected-account'};
+ assert.equal((await fetch(base+path)).status,401);
+ assert.equal((await fetch(base+path,{headers})).status,200);assert.equal(calls.at(-1)[0],'business-read');
+ const body={requestId:'cccccccc-cccc-cccc-cccc-cccccccccccc',planVersion:1,sourceKind:'USER_RESULT',content:'实际输出'};
+ const saved=await fetch(base+path,{method:'POST',headers,body:JSON.stringify(body)});assert.equal(saved.status,200);
+ assert.deepEqual(calls.at(-1)[2],{chatPublicId:'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',casePublicId:'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',...body});
+ const before=calls.length;
+ for(const method of ['GET','POST'])assert.equal((await fetch(base+path,{method,headers:{...headers,'x-case-account':'previous-account'},...(method==='POST'?{body:JSON.stringify(body)}:{})})).status,409);
+ assert.equal(calls.length,before);
+ assert.equal((await fetch(base+path,{method:'POST',headers:{...headers,origin:'https://foreign.example'},body:JSON.stringify(body)})).status,403);
+ assert.equal((await fetch(base+path,{method:'POST',headers,body:JSON.stringify({...body,workspaceId:'99'})})).status,400);
+ assert.equal((await fetch(base+path,{method:'POST',headers,body:JSON.stringify({...body,content:'超'.repeat(90000)})})).status,413);
+ assert.equal((await fetch(base+path,{method:'DELETE',headers})).status,404);
 });
