@@ -15,7 +15,7 @@ test('first graph node asks and waits without creating a plan', async () => {
   assert.equal(calls.length, 1);
   assert.match(calls[0].system, /不重复询问/);
   assert.equal(calls[0].user, input);
-  assert.deepEqual(result, { reply, phase: 'AWAITING_USER', promptVersion: 'first-discussion-natural-v1' });
+  assert.deepEqual(result, { reply, phase: 'AWAITING_USER', promptVersion: 'first-discussion-guided-v3' });
   assert.equal('plan' in result, false);
 });
 

@@ -61,7 +61,7 @@ test('service stores user intent before model call and reads only server-owned h
   assert.equal(second.revision, 2);
   assert.deepEqual(modelCalls[1].messages.map(message => message.content),
     ['请帮我分析一项规则', firstReply, '我想看边界']);
-  assert.equal(rounds[1].promptVersion, 'followup-discussion-natural-v1');
+  assert.equal(rounds[1].promptVersion, 'followup-discussion-guided-v3');
 });
 
 test('oversized input is rejected before model call or database intent write', async () => {
@@ -148,7 +148,7 @@ test('linked retest supplies read-only failure context to model without copying 
  const repository={readCaseDiscussion:async()=>({revision:0,turns:[],pending:null,sourceContext}),beginCaseDiscussionTurn:async()=>({turnNumber:1}),finishCaseDiscussionTurn:async(...args)=>{saved=args.at(-1);return{revision:1};},finishCasePlanProposal:async()=>{},abandonCaseDiscussionTurn:async()=>{}};
  const service=createPersistedDiscussionService({repository,complete:async request=>{calls.push(request);return firstReply;}});
  await service.discuss({...scope,userInput:'先讨论修复后怎样重新测'});
- assert.equal(calls.length,1);assert.match(calls[0].system,/实际持仓不一致/);assert.match(calls[0].system,/只读证据/);assert.match(calls[0].system,/不继承原Plan确认/);assert.equal(calls[0].user,'先讨论修复后怎样重新测');assert.equal(saved.turnNumber,1);
+ assert.equal(calls.length,1);assert.ok(!calls[0].system.includes('实际持仓不一致'));assert.deepEqual(JSON.parse(calls[0].user).sourceContext,sourceContext);assert.match(calls[0].system,/只读证据/);assert.match(calls[0].system,/不继承原Plan确认/);assert.equal(JSON.parse(calls[0].user).userInput,'先讨论修复后怎样重新测');assert.equal(saved.turnNumber,1);
 });
 
 
