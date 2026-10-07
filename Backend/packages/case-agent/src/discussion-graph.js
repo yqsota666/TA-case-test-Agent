@@ -14,7 +14,7 @@ import {
   guardExchangeTimeEvidence,
 } from './plan-proposal.js';
 
-export const FOLLOWUP_DISCUSSION_PROMPT_VERSION = 'followup-discussion-guided-v3';
+export const FOLLOWUP_DISCUSSION_PROMPT_VERSION = 'followup-discussion-guided-v4';
 export const FOLLOWUP_DISCUSSION_PROMPT = DISCUSSION_VOICE + '\n阅读完整对话，以用户最新纠正为准。承接上轮问题的答案，推动下一步，不循环索要已经提供的信息。';
 
 const Turn = z.object({ role: z.enum(['user', 'assistant']), content: z.string() });

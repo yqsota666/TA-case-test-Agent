@@ -34,6 +34,7 @@ test('MySQL: same-version dual confirmation freezes drafts, survives retries and
   const noFileArgs=[token,chat.publicId,noFiles.publicId];
   const noFilePlan=structuredClone(plan);
   noFilePlan.exchangePlan={status:'NOT_REQUIRED',steps:[],openQuestions:[]};
+  noFilePlan.contract.dataSpecification={customers:[],accounts:[],funds:[],holdings:[],missing:[]};
   noFilePlan.contract.applications=[]; noFilePlan.contract.expectations=[];
   noFilePlan.contract.missing=['现有预期字段不支持该计算结果'];
   await repo.saveSopProposal(...noFileArgs,noFilePlan);
@@ -59,6 +60,13 @@ test('MySQL: same-version dual confirmation freezes drafts, survives retries and
   await repo.confirmSopProposal(...reviewedArgs,1,'EXPECTATIONS');
   assert.equal((await repo.getLatestSopProposal(...reviewedArgs)).status,'LOCKED');
   assert.equal((await repo.generatedData(...reviewedArgs)).status,'NOT_STARTED');
+  const blockedCase=await repo.createCase(token,chat.publicId,'模拟账户不能跳过文件');
+  const blockedArgs=[token,chat.publicId,blockedCase.publicId];
+  const blockedPlan=structuredClone(reviewed);blockedPlan.contract.dataSpecification.customers=[plan.contract.dataSpecification.customers[0]];blockedPlan.contract.dataSpecification.funds=plan.contract.dataSpecification.funds;blockedPlan.contract.dataSpecification.accounts=[{customerIndex:0,branchCode:'306'}];
+  await repo.saveSopProposal(...blockedArgs,blockedPlan);
+  await assert.rejects(repo.confirmSopProposal(...blockedArgs,1,'DATA'),{code:'DATA_EXCHANGE_REQUIRED'});
+  assert.deepEqual((await repo.getLatestSopProposal(...blockedArgs)).confirmations,[]);
+  assert.equal((await repo.generatedData(...blockedArgs)).status,'NOT_STARTED');
   const unplanned=structuredClone(noFilePlan);
   unplanned.exchangePlan={status:'UNPLANNED',steps:[],openQuestions:['需要明确文件时间']};
   await repo.saveSopProposal(...noFileArgs,unplanned);

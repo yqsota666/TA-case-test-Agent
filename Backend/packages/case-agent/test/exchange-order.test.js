@@ -168,3 +168,15 @@ test('human same-day receives and year-elided send dates remain grounded in that
  const result=await proposeDiscussionPlan(g,{priorTurns,userInput:'2027年1月11日发01，当天收到成功02并确认同步；1月12日发03，当天收到成功04并确认同步。申请时间09:30:00。'});
  assert.equal(calls,1);assert.equal(result.proposal.exchangePlan.status,'READY');
 });
+
+
+test('separate rounds may affirm different dates in one human message, including same-day returns',async()=>{
+ const {guardExchangeTimeEvidence}=await import('../src/plan-proposal.js');
+ const steps=['20261102','20261104'].flatMap((date,i)=>exchangePlan.steps.map(step=>({...step,stepId:`${step.stepId}_${i}`,roundId:`r${i}`,businessTime:{kind:'DATE',value:date},dependsOn:step.dependsOn.map(d=>({...d,stepId:`${d.stepId}_${i}`}))})));
+ const proposal={exchangePlan:{...exchangePlan,steps}};
+ const text='客户甲03业务日期2026-11-02，04同日接收；客户乙03业务日期2026-11-04，04同日接收。';
+ assert.equal(guardExchangeTimeEvidence(proposal,[text]).exchangePlan.status,'READY');
+ assert.equal(guardExchangeTimeEvidence(proposal,[text,'03日期改为2026-11-06']).exchangePlan.status,'UNPLANNED');
+ assert.equal(guardExchangeTimeEvidence(proposal,[text,'03日期取消']).exchangePlan.status,'UNPLANNED');
+ assert.equal(guardExchangeTimeEvidence(proposal,[text+'03日期2026-11-02取消；客户乙03业务日期2026-11-04。']).exchangePlan.status,'UNPLANNED');
+});

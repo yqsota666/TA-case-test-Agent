@@ -2,7 +2,7 @@ import { StateGraph, StateSchema, START, END } from '@langchain/langgraph';
 import { z } from 'zod';
 import {DISCUSSION_VOICE,checkDiscussionReply} from './discussion-reply.js';
 
-export const FIRST_DISCUSSION_PROMPT_VERSION = 'first-discussion-guided-v3';
+export const FIRST_DISCUSSION_PROMPT_VERSION = 'first-discussion-guided-v4';
 export const FIRST_DISCUSSION_PROMPT = DISCUSSION_VOICE + '\n这是首轮。需求已说明重点时不要再问用户最想验证什么；优先把关键风险与下一步说清楚。';
 
 const FirstDiscussionState = new StateSchema({

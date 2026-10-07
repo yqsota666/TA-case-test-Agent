@@ -1,3 +1,4 @@
+import {dataExchangeRequirementIssues} from '../../platform-protocol/src/data-exchange-requirements.js';
 import {readPredecessorContext} from './predecessor-context.js';
 import { isDeepStrictEqual } from 'node:util';
 import { validPlanContract } from '../../platform-protocol/src/plan-contract.js';
@@ -270,6 +271,8 @@ export function createCaseRepository({ transaction }) {
       if (!plan.contract || !validPlanContract(plan.contract,plan)) {
         throw storeError('PLAN_CONTRACT_REQUIRED',409,'请重新生成带准备数据和结构化预期的Plan');
       }
+      const exchangeIssues=dataExchangeRequirementIssues(plan);
+      if(exchangeIssues.length)throw storeError('DATA_EXCHANGE_REQUIRED',409,exchangeIssues.join('；'));
       if (![ 'DATA','EXPECTATIONS' ].includes(section)) {
         throw storeError('PLAN_SECTION_REQUIRED',400,'请明确确认准备数据或预期结果');
       }

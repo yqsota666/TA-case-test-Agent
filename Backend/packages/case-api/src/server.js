@@ -1,3 +1,4 @@
+import {dataExchangeRequirementIssues} from '../../platform-protocol/src/data-exchange-requirements.js';
 import {createTaResetRepository} from '../../platform-store/src/ta-reset.js';
 import {createChatLifecycleRepository} from '../../platform-store/src/chat-lifecycle.js';
 import { createDurableWorkflowRepository } from '../../platform-store/src/durable-workflow.js';
@@ -71,6 +72,8 @@ const executeData = async ({ token, chatPublicId, casePublicId, versionNumber, s
     const error = new Error('须先确认对应版本的 Plan');
     error.code = 'PLAN_NOT_CONFIRMED'; error.status = 409; throw error;
   }
+  const issues=dataExchangeRequirementIssues(plan.proposal);
+  if(issues.length)throw Object.assign(new Error(issues.join('；')),{code:'DATA_EXCHANGE_REQUIRED',status:409});
   const existing = await repository.generatedData(token, chatPublicId, casePublicId);
   if (existing.status === 'VALIDATED') return { ...existing, replayed: true };
   specification ??= plan.proposal.contract?.dataSpecification ?? await deriveDataSpecification(completeData, plan.proposal);
