@@ -157,3 +157,14 @@ test('offset digits and natural rescheduling cannot supply or preserve unrelated
   if(missing)assert.deepEqual(result.proposal.exchangePlan.openQuestions.map(question=>question.match(/^请确认 ([^（]+)/)[1]),missing,messages.join('；'));
  }
 });
+
+
+test('human same-day receives and year-elided send dates remain grounded in that message',async()=>{
+ const dates={...exchangePlan,steps:exchangePlan.steps.map(s=>({...s,businessTime:{kind:'DATE',value:s.fileType==='01'||s.fileType==='02'?'20270111':'20270112'}}))};
+ const p={objective:'开户后申购',preconditions:[],scenarios:[{title:'正向链路',setup:'新客户',action:'文件交换',expected:'开户成功；申购成功',evidence:'TA回传'}],openQuestions:[],exchangePlan:dates};
+ let calls=0;
+ const g=createDiscussionGraph({complete:async()=>{calls++;return JSON.stringify(p);}});
+ const priorTurns=[{role:'user',content:'开户后申购'},{role:'assistant',content:'请补充范围'},{role:'user',content:'只有正向链路'},{role:'assistant',content:'请确定日期'}];
+ const result=await proposeDiscussionPlan(g,{priorTurns,userInput:'2027年1月11日发01，当天收到成功02并确认同步；1月12日发03，当天收到成功04并确认同步。申请时间09:30:00。'});
+ assert.equal(calls,1);assert.equal(result.proposal.exchangePlan.status,'READY');
+});

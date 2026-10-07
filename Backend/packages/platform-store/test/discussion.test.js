@@ -174,3 +174,10 @@ test('proposal turns expose their kind so historical proposals are not rendered 
  const history=await repository.readCaseDiscussion(...scope);
  assert.equal(history.turns[1].kind,'PROPOSE_PLAN');
 });
+
+
+test('proposal identity retains its real turn number across abandoned attempts',async()=>{
+ const {repository}=fixture({initialTurns:[{turn_number:1,status:'ABANDONED',turn_kind:'PROPOSE_PLAN',user_text:'失败尝试'}, {turn_number:2,status:'COMPLETE',turn_kind:'PROPOSE_PLAN',user_text:'重新整理',assistant_text:reply}]});
+ const history=await repository.readCaseDiscussion(...scope);
+ assert.equal(history.turns.length,2);assert.equal(history.turns[1].sourceTurnNumber,2);
+});

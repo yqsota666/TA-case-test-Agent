@@ -61,7 +61,7 @@ export function createDiscussionGraph({ complete }) {
   graph.addNode('propose_plan', async ({ userInput, priorTurns }) => {
     if (priorTurns.length < 4) throw new Error('Plan 提案前至少需要两轮完整讨论');
     const proposal = guardExchangeTimeEvidence(parsePlanProposal(await complete({
-      system: PLAN_PROPOSAL_PROMPT,
+      reasoningEffort: 'low', system: PLAN_PROPOSAL_PROMPT,
       messages: [...priorTurns, { role: 'user', content: userInput }],
     })), [...priorTurns.filter(turn=>turn.role==='user').map(turn=>turn.content),userInput]);
     return {

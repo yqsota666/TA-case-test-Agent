@@ -52,7 +52,7 @@ export function hasNumericFieldExpectation(field, value, quote, operator) {
   return expected !== null && numericQuoteBindings(quote).some(binding => binding.field === field && preciseDecimal(binding.value) === expected && (operator === undefined || binding.operator === operator));
 }
 const literalLabels = {
-  status: ['最终状态', '申请状态', '确认状态', '状态', '确认成功', 'status'],
+  status: ['解析结果', 'TA业务结果', '最终状态', '申请状态', '确认状态', '状态', '确认成功', 'status'],
   returnCode: ['TA返回代码', '返回代码', '返回码', '结果代码', '结果码', '错误代码', '错误码', 'returnCode'],
   transactionAccountId: ['交易账户号', '交易账号', '交易账户', '销售账号', 'transactionAccountId'],
   taAccountId: ['TA账户号', 'TA账号', 'TA账户', 'TA号', 'taAccountId'],

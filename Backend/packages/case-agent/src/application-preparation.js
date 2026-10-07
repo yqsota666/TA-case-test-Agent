@@ -45,6 +45,11 @@ export function preparationCatalog(version) {
   };
 }
 
+export function editablePreparationFields(version) {
+  const catalog=preparationCatalog(version);
+  return Object.fromEntries(Object.entries(catalog.fields).map(([type,fields])=>[type,fields.filter(field=>!owned.has(field.name))]));
+}
+
 export async function deriveApplicationPreparation(complete, context) {
   const text = await complete({ system: APPLICATION_PREPARATION_PROMPT, user: JSON.stringify(context) });
   let json;

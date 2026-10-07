@@ -1,3 +1,4 @@
+import {fieldsForFile} from './profiles.js';
 import { hasNumericFieldExpectation, hasLiteralExpectation, numericQuoteBindings, preciseDecimal } from './numeric-expectations.js';
 import { validDate } from './exchange-plan.js';
 const exact = (v, keys) => v && typeof v === 'object' && !Array.isArray(v) &&
@@ -18,6 +19,22 @@ export function validPlanContract(c, plan) {
       !list(c.assumptions,50,v=>text(v)) || !list(c.missing,50,v=>text(v))) return false;
   const d=c.dataSpecification;
   return validDataSpecification(d) && validApplications(c,d,plan) && validExpectations(c,d,plan);
+}
+
+export function planContractValidationIssues(c,plan) {
+  if(!c || !c.dataSpecification)return ['准备数据结构缺失'];
+  if(!Array.isArray(c.applications)||!Array.isArray(c.expectations))return ['申请或预期结构不是数组'];
+  if(!validDataSpecification(c.dataSpecification))return ['准备数据格式或索引无效'];
+  const owned=new Set(['AppSheetSerialNo','TransactionAccountID','DistributorCode','BusinessCode','BranchCode','InvestorName','IndividualOrInstitution','TAAccountID','FundCode','ShareClass','TransactionDate']);
+  const forbidden=c.applications.flatMap(a=>{
+    const step=plan.exchangePlan?.steps.find(s=>s.stepId===a.stepId);
+    if(!step || !a.fields || typeof a.fields!=='object')return [];
+    const allowed=new Set(fieldsForFile(c.protocolVersion,step.fileType).map(f=>f.name));
+    return Object.keys(a.fields).filter(k=>owned.has(k)||!allowed.has(k)).map(k=>`${a.key} fields.${k}属于系统字段或不属于${step.fileType}协议，必须由系统填充或移出该申请`);
+  });
+  return [...forbidden,
+    !validApplications(c,c.dataSpecification,plan)&&'申请字段、发送步骤或账户基金引用无效',
+    !validExpectations(c,c.dataSpecification,plan)&&'预期原文、字段值或证据绑定无效'].filter(Boolean);
 }
 
 function validDataSpecification(d) {
@@ -46,7 +63,8 @@ function validApplications(c,d,plan) {
          (step.fileType==='03' && a.businessCode==='022' && a.fundIndex!==null))) return false;
     if(step.fileType==='03' && !money(a.fields.ApplicationAmount))return false;
     const owned=['AppSheetSerialNo','TransactionAccountID','DistributorCode','BusinessCode','BranchCode','InvestorName','IndividualOrInstitution','TAAccountID','FundCode','ShareClass','TransactionDate'];
-    return !Object.keys(a.fields).some(k=>owned.includes(k));
+    const allowed=new Set(fieldsForFile(c.protocolVersion,step.fileType).map(field=>field.name));
+    return !Object.keys(a.fields).some(k=>owned.includes(k)||!allowed.has(k));
   }) || new Set(c.applications.map(a=>a.key)).size!==c.applications.length) return false;
   for(const a of c.applications){
     const step=plan.exchangePlan.steps.find(s=>s.stepId===a.stepId);
