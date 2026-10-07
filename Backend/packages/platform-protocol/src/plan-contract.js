@@ -1,5 +1,5 @@
 import {fieldsForFile} from './profiles.js';
-import { hasNumericFieldExpectation, hasLiteralExpectation, numericQuoteBindings, preciseDecimal } from './numeric-expectations.js';
+import { hasNumericFieldExpectation, hasLiteralExpectation, numericQuoteBindings, numericQuoteBindingSpans, literalExpectationSpans, preciseDecimal } from './numeric-expectations.js';
 import { validDate } from './exchange-plan.js';
 const exact = (v, keys) => v && typeof v === 'object' && !Array.isArray(v) &&
   Object.keys(v).length === keys.length && keys.every(k => Object.hasOwn(v, k));
@@ -49,7 +49,13 @@ function validBusinessExpectations(c,plan) {
 export function businessExpectationsFor(plan,expectations) {
   return plan.scenarios.flatMap((scenario,scenarioIndex)=>{
     let remainder=scenario.expected;
-    for(const a of expectations.filter(a=>a.scenarioIndex===scenarioIndex))remainder=remainder.replace(a.expectedQuote,'');
+    for(const a of expectations.filter(a=>a.scenarioIndex===scenarioIndex)) {
+      const spans=[...numericQuoteBindingSpans(a.expectedQuote).filter(b=>b.field===a.field && b.operator===a.operator && preciseDecimal(b.value)===preciseDecimal(a.expectedValue)),...literalExpectationSpans(a.expectedValue,a.expectedQuote,a.field)];
+      let unbound=a.expectedQuote;
+      for(const span of spans.sort((a,b)=>b.start-a.start))unbound=unbound.slice(0,span.start)+unbound.slice(span.end);
+      // A broad evidence quote must not consume business rules outside its bound field.
+      if(!unbound.replace(/[\s；;，,。:：()（）]/g,''))remainder=remainder.replace(a.expectedQuote,'');
+    }
     return remainder.replace(/[\s；;，,。:：()（）]/g,'') ? [{scenarioIndex,expectedQuote:scenario.expected}] : [];
   });
 }

@@ -117,7 +117,7 @@ test('proposal uses server history and saves the exact displayed reply with its 
       finishCasePlanProposal: async (_a, _b, _c, result) => {
         assert.equal(rounds.at(-1).kind, 'PROPOSE_PLAN');
         assert.equal(result.turnNumber, 3);
-        assert.deepEqual(result.proposal, {...plan,contract:{...planContract(plan),version:2,businessExpectations:[]}});
+        assert.deepEqual(result.proposal, {...plan,contract:{...planContract(plan),version:2,businessExpectations:[{scenarioIndex:0,expectedQuote:plan.scenarios[0].expected}]}});
         assert.match(result.assistantReply, /测试目标：检查规则/);
         return { revision: 3, versionNumber: 1 };
       },

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {validPlanContract} from '../../platform-protocol/src/plan-contract.js';
+import {businessExpectationsFor,validPlanContract} from '../../platform-protocol/src/plan-contract.js';
 import {definePlanContract} from '../src/plan-contract.js';
 import {compareConfirmedExpectations,createCaseResultGraph} from '../src/case-result-graph.js';
 import {planContract} from './plan-contract-fixture.js';
@@ -185,4 +185,15 @@ test('opening contract uses the 01 protocol field set instead of transaction-onl
  assert.equal(validPlanContract(c,opening),true);
  c.applications[0].fields.CurrencyType='156';assert.equal(validPlanContract(c,opening),false);
  delete c.applications[0].fields.CurrencyType;c.applications[0].fields.ChargeType='0';assert.equal(validPlanContract(c,opening),false);
+});
+
+
+test('broad protocol evidence quotes never erase independent business expectations',()=>{
+ const quote='确认金额100元；触发外部计算，费用归投资人';
+ const p={scenarios:[{expected:quote}]};
+ const assertions=[{scenarioIndex:0,expectedQuote:quote,field:'confirmedAmount',operator:'eq',expectedValue:'100.00'}];
+ assert.deepEqual(businessExpectationsFor(p,assertions),[{scenarioIndex:0,expectedQuote:quote}]);
+ assertions[0].expectedQuote='确认金额100元';
+ assert.deepEqual(businessExpectationsFor(p,assertions),[{scenarioIndex:0,expectedQuote:quote}]);
+ assert.deepEqual(businessExpectationsFor({scenarios:[{expected:'确认金额100元'}]},assertions),[]);
 });
