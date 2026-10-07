@@ -311,7 +311,7 @@ export function createCaseRepository({ transaction }) {
         WHERE workspace_id=? AND chat_id=? AND public_id=?`,
       [auth.workspace_id, chat.id, casePublicId]);
       if (!caseRow) throw storeError('CASE_NOT_FOUND', 404, 'Case 不存在');
-      const [rows] = await db.execute(`SELECT turn_number,user_text,assistant_text,status,turn_kind
+      const [rows] = await db.execute(`SELECT turn_number,user_text,assistant_text,status,turn_kind,created_at,finished_at
         FROM case_discussion_turns WHERE workspace_id=? AND chat_id=? AND case_id=?
         ORDER BY turn_number`, [auth.workspace_id, chat.id, caseRow.id]);
       const turns = [];
@@ -321,8 +321,15 @@ export function createCaseRepository({ transaction }) {
           throw storeError('CORRUPT_HISTORY', 500, 'Case 讨论记录不连续');
         }
         if (row.status === 'COMPLETE') {
-          turns.push({ role: 'user', content: row.user_text },
-            { role: 'assistant', content: row.assistant_text });
+          const started = row.created_at ? new Date(row.created_at) : null;
+          const finished = row.finished_at ? new Date(row.finished_at) : null;
+          const hasStart = started && Number.isFinite(started.getTime());
+          const hasFinish = finished && Number.isFinite(finished.getTime());
+          turns.push({ role: 'user', content: row.user_text,
+              ...(hasStart ? {createdAt:started.toISOString()} : {}) },
+            { role: 'assistant', content: row.assistant_text,
+              ...(hasFinish ? {createdAt:finished.toISOString()} : {}),
+              ...(hasStart && hasFinish && finished >= started ? {durationMs:finished-started} : {}) });
         } else if (row.status === 'PENDING' && index === rows.length - 1) {
           pending = { turnNumber: Number(row.turn_number), userInput: row.user_text, kind: row.turn_kind };
         } else if (row.status !== 'ABANDONED') {
