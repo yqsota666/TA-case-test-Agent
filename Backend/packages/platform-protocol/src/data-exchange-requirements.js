@@ -1,3 +1,4 @@
+import {waitsForReceipt} from './operation-chain.js';
 // Data drafts describe requested synthetic resources, not TA-confirmed resources.
 export function dataExchangeRequirementIssues(plan) {
   const d=plan?.contract?.dataSpecification;
@@ -23,7 +24,7 @@ export function dataExchangeRequirementIssues(plan) {
       const openings=applications.filter(o=>o.accountIndex===a.accountIndex&&sends('01').some(s=>s.stepId===o.stepId));
       const returns=steps.filter(r=>r.fileType==='02'&&r.direction==='RECEIVE'&&r.required===true&&r.dependsOn.some(dep=>dep.condition==='SENT'&&openings.some(o=>o.stepId===dep.stepId)));
       const subscription=steps.find(s=>s.stepId===a.stepId);
-      return !returns.some(r=>subscription.dependsOn.some(dep=>dep.stepId===r.stepId&&dep.condition==='CONFIRMED'));
+      return !returns.some(r=>plan.contract.version===3?waitsForReceipt(plan.exchangePlan,subscription,r.stepId):subscription.dependsOn.some(dep=>dep.stepId===r.stepId&&dep.condition==='CONFIRMED'));
     });
     if(unbound)issues.push('新模拟账户的03申请必须等待对应02成功确认');
     if(d.holdings?.some(h=>!applications.some(a=>sends('03').some(s=>s.stepId===a.stepId)&&a.accountIndex===h.accountIndex&&a.fundIndex===h.fundIndex)))issues.push('03申请尚未覆盖需要构造的基金持仓');

@@ -47,7 +47,7 @@ export function createCaseResultRepository({transaction}){
  }
  async function collect(db,keys,write=false){
   const lock=write?' FOR UPDATE':'';
-  const [[planRow]]=await db.execute(`SELECT version_number,plan_json FROM case_sop_versions WHERE workspace_id=? AND chat_id=? AND case_id=? AND status='LOCKED' ORDER BY version_number DESC LIMIT 1${lock}`,keys);
+  const [[planRow]]=await db.execute(`SELECT version_number,plan_json,(SELECT public_id FROM cases WHERE id=case_sop_versions.case_id AND workspace_id=case_sop_versions.workspace_id) AS casePublicId FROM case_sop_versions WHERE workspace_id=? AND chat_id=? AND case_id=? AND status='LOCKED' ORDER BY version_number DESC LIMIT 1${lock}`,keys);
   if(!planRow)throw storeError('PLAN_NOT_CONFIRMED',409,'须先确认Plan');
   const plan=json(planRow.plan_json),pending=[],issues=[],evidence=[];
   const [apps]=await db.execute(`SELECT CAST(a.id AS CHAR) AS id,CAST(a.channel_id AS CHAR) AS channelId,a.file_type AS fileType,a.status,a.record_json AS record,
@@ -62,7 +62,7 @@ export function createCaseResultRepository({transaction}){
   for(const app of apps.slice(0,500)){
    const r=json(app.record),confirmed=app.confirmation&&json(app.confirmation);addTarget(app.channelId,r.TransactionAccountID);
    if(!['CONFIRMED','FAILED'].includes(app.status))pending.push(`申请${app.id}尚未完成TA确认并同步`);
-   evidence.push({id:'application:'+app.id,source:{kind:'APPLICATION_CONFIRMATION',applicationId:app.id,parseId:app.parseId,channelId:app.channelId,fileType:app.fileType,businessDate:r.TransactionDate},
+   evidence.push({id:'application:'+app.id,source:{kind:'APPLICATION_CONFIRMATION',applicationId:app.id,...(plan.contract?.version===3?{applicationNumber:r.AppSheetSerialNo}:{}),parseId:app.parseId,channelId:app.channelId,fileType:app.fileType,businessDate:r.TransactionDate},
     values:{status:app.status,returnCode:app.returnCode,transactionAccountId:r.TransactionAccountID,fundCode:r.FundCode??null,shareClass:r.ShareClass??null,
      confirmedAmount:confirmed?.ConfirmedAmount??null,confirmedVolume:confirmed?.ConfirmedVol??null,taAccountId:confirmed?.TAAccountID??null}});
   }
@@ -130,7 +130,7 @@ export function createCaseResultRepository({transaction}){
   for(const blocker of blockers)evidence.push({id:'dependency-failure:'+blocker.applicationId+':'+blocker.failedStepId,source:{kind:'TA_DEPENDENCY_FAILURE',...blocker},values:{status:'FAILED'}});
   const latestBusinessOutput=await businessOutput(db,keys,planRow.version_number,write);
   if(latestBusinessOutput && crypto.createHash('sha256').update(latestBusinessOutput.content,'utf8').digest('hex')!==latestBusinessOutput.sha256)issues.push('实际业务输出摘要不一致，请重新提交');
-  const snapshot={businessOutput:latestBusinessOutput,...(terminalFailuresTruncated?{terminalFailuresTruncated:true}:{}),...(unresolvedFailures.length?{unresolvedFailures}:{}),...(blockers.length?{blockers}:{}),...(preparedAccounts?{preparedAccounts}:{}),sources:{returns:returnSources,holdings:holdingSources},planVersion:planRow.version_number,plan,evidence,pending:[...new Set(pending)],issues};
+  const snapshot={...(plan.contract?.version===3?{casePublicId:planRow.casePublicId}:{}),businessOutput:latestBusinessOutput,...(terminalFailuresTruncated?{terminalFailuresTruncated:true}:{}),...(unresolvedFailures.length?{unresolvedFailures}:{}),...(blockers.length?{blockers}:{}),...(preparedAccounts?{preparedAccounts}:{}),sources:{returns:returnSources,holdings:holdingSources},planVersion:planRow.version_number,plan,evidence,pending:[...new Set(pending)],issues};
   return {...snapshot,sha256:digest(snapshot)};
  }
  async function snapshot(token,input){return transaction(async db=>{const {keys,owner}=await context(db,token,input);if(owner.chat_status!=='ACTIVE'||['PASS','FAIL'].includes(owner.case_status))throw storeError('CASE_NOT_WRITABLE',409,'Chat或Case已结束');return collect(db,keys);});}

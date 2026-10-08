@@ -1,3 +1,4 @@
+import {createOperationChainGraph} from '../../case-agent/src/operation-chain-graph.js';
 import { isDeepStrictEqual } from 'node:util';
 import { compileApplicationIntents, preparationCatalog } from '../../case-agent/src/application-preparation.js';
 import { boundPreparationHistory } from '../../platform-store/src/application-preparation.js';
@@ -74,8 +75,15 @@ export function createApplicationPreparationService({ repository, preparations, 
         throw error('APPLICATION_ALREADY_STAGED', '已生成的申请不能通过补充对话改写，请保留原申请');
       }
     }
-    const compiled = compileApplicationIntents({ intents: suggestion.intents, data, channel,
+    let schedule=null;
+    if(plan.proposal.contract?.version===3){
+      const facts=await exchangeRepository.readOperationFacts(token,scope);
+      ({schedule}=await createOperationChainGraph().invoke({input:{plan:plan.proposal,...facts,casePublicId,channelId}}));
+    }
+    const selected=schedule?suggestion.intents.filter(i=>schedule.readyKeys.includes(i.key)):suggestion.intents;
+    const compiled = compileApplicationIntents({ intents: selected, data, channel,
       bindings: bindingResult.bindings, casePublicId });
+    if(schedule)compiled.waiting.push(...schedule.waitingKeys);
     const turns = [...history.turns];
     if (!recovering) {
       turns.push({ userInput, reply: suggestion.reply });
@@ -84,7 +92,7 @@ export function createApplicationPreparationService({ repository, preparations, 
       phase: 'PREPARING', channelId, pendingUserInput: '', intents: suggestion.intents, turns,
       turnsOmitted: history.turnsOmitted ?? 0, reply: suggestion.reply,
       modelQuestions: suggestion.questions, questions: compiled.questions,
-      stagedKeys: previous.stagedKeys, files: previous.files, waiting: compiled.waiting, resumeReply: suggestion.reply,
+      stagedKeys: previous.stagedKeys, files: previous.files, ...(schedule?{tasks:schedule.tasks}:{}), waiting: compiled.waiting, resumeReply: suggestion.reply,
     } });
     let waitingChat = false;
     try {
@@ -132,7 +140,7 @@ export function createApplicationPreparationService({ repository, preparations, 
       compiled.waiting.length ? 'WAITING_TA' : deferBatching ? 'STAGED' : suggestion.intents.length ? 'GENERATED' : 'NO_APPLICATION';
     return preparations.save(token, { ...scope, revision: state.revision, state: { ...state,
       phase, files, questions, reply: phase === 'WAITING_TA' ?
-        '已准备当前可生成的申请。03 申请还在等待对应账户的成功 02 回传；收到后可继续生成。' :
+        '已准备当前满足条件的申请。后续操作仍在等待前序结果；回传并明确同步后可继续生成。' :
         phase === 'WAITING_CHAT' ? '申请已准备。请先确认当前 Chat 里其他 Case 的 Plan 和数据，再继续生成文件。' :
           phase === 'GENERATED' ? `${suggestion.reply}\n当前已准备的申请文件已生成，可以点击文件卡片查看；继续时会重新核对 Plan 的后续动作。` : suggestion.reply,
     } });

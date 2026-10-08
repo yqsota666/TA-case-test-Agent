@@ -1,3 +1,4 @@
+import {operationFailureBlockers} from './operation-failure.js';
 const json=value=>typeof value==='string'?JSON.parse(value):value;
 
 function necessarySteps(steps) {
@@ -12,6 +13,7 @@ function necessarySteps(steps) {
 // A failed receipt never satisfies CONFIRMED. This records why a required
 // dependent application cannot execute, without inventing any future TA result.
 export function deriveTerminalTaFailures({plan,order,applications,preparedAccounts=[],failures}) {
+ if(plan.contract?.version===3)return operationFailureBlockers({plan,order,applications,failures,necessaryStepIds:necessarySteps(order.plan.steps)});
  const blockers=[],necessary=necessarySteps(order.plan.steps);
  const accountFor=stepId=>{
   const specified=plan.contract?.applications.filter(a=>a.stepId===stepId);
@@ -46,6 +48,7 @@ export function deriveTerminalTaFailures({plan,order,applications,preparedAccoun
 }
 
 export function unresolvedTerminalTaFailures({plan,order,applications,preparedAccounts=[],failures}) {
+ if(plan.contract?.version===3)return [];
  const necessary=necessarySteps(order.plan.steps);
  return failures.filter(f=>{
   const source=order.plan.steps.find(s=>s.stepId===f.stepId);
@@ -65,7 +68,8 @@ export async function terminalTaFailures(db,keys,{plan,order,preparedAccounts=[]
  const lock=write?' FOR UPDATE':'';
  const [failures]=await db.execute(`SELECT b.step_id AS stepId,CAST(a.id AS CHAR) AS applicationId,
   CAST(r.parse_id AS CHAR) AS parseId,CAST(b.batch_id AS CHAR) AS batchId,CAST(a.channel_id AS CHAR) AS channelId,
-  a.record_json AS record,r.record_json AS confirmation,r.return_code AS returnCode
+  a.record_json AS record,r.record_json AS confirmation,r.return_code AS returnCode,
+  (SELECT public_id FROM cases WHERE id=a.case_id AND workspace_id=a.workspace_id) AS casePublicId
   FROM case_exchange_plan_bindings b JOIN case_exchange_plan_receipts p
    ON p.workspace_id=b.workspace_id AND p.chat_id=b.chat_id AND p.case_id=b.case_id AND p.plan_version=b.plan_version AND p.step_id=b.step_id
   JOIN batch_applications ba ON ba.workspace_id=b.workspace_id AND ba.chat_id=b.chat_id AND ba.batch_id=b.batch_id

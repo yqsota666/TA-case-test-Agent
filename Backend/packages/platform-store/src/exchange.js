@@ -1,3 +1,5 @@
+import {readOperationFacts} from './operation-facts.js';
+import {reconcileOperations} from '../../case-agent/src/operation-chain-graph.js';
 import {assertTaAccountActive} from './ta-reset.js';
 import crypto from 'node:crypto';
 import { buildDataFile, dataFileName, encodeRecord, FIELD_REQUIREMENTS, parseDataFile } from '../../platform-protocol/src/index.js';
@@ -133,7 +135,7 @@ export function createExchangeRepository({ transaction }) {
       [auth.workspace_id, chatPublicId, casePublicId]);
       if (!owner) throw storeError('APPLICATION_SCOPE', 409, 'Case、SOP 或通道不可用于申请');
       const [[scope]] = await db.execute(`SELECT c.id AS chat_id,k.id AS case_id,s.id AS sop_id,
-        h.id AS channel_id,h.distributor_code,h.protocol_version
+        h.id AS channel_id,h.distributor_code,h.protocol_version,s.plan_json
         FROM case_chats c
         JOIN cases k ON k.workspace_id=c.workspace_id AND k.chat_id=c.id
         JOIN case_sop_versions s ON s.workspace_id=k.workspace_id AND s.chat_id=k.chat_id
@@ -202,6 +204,19 @@ export function createExchangeRepository({ transaction }) {
           throw storeError('APPLICATION_NUMBER_CONFLICT', 409, '申请号已经对应另一份申请');
         }
         return { publicId: prior.public_id, snapshotHash: hash, replayed: true };
+      }
+      const plan=typeof scope.plan_json==='string'?JSON.parse(scope.plan_json):scope.plan_json;
+      if(plan?.contract?.version===3){
+        const facts=await readOperationFacts(db,token,{chatPublicId,casePublicId},true);
+        const schedule=reconcileOperations({plan,...facts,casePublicId,channelId});
+        const task=schedule.tasks.find(t=>t.key && record.AppSheetSerialNo===('AI'+crypto.createHash('sha256').update(`${casePublicId}:${channelId}:${t.key}`).digest('hex').slice(0,22)));
+        if(!task || task.state!=='READY')throw storeError('OPERATION_NOT_READY',409,'操作不属于已确认任务单或前置条件尚未满足');
+        if(task.fileType!==fileType || task.businessCode!==record.BusinessCode || task.businessDate!==businessDate || Object.entries(task.fields).some(([key,value])=>record[key]!==value) || (task.fundIndex!==null && (plan.contract.dataSpecification.funds[task.fundIndex].fundCode!==record.FundCode || plan.contract.dataSpecification.funds[task.fundIndex].shareClass!==record.ShareClass)))throw storeError('OPERATION_MISMATCH',409,'申请与任务单不一致');
+      }
+      if(plan?.contract?.version===3){
+        const [prepared]=await db.execute(`SELECT account_no FROM case_generated_accounts WHERE workspace_id=? AND chat_id=? AND case_id=? ORDER BY id LIMIT 101 FOR UPDATE`,[auth.workspace_id,scope.chat_id,scope.case_id]);
+        const task=plan.contract.applications.find(t=>record.AppSheetSerialNo===('AI'+crypto.createHash('sha256').update(`${casePublicId}:${channelId}:${t.key}`).digest('hex').slice(0,22)));
+        if(record.TransactionAccountID!==(task.transactionAccountId??prepared[task.accountIndex]?.account_no))throw storeError('OPERATION_MISMATCH',409,'申请账户与任务单不一致');
       }
       const publicId = crypto.randomUUID();
       await db.execute(`INSERT INTO applications
@@ -462,7 +477,7 @@ export function createExchangeRepository({ transaction }) {
     });
   }
 
-  return Object.freeze({ listChannels, listCaseApplications, listCaseBindings, stageApplication,
+  return Object.freeze({ readOperationFacts:(token,input)=>transaction(db=>readOperationFacts(db,token,input)), listChannels, listCaseApplications, listCaseBindings, stageApplication,
     createOutboundBatch, generateOutboundFiles,
     listOutboundFiles, readOutboundFile, saveInboundFile, matchReturnRecord });
 }

@@ -61,10 +61,14 @@ export function createDiscussionGraph({ complete }) {
   }));
   graph.addNode('propose_plan', async ({ userInput, priorTurns }) => {
     if (priorTurns.length < 4) throw new Error('Plan 提案前至少需要两轮完整讨论');
-    const proposal = guardExchangeTimeEvidence(parsePlanProposal(await complete({
-      reasoningEffort: 'low', system: PLAN_PROPOSAL_PROMPT,
-      messages: [...priorTurns, { role: 'user', content: userInput }],
-    })), [...priorTurns.filter(turn=>turn.role==='user').map(turn=>turn.content),userInput]);
+    let parsed,previous;
+    for(let attempt=0;attempt<2;attempt++){
+      const reply=await complete({reasoningEffort:'low',
+        system:PLAN_PROPOSAL_PROMPT+(attempt?' 上次格式校验未通过。只修正JSON结构、日期格式和纯文本字段，保留用户范围与业务值；必须直接以{开头、以}结尾，不能含代码围栏、解释或额外字段。':''),
+        messages:[...priorTurns,{role:'user',content:userInput},...(attempt?[{role:'assistant',content:previous},{role:'user',content:'请修正上述方案输出格式，业务条件仍以原对话为准。'}]:[])]});
+      try{parsed=parsePlanProposal(reply);break;}catch(e){if(e.code!=='MODEL_OUTPUT_FORMAT'||attempt===1)throw e;previous=reply;}
+    }
+    const proposal=guardExchangeTimeEvidence(parsed,[...priorTurns.filter(turn=>turn.role==='user').map(turn=>turn.content),userInput]);
     return {
       proposal,
       reply: displayPlanProposal(proposal),

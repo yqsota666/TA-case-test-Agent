@@ -1,3 +1,4 @@
+import {reconcileOperations} from '../../case-agent/src/operation-chain-graph.js';
 import crypto from 'node:crypto';
 import {workflowEvidence} from '../../case-agent/src/workflow-evidence.js';
 import {canConfirmCaseResult} from '../../case-agent/src/case-result-graph.js';
@@ -57,6 +58,13 @@ export async function workflowFacts(db,{owner,keys},token,input) {
  }
  if(plan) {plan.proposal=json(plan.plan_json);delete plan.plan_json;}
  const facts={chatStatus:owner.chat_status,caseStatus:owner.case_status,plan:plan??null,dataConfirmed:Number(section.n)>0,generated:Number(draft.hasDraft)>0,draftConfirmed:Number(draft.confirmed)>0,review:latestReview,order};
+ if(plan?.proposal?.contract?.version===3 && order){
+  const [applications]=await db.execute(`SELECT CAST(channel_id AS CHAR) AS channelId,app_no AS applicationNumber,status FROM applications
+    WHERE workspace_id=? AND chat_id=? AND case_id=? ORDER BY id LIMIT 501`,keys);
+  if(applications.length>500)throw storeError('OPERATION_CAPACITY',409,'申请超过完整核对范围');
+  facts.tasks=reconcileOperations({plan:plan.proposal,applications,events:order.events,casePublicId:input.casePublicId,
+    channelId:applications[0]?.channelId??'',locked:facts.draftConfirmed}).tasks;
+ }
  facts.proven=workflowEvidence(facts);
  facts.revision=crypto.createHash('sha256').update(JSON.stringify(facts)).digest('hex');return facts;
 }
@@ -93,7 +101,7 @@ export function createDurableWorkflowRepository({pool,lockTimeout=5}) {
    if(prior.values?.revision===facts.revision) result={...prior.values.position,revision:facts.revision,checkpointId:prior.config.configurable.checkpoint_id,interrupted:prior.tasks.some(t=>t.interrupts?.length)};
    else if(facts.chatStatus!=='ACTIVE') result={...workflowPosition(facts),revision:facts.revision,checkpointId:prior.config.configurable.checkpoint_id??null,interrupted:false};
    else result=await reconcileWorkflow(graph,config);
-   result={...result,proven:facts.proven};
+   result={...result,proven:facts.proven,...(facts.tasks?{tasks:facts.tasks}:{})};
    if(event)await db.execute(`INSERT INTO case_workflow_events (workspace_id,chat_id,case_id,event_id,expected_stage,response_json) VALUES (?,?,?,?,?,?)`,[...scope.keys,eventId,input.expectedStage,JSON.stringify(result)]);
    await db.commit();return result;
   } catch(error) {await db.rollback();throw error;}

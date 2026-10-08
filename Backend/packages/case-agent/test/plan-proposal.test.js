@@ -37,7 +37,7 @@ test('a plan request yields a reviewable proposal without locking it', async () 
   } });
   const result = await proposeDiscussionPlan(graph, { priorTurns, userInput: '请整理为 Plan 提案。' });
   assert.equal(result.phase, 'PROPOSAL_PENDING');
-  assert.equal(result.promptVersion, 'plan-proposal-v8');
+  assert.equal(result.promptVersion, 'plan-proposal-v10');
   assert.deepEqual(result.proposal, proposal);
   assert.match(result.reply, /^测试目标：验证重复确认不会重复入账/);
   assert.match(result.reply, /场景 1：重复上传确认/);
@@ -77,6 +77,14 @@ test('proposal fields reject inline Markdown', () => {
 test('proposal parser accepts plain identifier underscores', () => {
   const identifierProposal = { ...proposal, objective: 'confirm_record_id' };
   assert.deepEqual(parsePlanProposal(JSON.stringify(identifierProposal)), identifierProposal);
+});
+test('planning retries malformed model formatting once and never relaxes the proposal schema',async()=>{
+  let calls=0;
+  const graph=createDiscussionGraph({complete:async()=>++calls===1?'```json\n'+JSON.stringify(proposal)+'\n```':JSON.stringify(proposal)});
+  const result=await proposeDiscussionPlan(graph,{priorTurns,userInput:'请整理Plan'});
+  assert.deepEqual(result.proposal,proposal);assert.equal(calls,2);
+  calls=0;await assert.rejects(proposeDiscussionPlan(createDiscussionGraph({complete:async()=>{calls++;return '{}';}}),{priorTurns,userInput:'请整理Plan'}),{code:'MODEL_OUTPUT_FORMAT'});
+  assert.equal(calls,2);
 });
 
 test('only independent unconfirmed Chinese TA outcome clauses receive explicit status tokens',()=>{

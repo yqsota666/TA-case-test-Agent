@@ -1,3 +1,4 @@
+import {createOperationChainGraph} from '../../case-agent/src/operation-chain-graph.js';
 import crypto from 'node:crypto';
 import {isDeepStrictEqual} from 'node:util';
 const terminal = new Set(['PASS','FAIL']);
@@ -36,7 +37,14 @@ export function createProjectExchangeService({repository,preparations,exchangeRe
     const own = await exchangeRepository.listCaseApplications(token,scope);
     const ids = new Set(own.applications.map(a=>a.batchPublicId).filter(Boolean));
     const files = (await exchangeRepository.listOutboundFiles(token,scope.chatPublicId)).files.filter(f=>ids.has(f.batchPublicId));
-    return {...state,files};
+    const plan=await repository.getLatestSopProposal(token,scope.chatPublicId,scope.casePublicId);
+    let tasks=[];
+    if(plan?.status==='LOCKED' && plan.proposal.contract?.version===3 && state.channelId){
+      const facts=await exchangeRepository.readOperationFacts(token,scope);
+      const result=await createOperationChainGraph().invoke({input:{plan:plan.proposal,...facts,...scope,channelId:state.channelId}});
+      tasks=result.schedule.tasks;
+    }
+    return {...state,files,tasks};
   }
   async function prepare(input) {
     const cases = (await members(input.token,input.chatPublicId)).filter(c=>!terminal.has(c.status));
@@ -75,7 +83,7 @@ export function createProjectExchangeService({repository,preparations,exchangeRe
     }
     const batches=new Set(relevant.flatMap(c=>c.applications.filter(a=>a.status==='BATCHED').map(a=>a.batchPublicId)));
     for(const [key,ready] of groups) {
-      const pending=states.some(s=>s.intents.some(intent=>groupKey({...intent,channelId:s.channelId,wave:wave(s.plan,intent)})===key&&!s.stagedKeys.includes(intent.key)));
+      const pending=states.some(s=>s.intents.some(intent=>!['BLOCKED','UNSUPPORTED'].includes(s.tasks?.find(t=>t.key===intent.key)?.state)&&groupKey({...intent,channelId:s.channelId,wave:wave(s.plan,intent)})===key&&!s.stagedKeys.includes(intent.key)));
       if(pending)continue;
       if(ready.length>1000)throw conflict('同组申请超过单批容量，请调整项目范围后重试。');
       const batch=await exchangeRepository.createOutboundBatch(input.token,{chatPublicId:input.chatPublicId,
