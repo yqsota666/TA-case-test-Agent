@@ -1,4 +1,5 @@
 import {initializeObservability,shutdownObservability} from '../../case-agent/src/observability.js';
+import {initializeBackendMetrics,shutdownBackendMetrics,createMeasuredTransaction} from './backend-metrics.js';
 import {createModelRuntime} from './model-runtime.js';
 import {createAccountModelQuotas} from '../../platform-store/src/account-model-quotas.js';
 import {modelBudgetConfig,createModelConsumptionRepository} from '../../platform-store/src/model-consumption.js';
@@ -40,22 +41,9 @@ import { createCaseResultService } from './case-result.js';
 const allowedOrigin = process.env.CASE_PUBLIC_ORIGIN;
 if (!allowedOrigin) throw new Error('CASE_PUBLIC_ORIGIN is required');
 initializeObservability();
+initializeBackendMetrics();
 const pool = mysql.createPool({ ...migrationConfig(), connectionLimit: 8 });
-const transaction = async action => {
-  const connection = await pool.getConnection();
-  try {
-    await connection.beginTransaction();
-    const result = await action(connection);
-    await connection.commit();
-    return result;
-  } catch (error) {
-    try { await connection.rollback(); }
-    catch (rollbackError) {
-      console.error('数据库回滚失败', rollbackError.code ?? 'UNKNOWN');
-    }
-    throw error;
-  } finally { connection.release(); }
-};
+const transaction = createMeasuredTransaction(pool);
 const accountModelQuotas=createAccountModelQuotas({transaction,defaultDaily:modelBudgetConfig().userDaily});
 const modelRuntime=createModelRuntime({repository:createModelConsumptionRepository({transaction}),maxCalls:Number(process.env.MODEL_RUN_MAX_CALLS||8),maxInput:Number(process.env.MODEL_MAX_INPUT_TOKENS||600000),maxOutput:Number(process.env.MODEL_MAX_OUTPUT_TOKENS||8192)});
 const accountAuth=createAccountAuth({transaction,initializeWorkspace:localWorkspaceInitializer(migrationConfig()),allowDemo:Boolean(localWorkspaceInitializer(migrationConfig()))});
@@ -142,4 +130,4 @@ const server = createCaseHttpServer({accountModelQuotas,modelRuntime,globalDataC
   executeData, reviseData, exchangeRepository, applicationPreparation:projectPreparation, confirmData, returnParsing:projectParsing, returnConfirmation:projectConfirmation, holdingsReturn, taReceipts, caseResult, exchangePlanSupplement, chatLifecycle, durableWorkflow, taReset, accountAuth, secureCookie:process.env.NODE_ENV==='production', allowedOrigin });
 server.listen(Number(process.env.CASE_API_PORT ?? 3100), '127.0.0.1');
 
-for(const signal of ['SIGINT','SIGTERM'])process.once(signal,()=>server.close(async()=>{await shutdownObservability();await pool.end();process.exit(0);}));
+for(const signal of ['SIGINT','SIGTERM'])process.once(signal,()=>server.close(async()=>{await Promise.allSettled([shutdownObservability(),shutdownBackendMetrics()]);await pool.end();process.exit(0);}));

@@ -1,4 +1,5 @@
 import {observeRequest,safeErrorCode} from '../../case-agent/src/observability.js';
+import {observeHttpMetrics} from './backend-metrics.js';
 import {createAccountModelHttpHandler} from './account-model-http.js';
 import {validateDiscussionImages} from '../../platform-protocol/src/discussion-images.js';
 import {handleGlobalDataCatalog} from './global-data-http.js';
@@ -410,7 +411,7 @@ export function createCaseHttpHandler({ accountModelQuotas, modelRuntime, global
           ...(error.status ? { message: error.message } : {}) });
     }
   };
-  return (request,response)=>observeRequest(request,response,()=>modelRuntime?modelRuntime.run({token:cookieToken(request.headers.cookie),purpose:new URL(request.url,'http://localhost').pathname.split('/').at(-1).slice(0,40)},()=>handle(request,response)):handle(request,response));
+  return (request,response)=>observeHttpMetrics(request,response,()=>observeRequest(request,response,()=>modelRuntime?modelRuntime.run({token:cookieToken(request.headers.cookie),purpose:new URL(request.url,'http://localhost').pathname.split('/').at(-1).slice(0,40)},()=>handle(request,response)):handle(request,response)));
 }
 
 export function createCaseHttpServer(dependencies) {
