@@ -337,3 +337,5 @@ html, body {overflow-x: clip;}
   68% {transform:translateY(-10px) scale(.99,1.01);}
   84% {transform:translateY(0) scale(1.03,.97);}
 }
+
+.cw-set.is-sealed .cw-case,.cw-set.is-sealed .cw-set-toggle {color:var(--cw-muted)!important;}

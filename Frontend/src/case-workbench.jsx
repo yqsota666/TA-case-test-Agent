@@ -78,6 +78,7 @@ export function CaseWorkbench() {
   const flowRequest = useRef(0);
   const pendingScroll = useRef(false);
   const currentSet = state.sets.find(set => set.cases.some(item => item.id === state.selected)) || {id:newProjectId, name:"新项目", cases:[]};
+  const projectReadOnly=!!currentSet.status && currentSet.status!=='ACTIVE';
   const currentCase = currentSet.cases.find(item => item.id === state.selected) || {name:"新对话"};
   const draftKey = newConversation ? `new:${newProjectId}` : state.selected;
   const draft = state.drafts[draftKey] || '';
@@ -159,7 +160,7 @@ export function CaseWorkbench() {
   const openCatalogCase=async(chatId,caseId)=>{const url=new URL(location.href);url.searchParams.delete('page');url.searchParams.delete('draftTable');url.searchParams.set('chatId',chatId);url.searchParams.set('caseId',caseId);history.replaceState(null,'',url);setPage('chat');setDataSetId(null);setModal(null);setLoading(true);try{applySnapshot(await liveSnapshot(chatId,caseId));}catch(error){setNodeError(error.message);}finally{setLoading(false);}};
   const toggleSet = id => setState(value => ({...value, sets: value.sets.map(set => set.id === id ? {...set, expanded: !set.expanded} : set)}));
   const submitFirstNode = async (text, action=discussionAction({text,waiting:state.workflow?.waiting,messages})) => {
-    if (running || loading || (completed && !newConversation)) return;
+    if (running || loading || ((completed || projectReadOnly) && !newConversation)) return;
     setRunning(true); setNodeError(''); setRetryInput(text); setRetryAction(action); setActiveAction(action);
     pendingScroll.current = true;
     try {
@@ -243,12 +244,12 @@ export function CaseWorkbench() {
     </nav>
     <div className="cw-list-label">项目</div>
     <nav className="cw-sets" aria-label="项目与 Case">
-      {state.sets.map(set => <div className="cw-set" key={set.id}>
+      {state.sets.map(set => <div className={`cw-set ${set.status!=='ACTIVE'?'is-sealed':''}`} key={set.id}>
         <div className="cw-set-heading">
           <button className="cw-set-toggle" aria-expanded={set.expanded} aria-controls={`cases-${set.id}`} onClick={() => toggleSet(set.id)}>
             <Folder size={20}/><span>{set.name}</span>
           </button>
-          <button className="cw-icon cw-add" aria-label={`在${set.name}中新建 Case`} title="新建 Case" onClick={() => openNewConversation(set.id)}><SquarePen size={18}/></button>
+          <button className="cw-icon cw-add" aria-label={`在${set.name}中新建 Case`} title="新建 Case" disabled={set.status!=='ACTIVE'} onClick={() => openNewConversation(set.id)}><SquarePen size={18}/></button>
         </div>
         <div id={`cases-${set.id}`} className={`cw-set-children ${set.expanded ? 'is-expanded' : ''}`} inert={!set.expanded}>
           <div className="cw-set-children-inner">
@@ -320,10 +321,10 @@ export function CaseWorkbench() {
         </div>}
         <form className="cw-composer" onSubmit={send}>
           <label className="cw-sr-only" htmlFor="cw-message">输入消息</label>
-          <textarea id="cw-message" ref={composer} value={draft} placeholder="输入消息…" rows={1} disabled={loading || running || !!state.pending || (completed && !newConversation)}
+          <textarea id="cw-message" ref={composer} value={draft} placeholder="输入消息…" rows={1} disabled={loading || running || !!state.pending || ((completed || projectReadOnly) && !newConversation)}
             onChange={event => setState(value => ({...value, drafts: {...value.drafts, [draftKey]: event.target.value}}))}
             onKeyDown={event => {if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing && event.keyCode !== 229) send(event);}}/>
-          <div className="cw-send-row"><button className="cw-send" type="submit" aria-label="发送消息" disabled={!draft.trim() || loading || running || !!state.pending || (completed && !newConversation)}><ArrowUp size={20}/></button></div>
+          <div className="cw-send-row"><button className="cw-send" type="submit" aria-label="发送消息" disabled={!draft.trim() || loading || running || !!state.pending || ((completed || projectReadOnly) && !newConversation)}><ArrowUp size={20}/></button></div>
         </form>
         </div>
       </div>
