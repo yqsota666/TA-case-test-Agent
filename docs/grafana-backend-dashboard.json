@@ -2,7 +2,7 @@
   "title": "Agent 后端监控",
   "uid": "ta-case-backend",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "editable": true,
   "tags": [
     "ta-case-agent"
@@ -41,8 +41,8 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(case_http_requests_total[5m]))",
-          "legendFormat": "{{route}} {{outcome}} {{type}} {{category}} {{stage}} {{status_class}}"
+          "expr": "sum(rate(case_http_requests_total{job=\"ta-case-api\",instance=\"local-api\"}[5m]))",
+          "legendFormat": "每秒请求数"
         }
       ],
       "fieldConfig": {
@@ -75,8 +75,8 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(case_http_requests_total{status_class=\"5xx\"}[5m])) / clamp_min(sum(rate(case_http_requests_total[5m])), 0.000001)",
-          "legendFormat": "{{route}} {{outcome}} {{type}} {{category}} {{stage}} {{status_class}}"
+          "expr": "sum(rate(case_http_requests_total{job=\"ta-case-api\",instance=\"local-api\",status_class=\"5xx\"}[5m])) / clamp_min(sum(rate(case_http_requests_total{job=\"ta-case-api\",instance=\"local-api\"}[5m])), 0.000001)",
+          "legendFormat": "服务端错误率"
         }
       ],
       "fieldConfig": {
@@ -109,8 +109,8 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(case_http_duration_seconds_bucket[5m])))",
-          "legendFormat": "{{route}} {{outcome}} {{type}} {{category}} {{stage}} {{status_class}}"
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(case_http_duration_seconds_bucket{job=\"ta-case-api\",instance=\"local-api\"}[5m])))",
+          "legendFormat": "请求 P95 耗时"
         }
       ],
       "fieldConfig": {
@@ -143,8 +143,8 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(case_http_in_flight)",
-          "legendFormat": "{{route}} {{outcome}} {{type}} {{category}} {{stage}} {{status_class}}"
+          "expr": "sum(case_http_in_flight{job=\"ta-case-api\",instance=\"local-api\"})",
+          "legendFormat": "处理中请求"
         }
       ],
       "fieldConfig": {
@@ -177,8 +177,8 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "case_process_memory_bytes",
-          "legendFormat": "{{route}} {{outcome}} {{type}} {{category}} {{stage}} {{status_class}}"
+          "expr": "case_process_memory_bytes{job=\"ta-case-api\",instance=\"local-api\"}",
+          "legendFormat": "{{type}}"
         }
       ],
       "fieldConfig": {
@@ -211,8 +211,8 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(case_db_acquire_duration_seconds_bucket[5m])))",
-          "legendFormat": "{{route}} {{outcome}} {{type}} {{category}} {{stage}} {{status_class}}"
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(case_db_acquire_duration_seconds_bucket{job=\"ta-case-api\",instance=\"local-api\"}[5m])))",
+          "legendFormat": "数据库连接等待 P95"
         }
       ],
       "fieldConfig": {
@@ -245,8 +245,8 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (outcome) (rate(case_db_transactions_total[5m]))",
-          "legendFormat": "{{route}} {{outcome}} {{type}} {{category}} {{stage}} {{status_class}}"
+          "expr": "sum by (outcome) (rate(case_db_transactions_total{job=\"ta-case-api\",instance=\"local-api\"}[5m]))",
+          "legendFormat": "{{outcome}}"
         }
       ],
       "fieldConfig": {
@@ -279,8 +279,8 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (stage) (increase(case_db_errors_total[15m]))",
-          "legendFormat": "{{route}} {{outcome}} {{type}} {{category}} {{stage}} {{status_class}}"
+          "expr": "sum by (stage) (increase(case_db_errors_total{job=\"ta-case-api\",instance=\"local-api\"}[15m]))",
+          "legendFormat": "{{stage}}"
         }
       ],
       "fieldConfig": {
@@ -313,8 +313,8 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (category,status_class) (increase(case_http_failures_total[15m]))",
-          "legendFormat": "{{route}} {{outcome}} {{type}} {{category}} {{stage}} {{status_class}}"
+          "expr": "sum by (category,status_class) (increase(case_http_failures_total{job=\"ta-case-api\",instance=\"local-api\"}[15m]))",
+          "legendFormat": "{{category}} {{status_class}}"
         }
       ],
       "fieldConfig": {
@@ -347,8 +347,8 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (outcome) (increase(case_metrics_exports_total[15m]))",
-          "legendFormat": "{{route}} {{outcome}} {{type}} {{category}} {{stage}} {{status_class}}"
+          "expr": "sum by (outcome) (increase(case_metrics_exports_total{job=\"ta-case-api\",instance=\"local-api\"}[15m]))",
+          "legendFormat": "{{outcome}}"
         }
       ],
       "fieldConfig": {
