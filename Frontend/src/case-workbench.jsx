@@ -18,6 +18,9 @@ import {ThemePicker} from './theme-picker.jsx';
 import {ProjectPicker} from './project-picker.jsx';
 import {PlanDocument, planSummary} from './plan-document.jsx';
 import {useSidebarResize} from './sidebar-resize.jsx';
+import {ComposerPrimitive, MessagePrimitive, ThreadPrimitive} from '@assistant-ui/react';
+import {CaseAssistant} from './case-assistant.jsx';
+import './case-assistant.css';
 
 const storageKey = () => accountStorageKey();
 const initialState = {selected: null, sets: [], drafts: {}, messages: {}};
@@ -78,6 +81,7 @@ export function CaseWorkbench({accountControl}) {
   const positions = useRef({});
   const composer = useRef(null);
   const flowRequest = useRef(0);
+  const viewRequest = useRef(0);
   const pendingScroll = useRef(false);
   const currentSet = state.sets.find(set => set.cases.some(item => item.id === state.selected)) || {id:newProjectId, name:"新项目", cases:[]};
   const projectReadOnly=!!currentSet.status && currentSet.status!=='ACTIVE';
@@ -109,26 +113,28 @@ export function CaseWorkbench({accountControl}) {
   };
   useEffect(() => {
     let active=true;
-    firstNodeRequest('state').then(snapshot => {if(active)applySnapshot(snapshot);})
-      .catch(error => {if(active)setNodeError(error.message);})
-      .finally(()=>{if(active)setLoading(false);});
+    const request=viewRequest.current;
+    firstNodeRequest('state').then(snapshot => {if(active && request===viewRequest.current)applySnapshot(snapshot);})
+      .catch(error => {if(active && request===viewRequest.current)setNodeError(error.message);})
+      .finally(()=>{if(active && request===viewRequest.current)setLoading(false);});
     return ()=>{active=false;};
   }, []);
   useEffect(() => {
-    if(!state.pending || !state.selected)return;
+    if(!state.pending || !state.selected || newConversation)return;
     const project=state.sets.find(item=>item.cases.some(c=>c.id===state.selected));
     if(!project)return;
     let active=true;
+    const request=viewRequest.current;
     const input=state.pending.userInput;
     const timer=setInterval(()=>{
       liveSnapshot(project.id,state.selected).then(snapshot=>{
-        if(!active)return;
+        if(!active || request!==viewRequest.current)return;
         applySnapshot(snapshot);
         if(!snapshot.pending)setState(value=>({...value,drafts:{...value.drafts,[state.selected]:value.drafts[state.selected]?.trim()===input.trim()?'':value.drafts[state.selected]}}));
       }).catch(()=>{});
     },5000);
     return()=>{active=false;clearInterval(timer);};
-  },[state.selected,state.pending?.turnNumber]);
+  },[state.selected,state.pending?.turnNumber,newConversation]);
   useEffect(() => {
     try {localStorage.setItem(storageKey(), JSON.stringify(state));} catch {setNotice('浏览器未能保存，本次内容仅保留在当前页面。');}
   }, [state]);
@@ -141,10 +147,6 @@ export function CaseWorkbench({accountControl}) {
     if (!dataSetId) scroller.current.scrollTop = newConversation ? 0 : positions.current[state.selected] || 0;
   }, [state.selected, dataSetId, newConversation]);
   useLayoutEffect(() => {
-    composer.current.style.height = 'auto';
-    composer.current.style.height = `${Math.min(Math.max(composer.current.scrollHeight, 28), 180)}px`;
-  }, [draft]);
-  useLayoutEffect(() => {
     if (pendingScroll.current) {
       scroller.current.scrollTop = scroller.current.scrollHeight;
       composer.current.focus();
@@ -155,14 +157,16 @@ export function CaseWorkbench({accountControl}) {
   const selectCase = async id => {
     const project=state.sets.find(item=>item.cases.some(c=>c.id===id));
     if(!project)return;
+    const request=++viewRequest.current;
     const url=new URL(window.location.href);url.searchParams.delete('draftTable');url.searchParams.delete('page');url.searchParams.set('chatId',project.id);url.searchParams.set('caseId',id);window.history.replaceState(null,'',url);
     setPage('chat');setLoading(true);setNodeError('');setDataSetId(null);setModal(null);
-    try {applySnapshot(await liveSnapshot(project.id,id));} catch(error){setNodeError(error.message);} finally {setLoading(false);}
+    try {const snapshot=await liveSnapshot(project.id,id);if(request===viewRequest.current)applySnapshot(snapshot);} catch(error){if(request===viewRequest.current)setNodeError(error.message);} finally {if(request===viewRequest.current)setLoading(false);}
   };
-  const openCatalogCase=async(chatId,caseId)=>{const url=new URL(location.href);url.searchParams.delete('page');url.searchParams.delete('draftTable');url.searchParams.set('chatId',chatId);url.searchParams.set('caseId',caseId);history.replaceState(null,'',url);setPage('chat');setDataSetId(null);setModal(null);setLoading(true);try{applySnapshot(await liveSnapshot(chatId,caseId));}catch(error){setNodeError(error.message);}finally{setLoading(false);}};
+  const openCatalogCase=async(chatId,caseId)=>{const request=++viewRequest.current;const url=new URL(location.href);url.searchParams.delete('page');url.searchParams.delete('draftTable');url.searchParams.set('chatId',chatId);url.searchParams.set('caseId',caseId);history.replaceState(null,'',url);setPage('chat');setDataSetId(null);setModal(null);setLoading(true);try{const snapshot=await liveSnapshot(chatId,caseId);if(request===viewRequest.current)applySnapshot(snapshot);}catch(error){if(request===viewRequest.current)setNodeError(error.message);}finally{if(request===viewRequest.current)setLoading(false);}};
   const toggleSet = id => setState(value => ({...value, sets: value.sets.map(set => set.id === id ? {...set, expanded: !set.expanded} : set)}));
   const submitFirstNode = async (text, action=discussionAction({text,waiting:state.workflow?.waiting,messages})) => {
     if (running || loading || ((completed || projectReadOnly) && !newConversation)) return;
+    const request=viewRequest.current;
     setRunning(true); setNodeError(''); setRetryInput(text); setRetryAction(action); setActiveAction(action);
     pendingScroll.current = true;
     try {
@@ -171,10 +175,13 @@ export function CaseWorkbench({accountControl}) {
         chatId=newProjectId;
         if(!chatId)chatId=(await requestCase('/chats',{title:'新项目'})).publicId;
         caseId=(await requestCase(`/chats/${chatId}/cases`,{title:'新对话'})).publicId;
-        const url=new URL(window.location.href);url.searchParams.delete('draftTable');url.searchParams.delete('page');url.searchParams.set('chatId',chatId);url.searchParams.set('caseId',caseId);window.history.replaceState(null,'',url);
+        if(request===viewRequest.current) {const url=new URL(window.location.href);url.searchParams.delete('draftTable');url.searchParams.delete('page');url.searchParams.set('chatId',chatId);url.searchParams.set('caseId',caseId);window.history.replaceState(null,'',url);}
       }
-      applySnapshot(await liveSnapshot(chatId,caseId));
-      setState(value=>({...value,messages:{...value.messages,[caseId]:[...(value.messages[caseId]||[]),{id:'sending-user',role:'user',text}]}}));
+      const beforeSnapshot=await liveSnapshot(chatId,caseId);
+      if(request===viewRequest.current) {
+        applySnapshot(beforeSnapshot);
+        setState(value=>({...value,drafts:{...value.drafts,[caseId]:value.drafts[draftKey] || text},messages:{...value.messages,[caseId]:[...(value.messages[caseId]||[]),{id:'sending-user',role:'user',text}]}}));
+      }
       const path=casePath(chatId,caseId);
       const before=await requestCase(path+'/workflow');
       if(!before.waiting?.includes(action))throw new Error('当前流程不支持此操作，请刷新后查看当前步骤。');
@@ -182,13 +189,15 @@ export function CaseWorkbench({accountControl}) {
       await requestCase(path+(action==='PROPOSE_PLAN'?'/plan':'/discussion'),{userInput:text});
       await requestCase(path+'/workflow/resume',{eventId:crypto.randomUUID(),expectedStage:before.stage});
       const snapshot=await liveSnapshot(chatId,caseId);
-      applySnapshot(snapshot);
-      setState(value=>({...value,drafts:{...value.drafts,[draftKey]:''}}));
+      if(request===viewRequest.current)applySnapshot(snapshot);
+      setState(value=>({...value,drafts:{...value.drafts,[draftKey]:'',[caseId]:''}}));
     } catch(error) {
-      setNodeError(error.message);
-      try {applySnapshot(await firstNodeRequest('state'));} catch { /* Keep the original input available for retry. */ }
-      setRetryInput(text); setRetryAction(action);
-    } finally {setRunning(false);}
+      if(request===viewRequest.current) {
+        setNodeError(error.message);
+        try {const snapshot=await firstNodeRequest('state');if(request===viewRequest.current)applySnapshot(snapshot);} catch { /* Keep the original input available for retry. */ }
+        if(request===viewRequest.current) {setRetryInput(text); setRetryAction(action);}
+      }
+    } finally {pendingScroll.current=false;setRunning(false);}
   };
   const savePlanContent = async (index,item) => {
     const {contract,...proposal}=state.plan.proposal;
@@ -230,13 +239,12 @@ export function CaseWorkbench({accountControl}) {
       if(request===flowRequest.current)setModal(value=>value?.type==='workflow'?{type:'workflow',error:error.message}:value);
     }
   };
-  const send = event => {
-    event.preventDefault();
-    if (draft.trim()) submitFirstNode(draft.trim());
-  };
   const openNewConversation = projectId => {
+    ++viewRequest.current;
     const url=new URL(location.href);url.searchParams.delete('page');url.searchParams.delete('draftTable');url.searchParams.delete('caseId');if(projectId)url.searchParams.set('chatId',projectId);else url.searchParams.delete('chatId');history.replaceState(null,'',url);
     setPage('chat'); setNewProjectId(projectId); setNewConversation(true); setDataSetId(null); setModal(null); setNotice('');
+    setLoading(false);setCompleted(false);setNodeError('');setRetryInput('');
+    setState(value=>({...value,selected:null,pending:null,workflow:null,plan:null,generatedData:null}));
   };
   const sidebar = <>
     <div className="cw-brand"><img className="cw-brand-logo" src="/brand/ta-agent-bot-white.png" alt="" width="44" height="44"/><span>TA Test Agent</span></div>
@@ -271,17 +279,25 @@ export function CaseWorkbench({accountControl}) {
   return <div className={`cw-shell ${page!=='chat'?'cw-catalog-view':''}`} style={sidebarResize.style}>
     <a className="cw-skip" href="#cw-main">跳到对话</a>
     <aside id="cw-sidebar" className="cw-sidebar">{sidebar}{sidebarResize.separator}</aside>
-    <main id="cw-main" className="cw-main" tabIndex={-1}>
+    <CaseAssistant key={draftKey} messages={messages} draft={draft} loading={loading} running={running || !!state.pending}
+      disabled={loading || running || !!state.pending || ((completed || projectReadOnly) && !newConversation)} onSend={submitFirstNode}>
+    <ThreadPrimitive.Root asChild><main id="cw-main" className="cw-main" tabIndex={-1}>
       <header className={`cw-header ${page!=='chat'?'is-catalog':''}`}>
         <button className="cw-icon cw-menu" aria-label="打开侧边栏" onClick={() => setModal({type: 'navigation'})}><Menu size={21}/></button>
         {page==='chat' && state.workflow && !newConversation && <button className="cw-live-flow cw-icon" title="查看当前流程" aria-label="查看当前流程" onClick={openWorkflow}><Workflow size={18} strokeWidth={1.6}/></button>}
         <h1 hidden={newConversation || page!=='chat'} title={`${dataSet?.name || currentSet.name} / ${dataSet ? '草稿数据' : currentCase.name}`}><span>{dataSet?.name || currentSet.name}</span><span className="cw-slash"> / </span>{dataSet ? '草稿数据' : currentCase.name}</h1>
       </header>
-      <section ref={scroller} hidden={!!dataSetId || page!=='chat'} className="cw-conversation" aria-label={newConversation ? '新对话' : `${currentCase.name}的对话`}
+      <ThreadPrimitive.Viewport asChild scrollToBottomOnInitialize={false}><section ref={scroller} hidden={!!dataSetId || page!=='chat'} className="cw-conversation" aria-label={newConversation ? '新对话' : `${currentCase.name}的对话`}
         onScroll={event => {if (!dataSetId && !newConversation) positions.current[state.selected] = event.currentTarget.scrollTop;}}>
         <div className={`cw-messages ${newConversation ? 'cw-new-conversation' : ''}`}>
           {newConversation && <div className="cw-new-welcome"><span className="cw-welcome-bot"><img className="cw-welcome-logo" src="/brand/ta-agent-bot-white.png" alt="" width="144" height="144"/></span><h2>开始新对话</h2></div>}
-          {messages.map(message => <article key={message.id} className={`cw-message cw-message-${message.role}`} aria-label={message.role === 'user' ? '我的消息' : 'AI 回复'}>
+          <ThreadPrimitive.Messages>{({message: runtimeMessage}) => {
+            const message = runtimeMessage.metadata.custom.caseMessage || {
+              id: runtimeMessage.id, role: runtimeMessage.role,
+              text: runtimeMessage.content.filter(part => part.type === 'text').map(part => part.text).join('\n'),
+            };
+            if (!message.text && !message.result && !message.continuation) return null;
+            return <MessagePrimitive.Root asChild><article className={`cw-message cw-message-${message.role}`} aria-label={message.role === 'user' ? '我的消息' : 'AI 回复'}>
             <MessageBody message={message} text={message.result && state.plan ? planSummary(state.plan.proposal) : message.kind==='PROPOSE_PLAN'?'已整理测试方案。原回复保留在详情中。':message.text}>
             {message.kind==='PROPOSE_PLAN' && !message.result && <button className="cw-result" onClick={()=>setModal({type:'historical-plan',message})}>
               <span className="cw-result-icon" aria-hidden="true"><FileText size={20}/></span><span className="cw-result-copy"><span className="cw-result-title">历史测试方案</span></span><span className="cw-result-action">查看原回复 <ChevronRight size={16}/></span>
@@ -295,7 +311,7 @@ export function CaseWorkbench({accountControl}) {
             {message.id===messages.at(-1)?.id && message.role==='assistant' && !message.result && state.workflow?.waiting?.includes('PROPOSE_PLAN') && messages.filter(m=>m.role==='assistant').length>=2 && <div className="cw-workflow-actions">
               <button type="button" disabled={running || loading || !!retryInput || !!draft.trim()} title={draft.trim()?'请先发送或清空输入框中的补充内容':undefined} onClick={()=>submitFirstNode('请根据刚才的讨论整理测试方案，供我审阅。','PROPOSE_PLAN')}><FileText size={15}/>整理方案</button>
             </div>}
-          </article>)}
+          </article></MessagePrimitive.Root>;}}</ThreadPrimitive.Messages>
           {state.workflow?.stage==='CONFIRM_EXPECTATIONS' && state.plan && <div className="cw-expect-handoff"><p>准备数据已确认。接下来核对各测试项的预期结果。</p><button type="button" className="cw-result" onClick={()=>{setPlanError('');setModal({type:'expectations'});}}><span className="cw-result-icon"><FileText size={18}/></span><span><span className="cw-result-title">预期结果</span><span className="cw-result-summary">查看与修改</span></span><span className="cw-result-action">查看详情<ChevronRight size={14}/></span></button></div>}
           {!newConversation && state.generatedData?.status==='VALIDATED' && <button type="button" className="cw-result" onClick={openGeneratedData}>
             <span className="cw-result-icon" aria-hidden="true"><Table2 size={18}/></span><span className="cw-result-copy"><span className="cw-result-title">草稿数据</span><span className="cw-result-summary">{state.generatedData.reviewStatus==='CONFIRMED'?'已确认':'查看数据'}</span></span><span className="cw-result-action">查看详情<ChevronRight size={14}/></span>
@@ -310,7 +326,7 @@ export function CaseWorkbench({accountControl}) {
           {nodeError && <div className="cw-node-error" role="alert"><p>{nodeError}</p>{retryInput && !completed && <button type="button" disabled={running} onClick={()=>submitFirstNode(retryInput,retryAction)}>重试原输入</button>}</div>}
           {state.pending && !running && !nodeError && <div className="cw-workflow-actions"><button type="button" onClick={()=>submitFirstNode(state.pending.userInput,state.pending.kind)}>重试原请求</button></div>}
         </div>
-      </section>
+      </section></ThreadPrimitive.Viewport>
       {page==='chat' && dataSet && <section className="cw-draft-page" aria-label={`${dataSet.name}的草稿数据`}>
         <h2>草稿数据</h2>{dataSet.id===currentSet.id && state.generatedData?.status==='VALIDATED' ? <>
           <GeneratedData data={state.generatedData}/>
@@ -318,23 +334,24 @@ export function CaseWorkbench({accountControl}) {
         </> : <p>尚未生成。</p>}
       </section>}
       <div hidden={!!dataSetId || page!=='chat'} className="cw-composer-area">
+        <ThreadPrimitive.ScrollToBottom className="cw-scroll-bottom" aria-label="回到最新消息" title="回到最新消息"><ArrowUp size={18}/></ThreadPrimitive.ScrollToBottom>
         <div className="cw-composer-frame">
         {newConversation && <div className="cw-project-bar">
           <ProjectPicker projects={state.sets} value={newProjectId} onChange={setNewProjectId}/>
         </div>}
-        <form className="cw-composer" onSubmit={send}>
+        <ComposerPrimitive.Root className="cw-composer">
           <label className="cw-sr-only" htmlFor="cw-message">输入消息</label>
-          <textarea id="cw-message" ref={composer} value={draft} placeholder="输入消息…" rows={1} disabled={loading || running || !!state.pending || ((completed || projectReadOnly) && !newConversation)}
-            onChange={event => setState(value => ({...value, drafts: {...value.drafts, [draftKey]: event.target.value}}))}
-            onKeyDown={event => {if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing && event.keyCode !== 229) send(event);}}/>
-          <div className="cw-send-row"><button className="cw-send" type="submit" aria-label="发送消息" disabled={!draft.trim() || loading || running || !!state.pending || ((completed || projectReadOnly) && !newConversation)}><ArrowUp size={20}/></button></div>
-        </form>
+          <ComposerPrimitive.Input id="cw-message" ref={composer} value={draft} placeholder="输入消息…" rows={1} maxRows={7} cancelOnEscape={false} addAttachmentOnPaste={false}
+            onChange={event => setState(value => ({...value, drafts: {...value.drafts, [draftKey]: event.target.value}}))}/>
+          <div className="cw-send-row"><ComposerPrimitive.Send className="cw-send" aria-label="发送消息"><ArrowUp size={20}/></ComposerPrimitive.Send></div>
+        </ComposerPrimitive.Root>
         </div>
       </div>
       {page!=='chat' && <div className="gc-topbar"><button aria-label="返回对话" title="返回对话" onClick={()=>{setPage('chat');const url=new URL(location.href);url.searchParams.delete('page');history.replaceState(null,'',url);}}><ArrowLeft size={18}/></button><nav aria-label="业务页面">{[['data','数据'],['files','文件']].map(([key,label])=><button key={key} aria-current={page===key?'page':undefined} onClick={()=>{setPage(key);const url=new URL(location.href);url.searchParams.set('page',key);history.replaceState(null,'',url);}}>{label}</button>)}</nav></div>}
       {page==='data' && <GlobalDataCatalog onOpenCase={openCatalogCase}/>}
       {page==='files' && <GlobalFileCatalog onOpenCase={openCatalogCase}/>}
-    </main>
+    </main></ThreadPrimitive.Root>
+    </CaseAssistant>
     <div className={`cw-notice ${notice ? 'is-visible' : ''}`} role="status">{notice}</div>
     {modal?.type === 'review-result' && <Modal title="结果核对" className="cw-result-review-modal" onClose={()=>{if(!resultDirty.current||window.confirm('有未保存的结果，确定关闭？'))setModal(null);}}><ResultReview chatId={currentSet.id} caseId={state.selected} readOnly={completed||currentSet.status!=='ACTIVE'} onDirtyChange={dirty=>{resultDirty.current=dirty;}} onChanged={async isCurrent=>{const snapshot=await liveSnapshot(currentSet.id,state.selected);if(isCurrent())applySnapshot(snapshot);}}/></Modal>}
     {modal?.type === 'exchange' && <Modal title="文件交换" onClose={()=>setModal(null)}><FileExchangePanel chatId={currentSet.id} caseId={state.selected} plan={state.plan} draft={state.generatedData} workflow={state.workflow} readOnly={completed||currentSet.status!=='ACTIVE'} onChanged={async()=>applySnapshot(await liveSnapshot(currentSet.id,state.selected))}/></Modal>}

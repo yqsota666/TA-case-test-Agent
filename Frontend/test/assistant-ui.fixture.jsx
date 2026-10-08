@@ -1,0 +1,62 @@
+import React from 'react';
+import {createRoot} from 'react-dom/client';
+import {CaseWorkbench} from '../src/case-workbench.jsx';
+import {ThemeProvider, initialTheme} from '../src/theme-picker.jsx';
+import {setAccountStorageOwner} from '../src/account-storage.js';
+import '../src/base.css';
+import '../src/defense-themes.css';
+import '../src/message-body.css';
+import '../src/spectral-components.css';
+import '../src/compact-workbench.css';
+
+const params = new URLSearchParams(location.search);
+setAccountStorageOwner('assistant-ui-fixture');
+const mode = params.get('mode') || 'normal';
+params.set('chatId', 'fixture-project');
+params.set('caseId', params.get('caseId') || 'comparison');
+history.replaceState(null, '', `${location.pathname}?${params}`);
+const table = count => `| 情况 | 输入字段 | 预期 |\n| --- | --- | --- |\n${Array.from({length: count}, (_, i) => `| 情况 ${i + 1} | ${i % 2 ? '状态' : '编码'} | 根据已提供规则核对 |`).join('\n')}`;
+const longAnswer = `## 字段对比\n\n${table(2)}\n\n### 增加对比情况\n\n${table(4)}\n\n### 需要补充的信息\n\n预期业务规则尚未提供，保留为待补充，不生成判断。\n\n${Array.from({length: 15}, (_, i) => `说明 ${i + 1}：${'这是用于验证长回答排版与滚动的合成说明。'.repeat(8)}`).join('\n\n')}\n\n~~~text\n${'UNBROKEN_TOKEN_'.repeat(50)}\n~~~\n\n<script>这段内容应显示为文本或被忽略，不执行。</script>\n\n[组件官方文档](https://www.assistant-ui.com/)`;
+const histories = {
+  comparison: [{role: 'user', content: '合成验收：比较不同数量与不同字段。'}, {role: 'assistant', content: longAnswer}],
+  readonly: [{role: 'user', content: '合成验收：只读取当前状态，不构造数据。'}, {role: 'assistant', content: '当前状态尚未提供，请补充需要读取的记录标识。\n\n这是独立读取任务，无需对比表格。'}],
+};
+const cases = Object.keys(histories).map(public_id => ({public_id, title: public_id === 'comparison' ? '字段对比验收' : '只读任务验收', status: 'DISCUSSING'}));
+const response = (value, status = 200) => new Response(JSON.stringify(value), {status, headers: {'Content-Type': 'application/json'}});
+let pending = null;
+// Every API response here is synthetic; this entry never forwards a business request.
+window.fetch = async (url, options = {}) => {
+  if (!String(url).startsWith('/live-api')) throw new Error('验收页不连接外部接口');
+  const path = String(url).slice('/live-api'.length);
+  if (path === '/chats') return response({chats: [{public_id: 'fixture-project', title: '合成组件验收', status: 'ACTIVE'}]});
+  if (path === '/chats/fixture-project/cases') {
+    if (options.method === 'POST') {
+      const publicId = `new-fixture-${cases.length}`;
+      histories[publicId] = [];
+      cases.push({public_id: publicId, title: '空白新对话验收', status: 'DISCUSSING'});
+      return response({publicId});
+    }
+    return response({cases});
+  }
+  const caseId = path.split('/')[4];
+  const endpoint = path.split('/').slice(5).join('/');
+  if (endpoint === 'discussion' && options.method === 'POST') {
+    if (mode === 'failure') return response({message: '合成失败：讨论服务暂时不可用，请重试原输入。'}, 503);
+    const {userInput} = JSON.parse(options.body);
+    pending = {caseId, userInput};
+    return response({});
+  }
+  if (endpoint === 'workflow/resume') {
+    await new Promise(resolve => setTimeout(resolve, 1200));
+    if (pending) histories[pending.caseId].push({role: 'user', content: pending.userInput}, {role: 'assistant', content: '合成回复：消息已收到，原输入只提交一次。'});
+    pending = null;
+    return response({});
+  }
+  if (endpoint === 'discussion') return response({turns: histories[caseId] || [], pending: null});
+  if (endpoint === 'plan' || endpoint === 'data') return response(null);
+  if (endpoint === 'workflow') return response({stage: 'DISCUSSING', waiting: ['DISCUSS']});
+  return response({message: '该合成验收页未提供此业务接口'}, 404);
+};
+const initial = initialTheme();
+document.documentElement.dataset.theme = initial;
+createRoot(document.getElementById('root')).render(<ThemeProvider initial={initial}><CaseWorkbench accountControl={<span>合成组件验收</span>}/></ThemeProvider>);

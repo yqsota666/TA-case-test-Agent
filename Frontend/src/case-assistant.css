@@ -1,0 +1,14 @@
+.cw-composer-area {position:relative;}
+.cw-scroll-bottom {
+  position:absolute;left:50%;top:-52px;transform:translateX(-50%);
+  display:grid;place-items:center;width:44px;height:44px;border-radius:50%;
+  border:1px solid var(--study-line);background:var(--study-surface);color:var(--study-ink);
+  box-shadow:0 2px 8px var(--cw-shadow);cursor:pointer;
+}
+.cw-scroll-bottom:disabled {display:none;}
+.cw-scroll-bottom svg {transform:rotate(180deg);}
+.cw-scroll-bottom:focus-visible {outline:2px solid var(--study-focus);outline-offset:3px;}
+.cw-composer-area .cw-send {min-width:44px;min-height:44px;}
+.cw-composer textarea:focus-visible {outline:none;}
+.cw-message {min-width:0;}
+@media (pointer:coarse) {.cw-scroll-bottom {top:-56px;}}
