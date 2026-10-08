@@ -96,7 +96,9 @@ export function createProjectExchangeService({repository,preparations,exchangeRe
     return result;
   }
   async function parse(token,input) {
-    const group=await batchMembers(token,input);
+    const outboundType=input.expectedType==='02'?'01':input.expectedType==='04'?'03':null;
+    const group=(await batchMembers(token,input)).filter(member=>member.applications.some(a=>a.batchPublicId===input.batchPublicId&&a.fileType===outboundType));
+    if(!group.some(member=>member.casePublicId===input.casePublicId))throw conflict('当前 Case 没有这类申请文件，不能接收对应回传。');
     if(terminal.has(group.find(m=>m.casePublicId===input.casePublicId)?.status))throw conflict('当前 Case 已结束，不能上传。');
     const results=[];
     for(const member of group) {
