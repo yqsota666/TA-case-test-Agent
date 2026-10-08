@@ -27,6 +27,9 @@ export function createGlobalDataCatalog({transaction}){
   const records=rows.map(({record_json,...row})=>({...row,...(record_json?(typeof record_json==='string'?JSON.parse(record_json):record_json):{})}));
   const rawKeys=new Set(records.flatMap(Object.keys));
   const aliases={name:'InvestorName',customer_name:'InvestorName',investor_type:'IndividualOrInstitution',account_no:'TransactionAccountID',branch_code:'BranchCode',certificate_type:'CertificateType',certificate_no:'CertificateNo',app_no:'AppSheetSerialNo',business_code:'BusinessCode',business_date:'TransactionDate',ta_account_id:'TAAccountID'};
+  for(const row of records)for(const [local,protocol] of Object.entries(aliases)){
+    if(rawKeys.has(protocol)&&(row[protocol]===undefined||row[protocol]===null||row[protocol]==='')&&row[local]!==undefined&&row[local]!==null)row[protocol]=row[local];
+  }
   const keys=[...rawKeys].filter(k=>!['chatId','caseId'].includes(k)&&!(aliases[k]&&rawKeys.has(aliases[k])));
   const columns=keys.map(key=>({key,label:fields[key]??protocolLabels[key]??({project:'项目',caseTitle:'Case'}[key])??'其他协议字段'}));
   return {table,source,rows:records,columns,total:Number(count.total),offset,limit};
