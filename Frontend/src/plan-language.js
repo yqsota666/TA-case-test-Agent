@@ -8,7 +8,7 @@ export function planText(value='') {
     .replace(/\bPARSED\b/g,'已解析');
 }
 export function exchangeStepLabel(step) {
-  const labels={'01':'发送开户申请（01）','02':'接收开户结果（02）','03':'发送申购申请（03）','04':'接收申购结果（04）','05':'接收持仓结果（05）'};
+  const labels={'01':'发送账户申请（01）','02':'接收账户结果（02）','03':'发送交易申请（03）','04':'接收交易结果（04）','05':'接收持仓结果（05）'};
   return labels[step.fileType]??`${step.direction==='SEND'?'发送':'接收'}文件（${step.fileType}）`;
 }
 export function exchangeStepTime(step) {

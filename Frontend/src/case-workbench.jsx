@@ -76,6 +76,8 @@ export function CaseWorkbench({accountControl}) {
   const sidebarResize = useSidebarResize();
   const [state, setState] = useState(readState);
   const [modal, setModal] = useState(null);
+  const [planSection,setPlanSection]=useState('tests');
+  useEffect(()=>setPlanSection('tests'),[state.selected]);
   const [page,setPage]=useState(()=>['data','files'].includes(new URLSearchParams(location.search).get('page'))?new URLSearchParams(location.search).get('page'):'chat');
   const resultDirty=useRef(false);
   const [newConversation, setNewConversation] = useState(true);
@@ -397,7 +399,11 @@ export function CaseWorkbench({accountControl}) {
     {modal?.type === 'historical-plan' && <DetailPanel title="历史测试方案" onClose={()=>setModal(null)}><div className="cw-plan-document"><MessageBody message={modal.message} text={modal.message.text}/></div></DetailPanel>}
     {modal?.type === 'expectations' && state.plan && <DetailPanel title="确认预期结果" onClose={()=>setModal(null)}><ExpectationReview key={state.selected+state.plan.versionNumber} plan={state.plan} busy={planBusy||running} error={planError} onConfirm={()=>confirmPlan('EXPECTATIONS')} onSaveContent={savePlanContent}/></DetailPanel>}
     {modal?.type === 'result' && <DetailPanel title="测试方案" onClose={() => setModal(null)}>
-      {state.plan && <PlanDocument key={state.selected+state.plan.versionNumber} proposal={state.plan.proposal} onSaveContent={savePlanContent} editable={state.plan.status==='PENDING_CONFIRMATION'&&!running&&!planBusy} onSave={async dataSpecification=>{
+      {state.plan && <PlanDocument key={state.selected+state.plan.versionNumber} initialSection={planSection} onSectionChange={setPlanSection} proposal={state.plan.proposal} taskProgress={state.workflow?.tasks} locked={state.plan.status==='LOCKED'} onSaveOperations={async applications=>{
+        const request=viewRequest.current;
+        await requestCase(casePath(currentSet.id,state.selected)+'/plan/data',{versionNumber:state.plan.versionNumber,dataSpecification:state.plan.proposal.contract.dataSpecification,applications});
+        const snapshot=await liveSnapshot(currentSet.id,state.selected);if(request===viewRequest.current)applySnapshot(snapshot);
+      }} onSaveContent={savePlanContent} editable={state.plan.status==='PENDING_CONFIRMATION'&&!running&&!planBusy} onSave={async dataSpecification=>{
         const request=viewRequest.current;
         await requestCase(casePath(currentSet.id,state.selected)+'/plan/data',{versionNumber:state.plan.versionNumber,dataSpecification});
         const snapshot=await liveSnapshot(currentSet.id,state.selected);if(request===viewRequest.current)applySnapshot(snapshot);

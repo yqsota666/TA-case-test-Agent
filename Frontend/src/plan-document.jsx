@@ -1,4 +1,5 @@
 import {PlanContext} from './assistant-ui/plan-context.jsx';
+import {OperationTasks} from './operation-tasks.jsx';
 import {planText,exchangeStepLabel,exchangeStepTime} from './plan-language.js';
 import React, {useState, useEffect, useRef} from 'react';
 import {ChevronRight, X} from './ui-icons.jsx';
@@ -28,12 +29,12 @@ function PreparedPlanData({data,onSave,editable}) {
     {editing&&<PreparedRowEditor editing={editing} data={data} onClose={()=>setEditing(null)} onSave={async row=>{const next=structuredClone(data);next[editing.table][editing.index]=row;await onSave(next);setEditing(null);}}/>}
   </section>;
 }
-export function PlanDocument({proposal,onSave,onSaveContent,editable=false}) {
+export function PlanDocument({proposal,onSave,onSaveContent,onSaveOperations,onSectionChange,taskProgress=[],locked=false,editable=false,initialSection='tests'}) {
   const plan=normalizePlan(proposal);
-  const [section,setSection]=useState('tests');
-  const sections=[['tests','测试项'],['data','准备数据'],['exchange','文件安排']];
+  const [section,setSection]=useState(initialSection);
+  const sections=[['tests','测试项'],['tasks','任务单'],['data','准备数据'],['exchange','文件安排']];
   return <div className="cw-plan-shell">
-    <nav className="cw-spectral-nav" aria-label="方案内容区">{sections.map(([key,label])=><button type="button" key={key} aria-pressed={section===key} onClick={()=>setSection(key)}>{label}</button>)}</nav>
+    <nav className="cw-spectral-nav" aria-label="方案内容区">{sections.map(([key,label])=><button type="button" key={key} aria-pressed={section===key} onClick={()=>{setSection(key);onSectionChange?.(key);}}>{label}</button>)}</nav>
     <div className="cw-plan-document" key={section} tabIndex={0} role="region" aria-label="方案内容">
       {plan.objective&&<p className="cw-plan-objective">{plan.objective}</p>}
       {section==='tests'&&<>
@@ -42,6 +43,7 @@ export function PlanDocument({proposal,onSave,onSaveContent,editable=false}) {
         {plan.openQuestions.length>0&&<section className="cw-plan-questions"><h3>还需确认</h3><ul>{plan.openQuestions.map(item=><li key={item}>{item}</li>)}</ul></section>}
       </>}
       {section==='data'&&(plan.dataSpecification?<PreparedPlanData data={plan.dataSpecification} onSave={onSave} editable={editable}/>:<p>尚未准备数据。</p>)}
+      {section==='tasks'&&<><OperationTasks proposal={proposal} progress={taskProgress} locked={locked} editable={editable} onSave={onSaveOperations}/>{plan.constructionIssues.length>0&&<section className="cw-plan-questions"><h3>尚待补齐</h3><ul>{plan.constructionIssues.map((issue,i)=><li key={i}>{issue}</li>)}</ul></section>}</>}
       {section==='exchange'&&<div className="cw-spectral-exchange-plan">
         {plan.exchangePlan?.steps.length>0?<ol>{plan.exchangePlan.steps.map((step,index)=><li key={step.stepId||index}><strong>{exchangeStepLabel(step)}</strong>{exchangeStepTime(step)&&<p>{exchangeStepTime(step)}</p>}{step.required===false&&<span>可选</span>}</li>)}</ol>:<p>暂无文件安排。</p>}
         {plan.exchangePlan?.openQuestions.length>0&&<section><h3>还需确认</h3><ul>{plan.exchangePlan.openQuestions.map(item=><li key={item}>{item}</li>)}</ul></section>}

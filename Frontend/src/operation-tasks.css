@@ -1,0 +1,30 @@
+.cw-operation-tasks > ol {list-style:none;margin:0;padding:0;}
+.cw-operation-tasks > ol > li {padding:22px 0;border-bottom:1px solid var(--cw-line);overflow-wrap:anywhere;}
+.cw-operation-tasks .cw-task-header {display:flex;align-items:flex-start;gap:12px;justify-content:flex-start;margin:0 0 12px;}
+.cw-operation-tasks h3 {margin:0;font-size:15px;font-weight:600;}
+.cw-operation-tasks .cw-task-header p {margin:6px 0 0;font-size:13px;color:var(--cw-muted);}
+.cw-task-order {font-size:13px;min-width:18px;color:var(--cw-muted);padding-top:2px;}
+.cw-task-state {margin-left:auto;max-width:140px;flex-shrink:0;font-size:12px;color:var(--cw-muted);}
+.cw-task-date,.cw-task-dependencies {font-size:13px;line-height:1.7;}
+.cw-operation-tasks details {font-size:13px;margin:14px 0;}
+.cw-operation-tasks summary {cursor:pointer;min-height:28px;}
+.cw-operation-tasks dl {margin:12px 0;}
+.cw-operation-tasks dl > div {display:grid;grid-template-columns:minmax(90px,1fr) 2fr;gap:12px;padding:5px 0;}
+.cw-operation-tasks dt {color:var(--cw-muted);}
+.cw-operation-tasks dd {margin:0;white-space:pre-wrap;}
+.cw-operation-tasks details ul {padding-left:20px;line-height:1.8;}
+.cw-task-limitation {font-size:13px;color:var(--cw-ink);}
+.cw-operation-tasks button {font:inherit;font-size:13px;min-height:36px;cursor:pointer;}
+.cw-task-editor {padding:16px 0;display:grid;gap:14px;}
+.cw-task-editor label {display:grid;grid-template-columns:minmax(90px,1fr) 2fr;align-items:center;gap:12px;font-size:13px;}
+.cw-task-editor input,.cw-task-editor select {width:100%;box-sizing:border-box;min-height:40px;padding:8px;border:1px solid var(--cw-line);border-radius:8px;background:var(--cw-surface);color:var(--cw-ink);font:inherit;}
+.cw-task-editor fieldset {border:1px solid var(--cw-line);display:grid;gap:12px;min-width:0;padding:12px;}
+.cw-task-editor legend {font-size:13px;}
+.cw-task-editor > div {display:flex;gap:16px;}
+.cw-operation-tasks :focus-visible {outline:2px solid var(--cw-ink);outline-offset:3px;}
+@media(max-width:480px) {.cw-operation-tasks .cw-task-header {flex-wrap:wrap;}.cw-task-state {max-width:none;width:100%;margin-left:30px;}.cw-task-editor label {grid-template-columns:1fr;gap:8px;}}
+
+.cw-operation-tasks .cw-task-header > div {flex:1;min-width:0;}
+.cw-shell:has(.cw-operation-tasks) {overflow:hidden;}
+.aui-detail:has(.cw-operation-tasks) [data-slot="canvas-split-body"] {display:flex;flex-direction:column;overflow:hidden;}
+.aui-detail .cw-plan-shell:has(.cw-operation-tasks) > .cw-plan-document {overflow:auto;}
