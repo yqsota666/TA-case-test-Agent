@@ -11,6 +11,9 @@ importers:
       '@assistant-ui/react':
         specifier: 0.15.25
         version: 0.15.25(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+      '@assistant-ui/react-markdown':
+        specifier: 0.14.19
+        version: 0.14.19(@assistant-ui/react@0.15.25(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@vitejs/plugin-react':
         specifier: 5.2.0
         version: 5.2.0(vite@7.3.6)
@@ -52,6 +55,16 @@ packages:
       assistant-cloud:
         optional: true
       react:
+        optional: true
+
+  '@assistant-ui/react-markdown@0.14.19':
+    resolution: {integrity: sha512-OO1DbDkLNE+sjqlSW5MxP+KjI0w8QJtOpyfe9ARVfROfuhIalmv64FMGcuUXVCJN0i9axdj+xyz1fJhSM3OUNQ==}
+    peerDependencies:
+      '@assistant-ui/react': ^0.15.0
+      '@types/react': '*'
+      react: ^18 || ^19
+    peerDependenciesMeta:
+      '@types/react':
         optional: true
 
   '@assistant-ui/react@0.15.25':
@@ -1319,6 +1332,9 @@ packages:
   character-reference-invalid@2.0.1:
     resolution: {integrity: sha512-iBZ4F4wRbyORVsu0jPV7gXkOsGYjGHPmAyv+HiHG8gi5PtC9KI2j1+v8/tlibRvjoWX027ypmG/n0HtO5t7unw==}
 
+  classnames@2.5.1:
+    resolution: {integrity: sha512-saHYOzhIQs6wy2sVxTM6bUDsQO4F50V9RQ22qBpEdCW+I+/Wmke2HOl6lS6dTpdxVhb88/I6+Hs+438c3lfUow==}
+
   comma-separated-tokens@2.0.3:
     resolution: {integrity: sha512-Fu4hJdvzeylCfQPp9SGWidpzrMs7tTrlu6Vb8XGaRGck8QSNZJJp538Wrb60Lax4fPwR64ViY468OIUTbRlGZg==}
 
@@ -1906,6 +1922,23 @@ snapshots:
     transitivePeerDependencies:
       - ioredis
       - redis
+
+  '@assistant-ui/react-markdown@0.14.19(@assistant-ui/react@0.15.25(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
+    dependencies:
+      '@assistant-ui/react': 0.15.25(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+      '@radix-ui/react-primitive': 2.1.11(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+      '@radix-ui/react-use-callback-ref': 1.1.4(@types/react@19.3.0)(react@19.3.0)
+      '@types/hast': 3.0.5
+      classnames: 2.5.1
+      micromark-util-html-tag-name: 2.0.1
+      react: 19.3.0
+      react-markdown: 10.1.0(@types/react@19.3.0)(react@19.3.0)
+    optionalDependencies:
+      '@types/react': 19.3.0
+    transitivePeerDependencies:
+      - '@types/react-dom'
+      - react-dom
+      - supports-color
 
   '@assistant-ui/react@0.15.25(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
     dependencies:
@@ -3070,6 +3103,8 @@ snapshots:
   character-entities@2.0.2: {}
 
   character-reference-invalid@2.0.1: {}
+
+  classnames@2.5.1: {}
 
   comma-separated-tokens@2.0.3: {}
 

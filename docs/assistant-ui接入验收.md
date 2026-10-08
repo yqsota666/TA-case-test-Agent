@@ -55,3 +55,18 @@ assistant-ui 接入作为随后单独的功能提交；回滚该功能提交即�
 - Purpose Gate PASS：颜色、字体、布局、间距继承已有方向；新下箭头只承担回到底部动作；没有新增玻璃层、背景装饰、徽章、插画或循环动效，理由已逐项记录。
 - Liveliness PASS：已明确1/2/2档位；当前回答为阅读焦点，气泡/全文/业务产物的不同结构对应不同用途，留白沿用工作台结构，主题强调色用于操作，身份延续原主题。
 - Craftsmanship & Quality Locks PASS：真实请求、合成失败、跨Case草稿及异步隔离均已检查；12种主题无输入框布局回归；未添加宣传、伪造业务执行或新页面模板，所有本轮主要设计选择有明确理由。
+
+
+## 聊天视觉套装（2026-10-08）
+
+用户确认试用 Thread＋Markdown＋消息操作栏＋Composer。继续 `codex/assistant-ui`，在 `93abfe7d` 上新增一个可单独撤销的视觉提交。
+
+`Frontend/src/assistant-ui/chat-kit.jsx` 与CSS根据官方开源 Thread/MarkdownText 元素裁剪、适配：JSX与普通CSS替代Tailwind，继承当前液态玻璃及其他主题变量；Thread保留原Case视口/滚动位置和业务插槽。实际使用MarkdownTextPrimitive与MessagePrimitive.Parts、ActionBarPrimitive.Root/Copy、ComposerPrimitive.Root/Input/Send。源码版本和完整MIT许可在同目录NOTICE.md。
+
+变化：圆角用户气泡、AI正文留白和分级标题、横向滚动表格/代码、代码标题及独立复制、回复复制栏、页脚时间/耗时、统一圆角Composer与圆形发送按钮。旧MessageBody只在历史方案弹窗继续使用。复制失败就地反馈；旧消息操作栏在桌面悬浮/键盘焦点时显示，最后一条常显；窄屏均可访问。剪贴板事件局部处理以保留真实失败提示。
+
+能力边界：仅文本消息，不新增附件、语音、停止/重新生成/反馈功能，不模拟流式回复。现有业务卡片、DATA和EXPECTATIONS确认逻辑保留。没有新增模型调用或确认任何业务内容；真实服务只读取已有对话。
+
+验证：24前端常规测试通过，生产构建通过（主JS约844kB、gzip260kB，原有大包警告仍在）。隔离合成页检查2/4行表格、不同字段、长说明、非对比/缺失信息、原HTML不执行、长代码内滚动；1280与320页面无横向溢出。Shift+Enter换行、Enter仅提交一次、等待禁用、成功清空、503保留原输入和重试、跨Case草稿隔离通过。回答和代码复制及反馈通过；发送按钮Tab焦点2px可见。真实已有对话渲染无console error。输入法没有新增独立实测。旧方案文档脚本的两项基线失败不计入通过。
+
+截图：`.context/assistant-ui/chat-kit-live.png`。5197原入口即时更新；原5195不变。回滚最新视觉提交可回到仅primitive集成的93abfe7d。仍只在本地验收，不push、不创建PR。

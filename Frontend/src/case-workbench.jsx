@@ -18,8 +18,9 @@ import {ThemePicker} from './theme-picker.jsx';
 import {ProjectPicker} from './project-picker.jsx';
 import {PlanDocument, planSummary} from './plan-document.jsx';
 import {useSidebarResize} from './sidebar-resize.jsx';
-import {ComposerPrimitive, MessagePrimitive, ThreadPrimitive} from '@assistant-ui/react';
+import {ThreadPrimitive} from '@assistant-ui/react';
 import {CaseAssistant} from './case-assistant.jsx';
+import {Thread, ThreadViewport, ThreadMessages, ChatMessage, Composer} from './assistant-ui/chat-kit.jsx';
 import './case-assistant.css';
 
 const storageKey = () => accountStorageKey();
@@ -281,24 +282,23 @@ export function CaseWorkbench({accountControl}) {
     <aside id="cw-sidebar" className="cw-sidebar">{sidebar}{sidebarResize.separator}</aside>
     <CaseAssistant key={draftKey} messages={messages} draft={draft} loading={loading} running={running || !!state.pending}
       disabled={loading || running || !!state.pending || ((completed || projectReadOnly) && !newConversation)} onSend={submitFirstNode}>
-    <ThreadPrimitive.Root asChild><main id="cw-main" className="cw-main" tabIndex={-1}>
+    <Thread id="cw-main" className="cw-main" tabIndex={-1}>
       <header className={`cw-header ${page!=='chat'?'is-catalog':''}`}>
         <button className="cw-icon cw-menu" aria-label="打开侧边栏" onClick={() => setModal({type: 'navigation'})}><Menu size={21}/></button>
         {page==='chat' && state.workflow && !newConversation && <button className="cw-live-flow cw-icon" title="查看当前流程" aria-label="查看当前流程" onClick={openWorkflow}><Workflow size={18} strokeWidth={1.6}/></button>}
         <h1 hidden={newConversation || page!=='chat'} title={`${dataSet?.name || currentSet.name} / ${dataSet ? '草稿数据' : currentCase.name}`}><span>{dataSet?.name || currentSet.name}</span><span className="cw-slash"> / </span>{dataSet ? '草稿数据' : currentCase.name}</h1>
       </header>
-      <ThreadPrimitive.Viewport asChild scrollToBottomOnInitialize={false}><section ref={scroller} hidden={!!dataSetId || page!=='chat'} className="cw-conversation" aria-label={newConversation ? '新对话' : `${currentCase.name}的对话`}
+      <ThreadViewport ref={scroller} hidden={!!dataSetId || page!=='chat'} className="cw-conversation" aria-label={newConversation ? '新对话' : `${currentCase.name}的对话`}
         onScroll={event => {if (!dataSetId && !newConversation) positions.current[state.selected] = event.currentTarget.scrollTop;}}>
         <div className={`cw-messages ${newConversation ? 'cw-new-conversation' : ''}`}>
           {newConversation && <div className="cw-new-welcome"><span className="cw-welcome-bot"><img className="cw-welcome-logo" src="/brand/ta-agent-bot-white.png" alt="" width="144" height="144"/></span><h2>开始新对话</h2></div>}
-          <ThreadPrimitive.Messages>{({message: runtimeMessage}) => {
+          <ThreadMessages>{({message: runtimeMessage}) => {
             const message = runtimeMessage.metadata.custom.caseMessage || {
               id: runtimeMessage.id, role: runtimeMessage.role,
               text: runtimeMessage.content.filter(part => part.type === 'text').map(part => part.text).join('\n'),
             };
             if (!message.text && !message.result && !message.continuation) return null;
-            return <MessagePrimitive.Root asChild><article className={`cw-message cw-message-${message.role}`} aria-label={message.role === 'user' ? '我的消息' : 'AI 回复'}>
-            <MessageBody message={message} text={message.result && state.plan ? planSummary(state.plan.proposal) : message.kind==='PROPOSE_PLAN'?'已整理测试方案。原回复保留在详情中。':message.text}>
+            return <ChatMessage message={message} text={message.result && state.plan ? planSummary(state.plan.proposal) : message.kind==='PROPOSE_PLAN'?'已整理测试方案。原回复保留在详情中。':message.text}>
             {message.kind==='PROPOSE_PLAN' && !message.result && <button className="cw-result" onClick={()=>setModal({type:'historical-plan',message})}>
               <span className="cw-result-icon" aria-hidden="true"><FileText size={20}/></span><span className="cw-result-copy"><span className="cw-result-title">历史测试方案</span></span><span className="cw-result-action">查看原回复 <ChevronRight size={16}/></span>
             </button>}
@@ -307,11 +307,10 @@ export function CaseWorkbench({accountControl}) {
               <span className="cw-result-copy"><span className="cw-result-title">测试方案</span><span className="cw-result-summary">{state.plan?.status==='LOCKED'?'已确认':'查看与修改'}</span></span>
               <span className="cw-result-action">查看详情 <ChevronRight size={16}/></span>
             </button>}
-            </MessageBody>
             {message.id===messages.at(-1)?.id && message.role==='assistant' && !message.result && state.workflow?.waiting?.includes('PROPOSE_PLAN') && messages.filter(m=>m.role==='assistant').length>=2 && <div className="cw-workflow-actions">
               <button type="button" disabled={running || loading || !!retryInput || !!draft.trim()} title={draft.trim()?'请先发送或清空输入框中的补充内容':undefined} onClick={()=>submitFirstNode('请根据刚才的讨论整理测试方案，供我审阅。','PROPOSE_PLAN')}><FileText size={15}/>整理方案</button>
             </div>}
-          </article></MessagePrimitive.Root>;}}</ThreadPrimitive.Messages>
+          </ChatMessage>;}}</ThreadMessages>
           {state.workflow?.stage==='CONFIRM_EXPECTATIONS' && state.plan && <div className="cw-expect-handoff"><p>准备数据已确认。接下来核对各测试项的预期结果。</p><button type="button" className="cw-result" onClick={()=>{setPlanError('');setModal({type:'expectations'});}}><span className="cw-result-icon"><FileText size={18}/></span><span><span className="cw-result-title">预期结果</span><span className="cw-result-summary">查看与修改</span></span><span className="cw-result-action">查看详情<ChevronRight size={14}/></span></button></div>}
           {!newConversation && state.generatedData?.status==='VALIDATED' && <button type="button" className="cw-result" onClick={openGeneratedData}>
             <span className="cw-result-icon" aria-hidden="true"><Table2 size={18}/></span><span className="cw-result-copy"><span className="cw-result-title">草稿数据</span><span className="cw-result-summary">{state.generatedData.reviewStatus==='CONFIRMED'?'已确认':'查看数据'}</span></span><span className="cw-result-action">查看详情<ChevronRight size={14}/></span>
@@ -326,7 +325,7 @@ export function CaseWorkbench({accountControl}) {
           {nodeError && <div className="cw-node-error" role="alert"><p>{nodeError}</p>{retryInput && !completed && <button type="button" disabled={running} onClick={()=>submitFirstNode(retryInput,retryAction)}>重试原输入</button>}</div>}
           {state.pending && !running && !nodeError && <div className="cw-workflow-actions"><button type="button" onClick={()=>submitFirstNode(state.pending.userInput,state.pending.kind)}>重试原请求</button></div>}
         </div>
-      </section></ThreadPrimitive.Viewport>
+      </ThreadViewport>
       {page==='chat' && dataSet && <section className="cw-draft-page" aria-label={`${dataSet.name}的草稿数据`}>
         <h2>草稿数据</h2>{dataSet.id===currentSet.id && state.generatedData?.status==='VALIDATED' ? <>
           <GeneratedData data={state.generatedData}/>
@@ -339,18 +338,14 @@ export function CaseWorkbench({accountControl}) {
         {newConversation && <div className="cw-project-bar">
           <ProjectPicker projects={state.sets} value={newProjectId} onChange={setNewProjectId}/>
         </div>}
-        <ComposerPrimitive.Root className="cw-composer">
-          <label className="cw-sr-only" htmlFor="cw-message">输入消息</label>
-          <ComposerPrimitive.Input id="cw-message" ref={composer} value={draft} placeholder="输入消息…" rows={1} maxRows={7} cancelOnEscape={false} addAttachmentOnPaste={false}
-            onChange={event => setState(value => ({...value, drafts: {...value.drafts, [draftKey]: event.target.value}}))}/>
-          <div className="cw-send-row"><ComposerPrimitive.Send className="cw-send" aria-label="发送消息"><ArrowUp size={20}/></ComposerPrimitive.Send></div>
-        </ComposerPrimitive.Root>
+        <Composer ref={composer} value={draft}
+          onChange={event => setState(value => ({...value, drafts: {...value.drafts, [draftKey]: event.target.value}}))}/>
         </div>
       </div>
       {page!=='chat' && <div className="gc-topbar"><button aria-label="返回对话" title="返回对话" onClick={()=>{setPage('chat');const url=new URL(location.href);url.searchParams.delete('page');history.replaceState(null,'',url);}}><ArrowLeft size={18}/></button><nav aria-label="业务页面">{[['data','数据'],['files','文件']].map(([key,label])=><button key={key} aria-current={page===key?'page':undefined} onClick={()=>{setPage(key);const url=new URL(location.href);url.searchParams.set('page',key);history.replaceState(null,'',url);}}>{label}</button>)}</nav></div>}
       {page==='data' && <GlobalDataCatalog onOpenCase={openCatalogCase}/>}
       {page==='files' && <GlobalFileCatalog onOpenCase={openCatalogCase}/>}
-    </main></ThreadPrimitive.Root>
+    </Thread>
     </CaseAssistant>
     <div className={`cw-notice ${notice ? 'is-visible' : ''}`} role="status">{notice}</div>
     {modal?.type === 'review-result' && <Modal title="结果核对" className="cw-result-review-modal" onClose={()=>{if(!resultDirty.current||window.confirm('有未保存的结果，确定关闭？'))setModal(null);}}><ResultReview chatId={currentSet.id} caseId={state.selected} readOnly={completed||currentSet.status!=='ACTIVE'} onDirtyChange={dirty=>{resultDirty.current=dirty;}} onChanged={async isCurrent=>{const snapshot=await liveSnapshot(currentSet.id,state.selected);if(isCurrent())applySnapshot(snapshot);}}/></Modal>}
