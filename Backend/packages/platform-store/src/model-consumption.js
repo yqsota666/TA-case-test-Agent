@@ -1,3 +1,4 @@
+import {accountModelPolicy} from './account-model-quotas.js';
 import {randomUUID} from 'node:crypto';
 import {authenticateSession, storeError} from './index.js';
 
@@ -22,8 +23,8 @@ export function normalizeModelUsage(usage) {
 }
 
 export function createModelConsumptionRepository({transaction,config=modelBudgetConfig()}) {
-  const scopes=auth=>[['global',config.globalDaily],[`user:${auth.user_id}`,config.userDaily],
-    [`workspace:${auth.workspace_id}`,config.workspaceDaily]].sort(([a],[b])=>a.localeCompare(b));
+  const scopes=auth=>[[auth.budget_exempt?'demo:global':'global',config.globalDaily],[`${auth.budget_exempt?'demo:':''}user:${auth.user_id}`,auth.dailyTokens??config.userDaily],
+    [`${auth.budget_exempt?'demo:':''}workspace:${auth.workspace_id}`,config.workspaceDaily]].sort(([a],[b])=>a.localeCompare(b));
   return {
     reserve:(token,{model,purpose,reservedTokens})=>transaction(async db=>{
       if(!Number.isSafeInteger(reservedTokens)||reservedTokens<1||reservedTokens>1e7)throw storeError('MODEL_INPUT_TOO_LARGE',413,'模型输入过长，请缩小材料后重试');
@@ -32,11 +33,12 @@ export function createModelConsumptionRepository({transaction,config=modelBudget
       await db.execute("SELECT booked_tokens FROM model_budget_buckets WHERE bucket_key='mutex' AND budget_day='2000-01-01' FOR UPDATE");
       const [[clock]]=await db.execute(`SELECT DATE_FORMAT(DATE_ADD(UTC_TIMESTAMP(),INTERVAL 8 HOUR),'%Y-%m-%d') AS budget_day`);
       const day=String(clock.budget_day);
-      const buckets=scopes(auth);
+      const policy=await accountModelPolicy(db,auth.user_id,config.userDaily,{lock:true});
+      const buckets=scopes({...auth,budget_exempt:policy.unlimited,dailyTokens:policy.dailyTokens});
       for(const [key,limit] of buckets) {
         await db.execute(`INSERT IGNORE INTO model_budget_buckets(bucket_key,budget_day) VALUES (?,?)`,[key,day]);
         const [[bucket]]=await db.execute(`SELECT booked_tokens FROM model_budget_buckets WHERE bucket_key=? AND budget_day=? FOR UPDATE`,[key,day]);
-        if(Number(bucket.booked_tokens)+reservedTokens>limit)throw storeError('MODEL_BUDGET_EXHAUSTED',429,'今日 AI 使用额度不足，请明天再试或联系管理员调整额度');
+        if(!policy.unlimited && Number(bucket.booked_tokens)+reservedTokens>limit)throw storeError('MODEL_BUDGET_EXHAUSTED',429,'今日 AI 使用额度不足，请明天再试或联系管理员调整额度');
       }
       // The global bucket lock serializes claims across API processes; no lock spans the provider call.
       const [recent]=await db.execute(`SELECT workspace_id,user_id,status,expires_at>NOW(3) AS active,
@@ -54,14 +56,15 @@ export function createModelConsumptionRepository({transaction,config=modelBudget
       const id=randomUUID();
       await db.execute(`INSERT INTO model_consumption(id,workspace_id,user_id,budget_day,model,purpose,reserved_tokens,expires_at)
         VALUES (?,?,?,?,?,?,?,DATE_ADD(NOW(3),INTERVAL 180 SECOND))`,[id,auth.workspace_id,auth.user_id,day,model,purpose,reservedTokens]);
+      if(policy.unlimited)await db.execute('INSERT INTO model_consumption_exemptions(consumption_id) VALUES (?)',[id]);
       for(const [key] of buckets)await db.execute(`UPDATE model_budget_buckets SET booked_tokens=booked_tokens+? WHERE bucket_key=? AND budget_day=?`,[reservedTokens,key,day]);
       return {id};
     }),
     settle:(id,usage)=>transaction(async db=>{
       // Read scope first, then lock buckets in the same order as reserve to avoid lock inversion.
-      const [[scope]]=await db.execute('SELECT workspace_id,user_id,budget_day FROM model_consumption WHERE id=?',[id]);
+      const [[scope]]=await db.execute('SELECT c.workspace_id,c.user_id,c.budget_day,e.consumption_id IS NOT NULL AS budget_exempt FROM model_consumption c LEFT JOIN model_consumption_exemptions e ON e.consumption_id=c.id WHERE c.id=?',[id]);
       if(!scope)throw storeError('MODEL_RESERVATION_NOT_FOUND',500,'模型用量记录缺失');
-      const buckets=scopes(scope);
+      const buckets=scopes({...scope,budget_exempt:Number(scope.budget_exempt)===1});
       for(const [key] of buckets)await db.execute('SELECT booked_tokens FROM model_budget_buckets WHERE bucket_key=? AND budget_day=? FOR UPDATE',[key,scope.budget_day]);
       const [[row]]=await db.execute('SELECT status,reserved_tokens FROM model_consumption WHERE id=? FOR UPDATE',[id]);
       if(row.status!=='RESERVED')return {replayed:true};

@@ -69,6 +69,7 @@ export function CaseWorkbench({accountControl}) {
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
   const [completed, setCompleted] = useState(false);
+  const [nodeErrorCode,setNodeErrorCode]=useState('');
   const [nodeError, setNodeError] = useState('');
   const [planBusy,setPlanBusy]=useState(false);
   const [planError,setPlanError]=useState('');
@@ -174,7 +175,7 @@ export function CaseWorkbench({accountControl}) {
   const toggleSet = id => setState(value => ({...value, sets: value.sets.map(set => set.id === id ? {...set, expanded: !set.expanded} : set)}));
   const submitFirstNode = async (text, action=discussionAction({text,waiting:state.workflow?.waiting,messages}),sentImages=[]) => {
     if (running || loading || ((completed || projectReadOnly) && !newConversation)) return;
-    setRunning(true); setNodeError(''); setRetryInput(text);setRetryImages(sentImages); setRetryAction(action); setActiveAction(action);
+    setRunning(true); setNodeError('');setNodeErrorCode(''); setRetryInput(text);setRetryImages(sentImages); setRetryAction(action); setActiveAction(action);
     pendingScroll.current = true;
     try {
       let chatId=currentSet.id,caseId=state.selected;
@@ -197,7 +198,7 @@ export function CaseWorkbench({accountControl}) {
       setImageDrafts(v=>({...v,[draftKey]:[]}));
       setState(value=>({...value,drafts:{...value.drafts,[draftKey]:''}}));
     } catch(error) {
-      setNodeError(error.message);
+      setNodeError(error.message);setNodeErrorCode(error.code||'');
       try {applySnapshot(await firstNodeRequest('state'));} catch { /* Keep the original input available for retry. */ }
       if(['BUSINESS_UNRELATED','BUSINESS_PURPOSE_REQUIRED'].includes(error.code)){
         const id=new URL(window.location.href).searchParams.get('caseId')||draftKey;
@@ -324,7 +325,7 @@ export function CaseWorkbench({accountControl}) {
           {!newConversation && currentSet.id && <ProjectLifecycleCard chatId={currentSet.id} caseId={state.selected} onChanged={async()=>applySnapshot(await liveSnapshot(currentSet.id,state.selected))} onNavigate={async target=>{if(target.casePublicId)await openCatalogCase(target.chatPublicId,target.casePublicId);else {applySnapshot(await liveSnapshot(target.chatPublicId,null));openNewConversation(target.chatPublicId);}}}/>}
           {(loading || running || state.pending) && <p className="cw-node-status" role="status">{loading ? '连接讨论服务…' : (state.pending?.kind==='PROPOSE_PLAN' || activeAction==='PROPOSE_PLAN')?'正在整理方案…':'正在回复…'}</p>}
           
-          {nodeError && <div className="cw-node-error cw-node-feedback" role="alert"><MessageSquare size={16} className="cw-feedback-icon"/><div className="cw-feedback-content"><p>{nodeError}</p>{retryInput && !completed && <button type="button" disabled={running} aria-busy={running} onClick={()=>submitFirstNode(retryInput,retryAction,retryImages)}><RotateCcw size={15}/><span>{running?'重试中…':'重试原输入'}</span></button>}</div></div>}
+          {nodeError && <div className="cw-node-error cw-node-feedback" role="alert"><MessageSquare size={16} className="cw-feedback-icon"/><div className="cw-feedback-content"><p>{nodeError}</p>{retryInput && !completed && nodeErrorCode!=='MODEL_BUDGET_EXHAUSTED' && <button type="button" disabled={running} aria-busy={running} onClick={()=>submitFirstNode(retryInput,retryAction,retryImages)}><RotateCcw size={15}/><span>{running?'重试中…':'重试原输入'}</span></button>}</div></div>}
           {state.pending && !running && !nodeError && <div className="cw-workflow-actions"><button type="button" onClick={()=>submitFirstNode(state.pending.userInput,state.pending.kind,state.pending.images||[])}>重试原请求</button></div>}
         </div>
       </section>

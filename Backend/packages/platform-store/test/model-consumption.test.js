@@ -12,11 +12,12 @@ function fixture({booked=0,activity={},status='RESERVED'}={}) {
   const calls=[];
   const db={execute:async(sql,args)=>{
     calls.push({sql,args});
+    if(sql.includes('AS is_demo'))return [[{public_id:'synthetic',is_demo:0,daily_tokens:100}]];
     if(sql.includes('FROM platform_sessions'))return [[{user_id:7,workspace_id:31}]];
     if(sql.includes('AS budget_day'))return [[{budget_day:'2026-10-08'}]];
     if(sql.includes('FROM model_budget_buckets'))return [[{booked_tokens:booked}]];
     if(sql.includes('SELECT workspace_id,user_id,status'))return [Array.from({length:activity.user_active??activity.global_rate??0},()=>({workspace_id:31,user_id:7,status:activity.user_active?'RESERVED':'SETTLED',active:activity.user_active?1:0,recent:1}))];
-    if(sql.includes('SELECT workspace_id'))return [[{workspace_id:31,user_id:7,budget_day:'2026-10-08'}]];
+    if(sql.includes('SELECT c.workspace_id'))return [[{workspace_id:31,user_id:7,budget_day:'2026-10-08'}]];
     if(sql.includes('SELECT status'))return [[{status,reserved_tokens:100}]];
     return [{}];
   }};

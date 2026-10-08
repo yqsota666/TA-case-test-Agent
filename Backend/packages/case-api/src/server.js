@@ -1,5 +1,6 @@
 import {createModelRuntime} from './model-runtime.js';
-import {createModelConsumptionRepository} from '../../platform-store/src/model-consumption.js';
+import {createAccountModelQuotas} from '../../platform-store/src/account-model-quotas.js';
+import {modelBudgetConfig,createModelConsumptionRepository} from '../../platform-store/src/model-consumption.js';
 import {createBusinessAdmission} from '../../case-agent/src/business-admission.js';
 import {createAdmissionRepository} from '../../platform-store/src/business-admission.js';
 import {createGlobalDataCatalog} from '../../platform-store/src/global-data-catalog.js';
@@ -53,6 +54,7 @@ const transaction = async action => {
     throw error;
   } finally { connection.release(); }
 };
+const accountModelQuotas=createAccountModelQuotas({transaction,defaultDaily:modelBudgetConfig().userDaily});
 const modelRuntime=createModelRuntime({repository:createModelConsumptionRepository({transaction}),maxCalls:Number(process.env.MODEL_RUN_MAX_CALLS||8),maxInput:Number(process.env.MODEL_MAX_INPUT_TOKENS||600000),maxOutput:Number(process.env.MODEL_MAX_OUTPUT_TOKENS||8192)});
 const accountAuth=createAccountAuth({transaction,initializeWorkspace:localWorkspaceInitializer(migrationConfig()),allowDemo:Boolean(localWorkspaceInitializer(migrationConfig()))});
 const taReset=createTaResetRepository({transaction});
@@ -134,6 +136,6 @@ const projectParsing={...returnParsing,parse:projectExchange.parse};
 const projectConfirmation={...returnConfirmation,read:projectExchange.readConfirmation,apply:projectExchange.apply};
 const confirmData = ({ token, chatPublicId, casePublicId, revision }) =>
   repository.confirmGeneratedData(token, chatPublicId, casePublicId, revision);
-const server = createCaseHttpServer({modelRuntime,globalDataCatalog:createGlobalDataCatalog({transaction}),globalFileCatalog:createGlobalFileCatalog({transaction}),admit,planContentComplete:complete, repository, discussionService, confirmPlan,
+const server = createCaseHttpServer({accountModelQuotas,modelRuntime,globalDataCatalog:createGlobalDataCatalog({transaction}),globalFileCatalog:createGlobalFileCatalog({transaction}),admit,planContentComplete:complete, repository, discussionService, confirmPlan,
   executeData, reviseData, exchangeRepository, applicationPreparation:projectPreparation, confirmData, returnParsing:projectParsing, returnConfirmation:projectConfirmation, holdingsReturn, taReceipts, caseResult, exchangePlanSupplement, chatLifecycle, durableWorkflow, taReset, accountAuth, secureCookie:process.env.NODE_ENV==='production', allowedOrigin });
 server.listen(Number(process.env.CASE_API_PORT ?? 3100), '127.0.0.1');

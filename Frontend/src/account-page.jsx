@@ -1,3 +1,4 @@
+import {AccountModelUsage} from './account-model-usage.jsx';
 import React,{useEffect,useRef} from 'react';
 import {ArrowLeft,LogOut} from './ui-icons.jsx';
 import './account-page.css';
@@ -31,6 +32,7 @@ export function AccountPage({user,busy,notice,passwordOpen,onPasswordOpen,onPass
             <div><button className="account-page-button" disabled={busy}>{busy?'正在保存…':'保存密码'}</button><button className="account-page-text" type="button" disabled={busy} onClick={onPasswordClose}>取消</button></div>
           </form>}
       </section>
+      <AccountModelUsage userId={user.id}/>
       <footer><button className="account-page-logout" disabled={busy} onClick={onLogout}><LogOut size={17}/>退出登录</button></footer>
     </div>
   </main>;
