@@ -233,6 +233,7 @@ export function CaseWorkbench() {
     if (draft.trim()) submitFirstNode(draft.trim());
   };
   const openNewConversation = projectId => {
+    const url=new URL(location.href);url.searchParams.delete('page');url.searchParams.delete('draftTable');url.searchParams.delete('caseId');if(projectId)url.searchParams.set('chatId',projectId);else url.searchParams.delete('chatId');history.replaceState(null,'',url);
     setPage('chat'); setNewProjectId(projectId); setNewConversation(true); setDataSetId(null); setModal(null); setNotice('');
   };
   const sidebar = <>
