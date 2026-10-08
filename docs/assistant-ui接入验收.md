@@ -70,3 +70,12 @@ assistant-ui 接入作为随后单独的功能提交；回滚该功能提交即�
 验证：24前端常规测试通过，生产构建通过（主JS约844kB、gzip260kB，原有大包警告仍在）。隔离合成页检查2/4行表格、不同字段、长说明、非对比/缺失信息、原HTML不执行、长代码内滚动；1280与320页面无横向溢出。Shift+Enter换行、Enter仅提交一次、等待禁用、成功清空、503保留原输入和重试、跨Case草稿隔离通过。回答和代码复制及反馈通过；发送按钮Tab焦点2px可见。真实已有对话渲染无console error。输入法没有新增独立实测。旧方案文档脚本的两项基线失败不计入通过。
 
 截图：`.context/assistant-ui/chat-kit-live.png`。5197原入口即时更新；原5195不变。回滚最新视觉提交可回到仅primitive集成的93abfe7d。仍只在本地验收，不push、不创建PR。
+
+
+## Integrated platform entry (2026-10-08)
+
+The current platform branch is codex/assistant-ui at /Users/apple/.codex/worktrees/assistant-ui/gf. Frontend5197 and API3104 now run from this same checkout. Merge97df3f59 incorporates platform-completion through d69f0a48, including business admission, images, cumulative token budgets, trusted demo exemptions, account progress bars and the final-Case lifecycle entry. Existing assistant-ui runtime, chat kit and asynchronous Case isolation are retained. Image-only sending uses the assistant-ui composer; reading attachments temporarily disables sending.
+
+Validation: backend355 passed with15 opt-in database tests skipped; frontend23 passed and build succeeded. Actual HTTP account/quota authorization checks passed. Browser5197 shows the quota bar and image attachment entry. No new provider calls were made in this integration; prior real-model and MySQL evidence remains in the risk acceptance records. Existing local sessions, Cases and consumption history are preserved.
+
+5195 is a historical fallback preview, not the development entry. PR40/41 remain separate unmerged draft PRs; this local merge is not a merge into remote main.
