@@ -8,7 +8,7 @@ export function createSophnetCompletion({
 } = {}) {
   if (!client && !apiKey) throw new Error('SOPHNET_API_KEY is required');
   const sdk = client ?? new OpenAI({ apiKey, baseURL, maxRetries: 0, timeout: 90000 });
-  return async ({ system, user, messages, reasoningEffort, thinkingMode }) => {
+  return async ({ system, user, messages, reasoningEffort, thinkingMode, maxTokens }) => {
     if ((user === undefined) === (messages === undefined)) {
       throw new TypeError('provide either user or messages');
     }
@@ -19,6 +19,7 @@ export function createSophnetCompletion({
       ...(thinkingMode===undefined?{}:{thinking:{type:thinkingMode}}),
       ...(reasoningEffort===undefined?{}:{reasoning_effort:reasoningEffort}),
       model,
+      ...(maxTokens===undefined?{}:{max_tokens:maxTokens}),
       messages: [{ role: 'system', content: system },
         ...(messages ?? [{ role: 'user', content: user }])],
     });

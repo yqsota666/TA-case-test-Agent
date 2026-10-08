@@ -1,3 +1,4 @@
+import {validateDiscussionImages} from '../../platform-protocol/src/discussion-images.js';
 import {handleGlobalDataCatalog} from './global-data-http.js';
 import {handleGlobalFileCatalog} from './global-file-http.js';
 import {createAccountHttpHandler} from './account-http.js';
@@ -57,7 +58,7 @@ async function jsonBody(request, limit = 256 * 1024) {
   }
 }
 
-export function createCaseHttpHandler({ globalDataCatalog, globalFileCatalog, planContentComplete, repository, discussionService, confirmPlan, executeData,
+export function createCaseHttpHandler({ globalDataCatalog, globalFileCatalog, admit, planContentComplete, repository, discussionService, confirmPlan, executeData,
   reviseData, exchangeRepository, applicationPreparation, confirmData, returnParsing, returnConfirmation, holdingsReturn, taReceipts, caseResult, exchangePlanSupplement, chatLifecycle, durableWorkflow, taReset, accountAuth, secureCookie, allowedOrigin }) {
   if (!repository || !discussionService || !confirmPlan || !executeData || !reviseData || !allowedOrigin) {
     throw new TypeError('API dependencies required');
@@ -174,6 +175,7 @@ export function createCaseHttpHandler({ globalDataCatalog, globalFileCatalog, pl
         const businessOutput=resultReview[3]==='business-output';
         const body=await jsonBody(request,businessOutput?256*1024:4096);const keys=businessOutput?['requestId','planVersion','sourceKind','content']:resultReview[3]==='evaluate'?[]:['reviewId','verdict','reason'];
         if(!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).length!==keys.length||!keys.every(k=>Object.hasOwn(body,k))){send(response,400,{error:'INVALID_INPUT'});return;}
+        if(businessOutput && admit)await admit({token,...scope,text:JSON.stringify(body.content),purpose:'BUSINESS_OUTPUT'});
         send(response,200,await caseResult[businessOutput?'saveBusinessOutput':resultReview[3]](token,{...scope,...body}));return;
       }
       if(receiptsRoute) {
@@ -319,16 +321,16 @@ export function createCaseHttpHandler({ globalDataCatalog, globalFileCatalog, pl
       if (!String(request.headers['content-type'] ?? '').startsWith('application/json')) {
         send(response, 415, { error: 'UNSUPPORTED_MEDIA_TYPE' }); return;
       }
-      const body = await jsonBody(request);
+      const body = await jsonBody(request,match?.[3]==='discussion'?6*1024*1024:256*1024);
       if (action === 'discussion/cancel') {
         if(!body || typeof body!=='object' || Array.isArray(body) || Object.keys(body).length!==1 || !Number.isSafeInteger(body.turnNumber) || body.turnNumber<1){send(response,400,{error:'INVALID_INPUT'});return;}
         send(response,200,await discussionService.abandon({token,chatPublicId,casePublicId,turnNumber:body.turnNumber}));return;
       }
       if (action === 'plan/content') {
-        send(response,200,await revisePreparedPlanContent({repository,complete:planContentComplete,token,chatPublicId,casePublicId,body}));return;
+        send(response,200,await revisePreparedPlanContent({repository,admit,complete:planContentComplete,token,chatPublicId,casePublicId,body}));return;
       }
       if (action === 'plan/data') {
-        send(response,200,await revisePreparedPlanData({repository,token,chatPublicId,casePublicId,body})); return;
+        send(response,200,await revisePreparedPlanData({repository,admit,token,chatPublicId,casePublicId,body})); return;
       }
       if (action === 'application-preparation') {
         if (!body || typeof body !== 'object' || Array.isArray(body) ||
@@ -345,6 +347,7 @@ export function createCaseHttpHandler({ globalDataCatalog, globalFileCatalog, pl
       if (action === 'data' && request.method === 'PATCH') {
         const edit = DataEditSchema.safeParse(body);
         if (!edit.success) { send(response, 422, { error: 'DATA_EDIT_INVALID', message: '表格内容格式有误' }); return; }
+        if(admit)await admit({token,chatPublicId,casePublicId,text:JSON.stringify(edit.data),purpose:'DATA_EDIT'});
         send(response, 200, await repository.editGeneratedData(token, chatPublicId, casePublicId, edit.data));
         return;
       }
@@ -362,11 +365,13 @@ export function createCaseHttpHandler({ globalDataCatalog, globalFileCatalog, pl
               Number.isSafeInteger(body.revision) && body.revision >= 0 &&
               typeof body.userInput === 'string' && Boolean(body.userInput.trim()) &&
               body.userInput.length <= 4000 :
-              Object.keys(body).length === 1 && typeof body.userInput === 'string' &&
-              Boolean(body.userInput.trim()) && body.userInput.length <= 4000);
+              Object.keys(body).every(k=>['userInput',...(action==='discussion'?['images']:[])].includes(k)) &&
+              (body.userInput===undefined || typeof body.userInput==='string' && body.userInput.length<=4000) &&
+              (Boolean(body.userInput?.trim()) || action==='discussion' && Array.isArray(body.images) && body.images.length>0));
       if (!validInput) {
         send(response, 400, { error: 'INVALID_INPUT' }); return;
       }
+      if(action==='discussion')validateDiscussionImages(body.images);
       if (action === 'plan/confirm') {
         send(response, 200, await confirmPlan({ token, chatPublicId, casePublicId,
           versionNumber: body.versionNumber, section: body.section }));
@@ -383,7 +388,7 @@ export function createCaseHttpHandler({ globalDataCatalog, globalFileCatalog, pl
       } else {
         const method = action === 'plan' ? 'propose' : 'discuss';
         send(response, 200, await discussionService[method]({ token, chatPublicId, casePublicId,
-          userInput: body.userInput }));
+          userInput: body.userInput,...(action==='discussion'?{images:body.images}: {}) }));
       }
     } catch (error) {
       if (['ER_DUP_ENTRY', 'ER_NO_REFERENCED_ROW_2', 'ER_ROW_IS_REFERENCED_2',
