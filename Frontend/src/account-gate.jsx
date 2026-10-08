@@ -3,6 +3,7 @@ import {ArrowRight,Eye,EyeOff,LogOut} from './ui-icons.jsx';
 import {requestCase} from './live-case-api.js';
 import {setAccountStorageOwner} from './account-storage.js';
 import './account-gate.css';
+import {avatarImage} from './avatar-image.js';
 
 function PasswordDialog({children,onClose,busy}) {
   const ref=useRef(null);
@@ -54,6 +55,8 @@ export function AccountGate({children}) {
   const [passwordOpen,setPasswordOpen]=useState(false);
   const identity=useRef(null);
   const generation=useRef(0);
+  const avatarInput=useRef(null);
+  const accountControl=useRef(null);
   const broadcast=()=>{try{localStorage.setItem('case-account-changed',crypto.randomUUID());}catch{}};
   const authenticated=(value,fresh=false)=>{
     if(fresh)generation.current++;
@@ -63,7 +66,7 @@ export function AccountGate({children}) {
     if(fresh||changed){const url=new URL(location.href);for(const key of ['chatId','caseId','draftTable'])url.searchParams.delete(key);history.replaceState(history.state,'',url);}
     setUser(value);setChecking(false);setUnavailable('');
   };
-  const check=async()=>{const epoch=++generation.current;setChecking(true);setUnavailable('');try{const result=await requestCase('/auth/me');if(epoch===generation.current)authenticated(result.user);}catch(error){if(epoch===generation.current){setUser(null);identity.current=null;setAccountStorageOwner(null);if(error.status!==401)setUnavailable(error.message);}}finally{if(epoch===generation.current)setChecking(false);}};
+  const check=async()=>{const epoch=++generation.current;if(!identity.current)setChecking(true);setUnavailable('');try{const result=await requestCase('/auth/me');if(epoch===generation.current)authenticated(result.user);}catch(error){if(epoch===generation.current){setUser(null);identity.current=null;setAccountStorageOwner(null);if(error.status!==401)setUnavailable(error.message);}}finally{if(epoch===generation.current)setChecking(false);}};
   useEffect(()=>{
     check();
     const expired=()=>{setUser(null);setAccountStorageOwner(null);check();};
@@ -80,8 +83,41 @@ export function AccountGate({children}) {
     catch(error){setNotice(error.message);}finally{setBusy(false);}
   };
   const logout=async()=>{setBusy(true);setNotice('');try{await requestCase('/auth/logout',{});generation.current++;setUser(null);identity.current=null;setAccountStorageOwner(null);setMenu(false);broadcast();const url=new URL(location.href);for(const key of ['chatId','caseId','draftTable'])url.searchParams.delete(key);history.replaceState(null,'',url);}catch(error){setNotice(error.message);}finally{setBusy(false);}};
+  const saveAvatar=async file=>{
+    if(busy)return;
+    const accountId=identity.current;
+    setBusy(true);setNotice('');
+    try {
+      const avatar=file?await avatarImage(file):null;
+      if(identity.current!==accountId)return;
+      const result=await requestCase('/auth/avatar',{avatar});
+      if(identity.current===accountId){generation.current++;setUser(result.user);setNotice(file?'头像已更新':'头像已移除');broadcast();}
+    } catch(error){if(identity.current===accountId)setNotice(error.message);}
+    finally{setBusy(false);if(avatarInput.current)avatarInput.current.value='';}
+  };
+  useEffect(()=>{
+    if(!menu)return;
+    const close=event=>{if(event.key==='Escape'){setMenu(false);accountControl.current?.focus();}else if(event.type==='pointerdown'&&!event.target.closest('.account-control'))setMenu(false);};
+    window.addEventListener('keydown',close);window.addEventListener('pointerdown',close);
+    return()=>{window.removeEventListener('keydown',close);window.removeEventListener('pointerdown',close);};
+  },[menu]);
+  const control=floating=><div className={`account-control${floating?' account-floating':''}`}>
+    <button className="account-identity" onClick={event=>{accountControl.current=event.currentTarget;setMenu(!menu);setNotice('');}} aria-expanded={menu} aria-label="账户">
+      <span className="account-avatar">{user?.avatar?<img src={user.avatar} alt=""/>:user?.name.slice(0,1)}</span>
+      <span className="account-display-name">{user?.name}</span>
+    </button>
+    {menu&&<div className="account-popover" aria-busy={busy}>
+      <strong>{user?.name}</strong><span>{user?.email}</span>
+      <button onClick={()=>avatarInput.current?.click()} disabled={busy}>{busy?'正在保存…':user?.avatar?'更换头像':'上传头像'}</button>
+      <span>PNG、JPG、WebP，最大 5 MB</span>
+      {user?.avatar&&<button onClick={()=>saveAvatar(null)} disabled={busy}>移除头像</button>}
+      <button disabled={busy} onClick={()=>{setPasswordOpen(true);setNotice('');setMenu(false);}}>{user?.needsPasswordSetup?'设置密码':'修改密码'}</button>
+      <button onClick={logout} disabled={busy}><LogOut size={16}/>退出登录</button>
+      {notice&&<p role="status">{notice}</p>}
+    </div>}
+  </div>;
   if(checking)return <main className="account-entry"><div className="account-loading" role="status">正在连接…</div></main>;
   if(unavailable)return <main className="account-entry"><section className="account-sheet"><p role="alert">{unavailable}</p><button className="account-submit" onClick={check}>重新连接</button></section></main>;
   if(!user)return <><AuthForm onAuthenticated={authenticated}/>{notice&&<div className="account-notice" role="status">{notice}</div>}</>;
-  return <><React.Fragment key={user.id}>{children}</React.Fragment><div className="account-control"><button className="account-avatar" onClick={()=>setMenu(!menu)} aria-expanded={menu} aria-label="账户">{user.name.slice(0,1)}</button>{menu&&<div className="account-popover"><strong>{user.name}</strong><span>{user.email}</span><button onClick={()=>{setPasswordOpen(true);setNotice('');setMenu(false);}}>{user.needsPasswordSetup?'设置密码':'修改密码'}</button><button onClick={logout} disabled={busy}><LogOut size={16}/>{busy?'正在退出…':'退出登录'}</button>{notice&&<p role="alert">{notice}</p>}</div>}</div>{passwordOpen&&<PasswordDialog busy={busy} onClose={()=>setPasswordOpen(false)}><section className="account-sheet account-password-dialog" role="dialog" aria-modal="true" aria-labelledby="password-title"><h1 id="password-title">{user.needsPasswordSetup?'设置密码':'修改密码'}</h1><form onSubmit={changePassword}>{!user.needsPasswordSetup&&<label>当前密码<input name="currentPassword" type="password" autoComplete="current-password" required disabled={busy}/></label>}<label>新密码<input name="newPassword" type="password" autoComplete="new-password" minLength={8} maxLength={128} required disabled={busy} autoFocus/></label><p className="account-error" role="alert">{notice}</p><button className="account-submit" disabled={busy}>{busy?'正在保存…':'保存'}</button><button className="account-switch" type="button" onClick={()=>setPasswordOpen(false)} disabled={busy}>取消</button></form></section></PasswordDialog>}</>;
+  return <><React.Fragment key={user.id}>{React.cloneElement(children,{accountControl:control(false)})}</React.Fragment>{control(true)}<input ref={avatarInput} type="file" accept="image/png,image/jpeg,image/webp" hidden aria-label="选择头像图片" onChange={event=>{const file=event.target.files?.[0];if(file)saveAvatar(file);}}/>{passwordOpen&&<PasswordDialog busy={busy} onClose={()=>setPasswordOpen(false)}><section className="account-sheet account-password-dialog" role="dialog" aria-modal="true" aria-labelledby="password-title"><h1 id="password-title">{user.needsPasswordSetup?'设置密码':'修改密码'}</h1><form onSubmit={changePassword}>{!user.needsPasswordSetup&&<label>当前密码<input name="currentPassword" type="password" autoComplete="current-password" required disabled={busy}/></label>}<label>新密码<input name="newPassword" type="password" autoComplete="new-password" minLength={8} maxLength={128} required disabled={busy} autoFocus/></label><p className="account-error" role="alert">{notice}</p><button className="account-submit" disabled={busy}>{busy?'正在保存…':'保存'}</button><button className="account-switch" type="button" onClick={()=>setPasswordOpen(false)} disabled={busy}>取消</button></form></section></PasswordDialog>}</>;
 }

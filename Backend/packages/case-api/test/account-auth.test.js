@@ -14,6 +14,26 @@ test('account credentials reject unsupported and incomplete input before databas
  await assert.rejects(auth.register({email:'a@b.test',password:'abcdefgh',name:''}),{status:400});
  assert.equal(calls,0);
 });
+test('avatar rejects external URLs, SVG, oversized data and malformed PNG before database access',async()=>{
+ let calls=0;const auth=createAccountAuth({transaction:async()=>{calls++;}});
+ for(const avatar of ['https://example.test/avatar.png','data:image/svg+xml;base64,PHN2Zz4=','data:image/png;base64,YWJj','x'.repeat(360000)])await assert.rejects(auth.avatar(token,{avatar}),{status:400});
+ await assert.rejects(auth.avatar(token,{avatar:null,userId:2}),{status:400});
+ assert.equal(calls,0);
+});
+test('avatar save and removal use authenticated user and survive profile reads',async()=>{
+ let avatar=null;const writes=[];
+ const db={execute:async(sql,args)=>{
+  if(sql.includes('FROM platform_sessions'))return [[{user_id:7,workspace_id:8}]];
+  if(sql.includes('FROM platform_users'))return [[{id:7,public_id:'user-7',display_name:'用户',email:'a@b.test'}]];
+  if(sql.startsWith('SELECT avatar_data'))return [avatar?[{avatar_data:avatar}]:[]];
+  writes.push(args);if(sql.startsWith('INSERT'))avatar=args[1];else avatar=null;return [{}];
+ }};
+ const auth=createAccountAuth({transaction:async action=>action(db)});
+ const png='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=';
+ assert.equal((await auth.avatar(token,{avatar:png})).user.avatar,png);
+ assert.equal((await auth.current(token)).user.avatar,png);assert.equal(writes[0][0],7);
+ assert.equal((await auth.avatar(token,{avatar:null})).user.avatar,null);assert.deepEqual(writes[1],[7]);
+});
 test('HTTP auth refuses foreign-origin mutations and never returns token in JSON',async()=>{
  let calls=0;const user={id:'account-id',name:'用户',email:'user@example.test'};
  const auth={current:async supplied=>{assert.equal(supplied,token);return {user};},login:async()=>{calls++;return {token,user};},logout:async()=>({signedOut:true})};
@@ -27,6 +47,23 @@ test('HTTP auth refuses foreign-origin mutations and never returns token in JSON
   const me=await fetch(url+'/api/auth/me',{headers:{cookie:'case_session='+token}});assert.equal(me.status,200);assert.deepEqual(await me.json(),{user});
   const stale=await fetch(url+'/api/auth/logout',{method:'POST',headers:{origin:'https://agent.example','content-type':'application/json',cookie:'case_session='+token,'x-case-account':'other-user'},body:'{}'});assert.equal(stale.status,409);
   const logout=await fetch(url+'/api/auth/logout',{method:'POST',headers:{origin:'https://agent.example','content-type':'application/json',cookie:'case_session='+token},body:'{}'});assert.equal(logout.status,200);assert.match(logout.headers.get('set-cookie'),/Max-Age=0/);
+ }finally{await new Promise(resolve=>server.close(resolve));}
+});
+test('avatar HTTP preserves session cookie and rejects stale accounts, foreign origins and oversized bodies',async()=>{
+ let calls=0;const user={id:'user-7',avatar:null};
+ const auth={current:async()=>({user}),avatar:async supplied=>{assert.equal(supplied,token);calls++;return {user};}};
+ const handle=createAccountHttpHandler({accountAuth:auth,allowedOrigin:'https://agent.example'});
+ const server=createServer(async(req,res)=>{await handle(req,res);});
+ await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+ const url='http://127.0.0.1:'+server.address().port+'/api/auth/avatar';
+ const headers={origin:'https://agent.example','content-type':'application/json',cookie:'case_session='+token,'x-case-account':'user-7'};
+ try {
+  const response=await fetch(url,{method:'POST',headers,body:'{"avatar":null}'});
+  assert.equal(response.status,200);assert.equal(response.headers.get('set-cookie'),null);assert.equal(calls,1);
+  const stale=await fetch(url,{method:'POST',headers:{...headers,'x-case-account':'other'},body:'{"avatar":null}'});assert.equal(stale.status,409);
+  const foreign=await fetch(url,{method:'POST',headers:{...headers,origin:'https://evil.example'},body:'{"avatar":null}'});assert.equal(foreign.status,403);
+  const large=await fetch(url,{method:'POST',headers,body:JSON.stringify({avatar:'x'.repeat(360000)})});assert.equal(large.status,413);
+  assert.equal(calls,1);
  }finally{await new Promise(resolve=>server.close(resolve));}
 });
 

@@ -35,10 +35,14 @@ export function accountCookie(token,{secure=false}={}) {
 }
 export function createAccountAuth({transaction,initializeWorkspace,allowDemo=false}) {
   let dummyHash;
+  async function profile(db,user) {
+    const [[avatar]]=await db.execute('SELECT avatar_data FROM platform_user_avatars WHERE user_id=?',[user.id]);
+    return {...publicUser(user),avatar:avatar?.avatar_data??null};
+  }
   async function issue(db,user) {
     const token=crypto.randomBytes(32).toString('base64url');
     await db.execute('INSERT INTO platform_sessions(token_hash,user_id,expires_at) VALUES (?,?,?)',[sessionTokenHash(token),user.id,new Date(Date.now()+ttl)]);
-    return {token,user:publicUser(user)};
+    return {token,user:await profile(db,user)};
   }
   return {
     async register(input) {
@@ -81,9 +85,25 @@ export function createAccountAuth({transaction,initializeWorkspace,allowDemo=fal
     },
     async current(token) {return transaction(async db=>{
       const {user_id}=await authenticateSession(db,token);
-      const [[user]]=await db.execute('SELECT public_id,email,display_name,password_hash FROM platform_users WHERE id=?',[user_id]);
-      return {user:publicUser(user)};
+      const [[user]]=await db.execute('SELECT id,public_id,email,display_name,password_hash FROM platform_users WHERE id=?',[user_id]);
+      return {user:await profile(db,user)};
     });},
+    async avatar(token,input) {
+      if(!input||Array.isArray(input)||Object.keys(input).length!==1||!Object.hasOwn(input,'avatar'))throw fail('INVALID_INPUT',400,'头像请求格式不正确');
+      const data=input.avatar;
+      if(data!==null){
+        if(typeof data!=='string'||data.length>350000||!/^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/.test(data))throw fail('INVALID_AVATAR',400,'请上传有效图片');
+        const bytes=Buffer.from(data.slice(22),'base64');
+        if(bytes.length<33||bytes.length>256*1024||bytes.subarray(0,8).toString('hex')!=='89504e470d0a1a0a'||bytes.toString('ascii',12,16)!=='IHDR'||bytes.readUInt32BE(16)<1||bytes.readUInt32BE(20)<1||bytes.readUInt32BE(16)>512||bytes.readUInt32BE(20)>512)throw fail('INVALID_AVATAR',400,'头像尺寸或内容无效');
+      }
+      return transaction(async db=>{
+        const {user_id}=await authenticateSession(db,token);
+        if(data===null)await db.execute('DELETE FROM platform_user_avatars WHERE user_id=?',[user_id]);
+        else await db.execute('INSERT INTO platform_user_avatars(user_id,avatar_data) VALUES (?,?) ON DUPLICATE KEY UPDATE avatar_data=VALUES(avatar_data)',[user_id,data]);
+        const [[user]]=await db.execute('SELECT id,public_id,email,display_name,password_hash FROM platform_users WHERE id=?',[user_id]);
+        return {user:await profile(db,user)};
+      });
+    },
     async password(token,input) {
       if(!input||Array.isArray(input)||Object.keys(input).length!==2||!['currentPassword','newPassword'].every(key=>Object.hasOwn(input,key))||typeof input.currentPassword!=='string'||input.currentPassword.length>128||typeof input.newPassword!=='string'||input.newPassword.length<8||input.newPassword.length>128)throw fail('INVALID_INPUT',400,'新密码须为 8–128 位');
       return transaction(async db=>{
