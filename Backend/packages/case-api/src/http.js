@@ -1,3 +1,4 @@
+import {handleGlobalDataCatalog} from './global-data-http.js';
 import {createAccountHttpHandler} from './account-http.js';
 import { createServer } from 'node:http';
 import { DataEditSchema } from '../../case-agent/src/index.js';
@@ -55,7 +56,7 @@ async function jsonBody(request, limit = 256 * 1024) {
   }
 }
 
-export function createCaseHttpHandler({ planContentComplete, repository, discussionService, confirmPlan, executeData,
+export function createCaseHttpHandler({ globalDataCatalog, planContentComplete, repository, discussionService, confirmPlan, executeData,
   reviseData, exchangeRepository, applicationPreparation, confirmData, returnParsing, returnConfirmation, holdingsReturn, taReceipts, caseResult, exchangePlanSupplement, chatLifecycle, durableWorkflow, taReset, accountAuth, secureCookie, allowedOrigin }) {
   if (!repository || !discussionService || !confirmPlan || !executeData || !reviseData || !allowedOrigin) {
     throw new TypeError('API dependencies required');
@@ -70,6 +71,7 @@ export function createCaseHttpHandler({ planContentComplete, repository, discuss
     const collectionRoute=Boolean(collection && ['GET','POST'].includes(request.method));
     const lifecycle=chatLifecycle && lifecyclePath.exec(pathname);
     const lifecycleRoute=Boolean(lifecycle && ((!lifecycle[2] && request.method==='GET') || (lifecycle[2] && request.method==='POST')));
+    const globalDataRoute=Boolean(globalDataCatalog && /^\/api\/data\/tables\/[a-z]+$/.test(pathname) && request.method==='GET');
     const catalog = pathname === '/api/data/catalog' && request.method === 'GET';
     const match = pathPattern.exec(pathname);
     const application = applicationPath.exec(pathname);
@@ -100,7 +102,7 @@ export function createCaseHttpHandler({ planContentComplete, repository, discuss
         (application && ['GET', 'POST'].includes(request.method)) ||
         (batch && request.method === 'POST') ||
         (files && request.method === 'GET')));
-    if (!resetRoute && !workflowRoute && !receiptsRoute && !collectionRoute && !lifecycleRoute && !resultRoute && !holdingsRoute && !supplementRoute && !catalog && !salesRoute && !confirmationRoute && !exchangeRoute && !parsingRoute && (!match || !['GET', 'POST', 'PATCH'].includes(request.method) ||
+    if (!globalDataRoute && !resetRoute && !workflowRoute && !receiptsRoute && !collectionRoute && !lifecycleRoute && !resultRoute && !holdingsRoute && !supplementRoute && !catalog && !salesRoute && !confirmationRoute && !exchangeRoute && !parsingRoute && (!match || !['GET', 'POST', 'PATCH'].includes(request.method) ||
         (request.method === 'PATCH' && match?.[3] !== 'data') ||
         (['discussion/cancel','plan/data','plan/content','plan/confirm', 'data/execute', 'data/confirm'].includes(match?.[3]) && request.method !== 'POST') ||
         (match?.[3] === 'data/review' && !['GET', 'POST'].includes(request.method)) ||
@@ -114,6 +116,7 @@ export function createCaseHttpHandler({ planContentComplete, repository, discuss
         const current=await accountAuth.current(token);
         if(current.user.id!==request.headers['x-case-account']){send(response,409,{error:'ACCOUNT_CHANGED',message:'账户已切换，请重新连接'});return;}
       }
+      if(globalDataRoute && await handleGlobalDataCatalog(request,response,token,globalDataCatalog))return;
       if(repository.assertCaseWritable && match && request.method==='POST' && ['discussion','plan','data/execute','data/review','application-preparation'].includes(match[3])){
         await repository.assertCaseWritable(token,match[1],match[2],{discussion:['discussion','plan'].includes(match[3])});
       }
