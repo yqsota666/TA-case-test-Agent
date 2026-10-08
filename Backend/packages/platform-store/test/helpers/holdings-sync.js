@@ -1,3 +1,4 @@
+import {verifyHoldingsHttp} from './holdings-http.js';
 import {verifyHoldingsApplyRace} from './holdings-apply-race.js';
 import {verifyCaseResultReviews} from './case-result-reviews.js';
 import assert from 'node:assert/strict';
@@ -22,6 +23,7 @@ export async function verifyHoldingsSync({db,transaction,token,workspaceId,chann
    const file={fileName:dataFileName(options),base64:buildDataFile({...options,records}).toString('base64')};
    return {result:await holdings.parse(token,{...scope,channelId,exchangeStepId:'r05',files:[file]}),file};
  };
+ await verifyHoldingsHttp({db,holdings,confirmations,token,workspaceId,channelId,scope,chatId:chat.insertId,caseId:c.insertId,record});
  const before=await confirmations.salesData(token);
  const one=await upload([record,{...record,DetailFlag:'1'},{...record,DetailFlag:'A'}]);
  assert.deepEqual(await confirmations.salesData(token),before);
