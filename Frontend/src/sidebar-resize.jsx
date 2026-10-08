@@ -1,9 +1,9 @@
 import React, {useEffect, useRef, useState} from 'react';
 import './sidebar-resize.css';
 
-const minWidth = () => window.innerWidth <= 680 ? 176 : window.innerWidth <= 900 ? 192 : 220;
-const maxWidth = () => Math.max(minWidth(), Math.min(window.innerWidth <= 900 ? 320 : 480, window.innerWidth - (window.innerWidth <= 900 ? 300 : 480)));
-const clampWidth = width => Math.round(Math.max(minWidth(), Math.min(maxWidth(), width)));
+const minWidth = 220;
+const maxWidth = () => Math.max(minWidth, Math.min(480, window.innerWidth - 480));
+const clampWidth = width => Math.round(Math.max(minWidth, Math.min(maxWidth(), width)));
 
 export function useSidebarResize() {
   const [viewportWidth, setViewportWidth] = useState(window.innerWidth);
@@ -13,7 +13,8 @@ export function useSidebarResize() {
   useEffect(() => {
     const resize = () => {
       setViewportWidth(window.innerWidth);
-      if (window.innerWidth <= 480) {drag.current = null; setDragging(false);}
+      setWidth(value => value === null ? null : clampWidth(value));
+      if (window.innerWidth <= 768) {drag.current = null; setDragging(false);}
     };
     window.addEventListener('resize', resize);
     return () => window.removeEventListener('resize', resize);
@@ -32,8 +33,8 @@ export function useSidebarResize() {
   const stop = () => {drag.current = null; setDragging(false);};
   const separator = <div className={`cw-sidebar-resize${dragging ? ' is-dragging' : ''}`}
     role="separator" tabIndex={0} aria-label="调整侧栏宽度" aria-orientation="vertical"
-    aria-controls="cw-sidebar" aria-valuemin={minWidth()} aria-valuemax={maxWidth()}
-    aria-valuenow={width === null ? (viewportWidth <= 680 ? 176 : viewportWidth <= 900 ? 208 : viewportWidth <= 1000 ? 252 : 272) : clampWidth(width)}
+    aria-controls="cw-sidebar" aria-valuemin={minWidth} aria-valuemax={maxWidth()}
+    aria-valuenow={width ?? (viewportWidth <= 1100 ? 252 : 272)}
     title="左右拖动调整侧栏宽度，双击恢复默认"
     onPointerDown={event => {
       if (event.button !== 0 || drag.current) return;
@@ -57,7 +58,7 @@ export function useSidebarResize() {
       if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
       event.preventDefault();
       const current = event.currentTarget.parentElement.getBoundingClientRect().width;
-      setWidth(clampWidth(event.key === 'Home' ? minWidth() : event.key === 'End' ? maxWidth() : current + (event.key === 'ArrowLeft' ? -1 : 1) * (event.shiftKey ? 40 : 10)));
+      setWidth(clampWidth(event.key === 'Home' ? minWidth : event.key === 'End' ? maxWidth() : current + (event.key === 'ArrowLeft' ? -1 : 1) * (event.shiftKey ? 40 : 10)));
     }}/>;
-  return {style: width === null ? undefined : {'--cw-sidebar-width': `${clampWidth(width)}px`}, separator};
+  return {style: width === null ? undefined : {'--cw-sidebar-width': `${width}px`}, separator};
 }

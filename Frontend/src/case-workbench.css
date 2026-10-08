@@ -115,7 +115,7 @@ html, body {overflow-x: clip;}
   .cw-messages {width: calc(100% - 64px);}
   .cw-composer-area {padding-left: 32px; padding-right: 32px;}
 }
-@media (max-width: 480px) {
+@media (max-width: 768px) {
   .cw-shell {grid-template-columns: minmax(0, 1fr);}
   .cw-sidebar {display: none;}
   .cw-header {padding: 0 12px; flex-basis: 64px; height: 64px;}
@@ -220,7 +220,7 @@ html, body {overflow-x: clip;}
 .cw-modal {background: linear-gradient(140deg, #fff, #f6f8fc); border-color: rgb(42 70 113 / 14%); border-radius: 20px;}
 @keyframes cw-dialog-in {from {opacity: 0; transform: translateY(6px) scale(.985);} to {opacity: 1; transform: none;}}
 .cw-modal[open] {animation: cw-dialog-in 250ms var(--cw-ease);}
-@media (max-width: 480px) {
+@media (max-width: 768px) {
   .cw-header {height: 64px; flex-basis: 64px;}
   .cw-composer-area {padding-bottom: max(20px, env(safe-area-inset-bottom));}
   .cw-composer-frame {border-radius: 21px;}
@@ -341,4 +341,4 @@ html, body {overflow-x: clip;}
 .cw-set.is-sealed .cw-case,.cw-set.is-sealed .cw-set-toggle {color:var(--cw-muted)!important;}
 
 .cw-header.is-catalog{display:none;}
-@media(max-width:480px){.cw-header.is-catalog{display:flex;flex:none;}}
+@media(max-width:768px){.cw-header.is-catalog{display:flex;flex:none;}}
