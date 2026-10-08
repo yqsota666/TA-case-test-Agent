@@ -8,6 +8,7 @@ import './base.css';
 import './defense-themes.css';
 import './message-body.css';
 import './spectral-components.css';
+import './compact-workbench.css';
 
 const initial = initialTheme();
 document.documentElement.dataset.theme = initial;
