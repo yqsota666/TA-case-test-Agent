@@ -4,7 +4,7 @@
 .cw-lifecycle-modal{width:min(760px,calc(100vw - 32px));max-height:86dvh}
 .cw-lifecycle-body{overflow:auto;padding:20px 30px 30px;min-height:180px;color:var(--cw-ink)}
 .cw-lifecycle-heading{display:flex;align-items:center;justify-content:space-between;gap:16px}
-.cw-lifecycle-heading h3{margin:0;font-size:16px}.cw-lifecycle-heading>span,time,.cw-lifecycle-cases small{color:var(--cw-muted);font-size:12px}
+.cw-lifecycle-heading h3{margin:0;font-size:16px}.cw-lifecycle-heading>span,.cw-lifecycle-body time,.cw-lifecycle-cases small{color:var(--cw-muted);font-size:12px}
 .cw-lifecycle-body p{font-size:14px;line-height:1.65}.cw-lifecycle-body time{display:block;margin-top:10px}
 .cw-lifecycle-cases{list-style:none;padding:0;margin:20px 0;display:grid;gap:8px}
 .cw-lifecycle-cases li{display:flex;justify-content:space-between;gap:18px;padding:15px 18px;border:1px solid var(--cw-line);border-radius:15px;background:var(--cw-surface)}

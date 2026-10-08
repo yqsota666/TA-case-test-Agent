@@ -7,3 +7,6 @@ node_modules/
 .context/
 
 node_modules
+
+Frontend/public/*
+!Frontend/public/brand/
