@@ -34,9 +34,10 @@
 
 .account-usage-heading {display:flex;align-items:baseline;justify-content:space-between;gap:16px;}
 .account-usage-note {font-size:12px;color:var(--cw-muted);margin:20px 0;}
-.account-model-usage summary {cursor:pointer;padding:8px 0;font-size:13px;}
-.account-usage-table {overflow-x:auto;}
-.account-usage-table table {width:100%;border-collapse:collapse;font-size:12px;margin:10px 0;}
-.account-usage-table td,.account-usage-table th {padding:10px 8px;text-align:left;border-bottom:1px solid var(--cw-line);vertical-align:top;}
-.account-model-usage small {display:block;color:var(--cw-muted);overflow-wrap:anywhere;}
-@media(max-width:600px){.account-usage-table td,.account-usage-table th{padding:8px 4px;}}
+.account-quota-meter {padding:18px 20px;border:1px solid var(--cw-line,#d9e2ea);border-radius:12px;}
+.account-quota-caption {display:flex;justify-content:space-between;gap:16px;font-size:13px;margin-bottom:14px;}
+.account-quota-caption span:last-child {color:var(--cw-muted,#61718a);text-align:right;}
+.account-quota-track {height:7px;overflow:hidden;border-radius:999px;background:var(--cw-line,#d9e2ea);}
+.account-quota-fill {display:block;height:100%;background:var(--cw-ink,#263447);border-radius:inherit;}
+.account-quota-meter p {color:var(--cw-muted,#61718a);font-size:12px;margin:12px 0 0;}
+@media(max-width:600px){.account-quota-meter{padding:16px;}.account-quota-caption{font-size:12px;}}
