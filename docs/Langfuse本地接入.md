@@ -4,7 +4,7 @@
 
 ## 当前范围
 
-- HTTP 操作根 trace，响应提供 `X-Trace-Id`，关联 Chat / Case；每次恢复是独立请求。
+- HTTP 操作根 trace，关联 Chat / Case；每次恢复是独立请求。普通 GET/HEAD 查询成功且没有图或模型执行时不导出；失败查询、图/模型执行及非查询操作完整保留。并发请求的过滤状态独立，响应中的 `X-Trace-Id` 不代表该请求必然上传。
 - 现有 LangGraph 图调用使用每次调用独立的回调，绑定请求上下文，避免并发串链。
 - 模型 generation 记录模型、用途、attempt、账本消费记录、经过认证的 workspace / user 引用与实际 token；错误或不合法 usage 保留 UNCERTAIN。
 - GraphInterrupt 是正常等待，不标记成失败。
@@ -18,7 +18,11 @@
 
 凭证放环境变量或本机忽略文件，不提交仓库。Sophnet 密钥仍只从钥匙串进入进程内存。安装后端依赖使用 `pnpm install --frozen-lockfile`；protobufjs 构建脚本显式禁止，现有运行与测试验证不需要其构建脚本。
 
-## 本机部署与验收入口
+## 当前云端与历史本机部署
+
+当前使用 Langfuse Cloud 欧洲区 `https://cloud.langfuse.com`；本地 Docker 容器、专属卷和镜像已移除。Keys 保存在本机忽略的 runtime 配置。云端新组织使用 `/api/public/v2/observations` 加有界时间范围查询，旧 traces 查询 API 不可用。本机上传使用已有代理。下面保留首次本地部署记录，不作为当前启动入口。
+
+### 历史本机部署与验收入口
 
 独立接入工作树：`/Users/apple/.codex/worktrees/langfuse-observability/gf`，分支 `codex/langfuse-observability`。本机部署配置、启动与验收证据在忽略目录 `.context/langfuse/`。
 

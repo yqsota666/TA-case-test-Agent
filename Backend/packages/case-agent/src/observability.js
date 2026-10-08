@@ -1,11 +1,15 @@
+import {AsyncLocalStorage} from 'node:async_hooks';
 import {NodeSDK} from '@opentelemetry/sdk-node';
 import {context} from '@opentelemetry/api';
-import {LangfuseSpanProcessor} from '@langfuse/otel';
+import {LangfuseSpanProcessor,isDefaultExportSpan} from '@langfuse/otel';
 import {CallbackHandler} from '@langfuse/langchain';
 import {startActiveObservation,propagateAttributes} from '@langfuse/tracing';
 
 let sdk;
 let processor;
+const requestActivity=new AsyncLocalStorage();
+const suppressionAttribute='case.observation.suppress';
+function markAgentExecution(){const activity=requestActivity.getStore();if(activity)activity.executed=true;}
 const enabled=()=>Boolean(sdk);
 export const safeErrorCode=error=>/^[A-Z][A-Z0-9_]{1,63}$/.test(error?.code??'')?error.code:'OPERATION_FAILED';
 
@@ -38,6 +42,7 @@ export function initializeObservability(env=process.env,{exporter}={}) {
   processor=new LangfuseSpanProcessor({publicKey:env.LANGFUSE_PUBLIC_KEY,secretKey:env.LANGFUSE_SECRET_KEY,
     baseUrl:env.LANGFUSE_BASE_URL,environment:env.LANGFUSE_TRACING_ENVIRONMENT||'local',
     mediaUploadEnabled:false,timeout:2,flushInterval:1,
+    shouldExportSpan:({otelSpan})=>otelSpan.attributes[suppressionAttribute]!==true && isDefaultExportSpan(otelSpan),
     mask:maskObservationData,...(exporter?{exporter}:{})});
   sdk=new NodeSDK({spanProcessors:[processor]});
   sdk.start();
@@ -47,6 +52,7 @@ export function observeGraph(graph) {
   if(!enabled())return graph;
   return new Proxy(graph,{get(target,key){
     if(['invoke','stream','streamEvents'].includes(key))return (input,config={})=>{
+      markAgentExecution();
       const callback=new MetadataOnlyCallback();
       const configured=target.withConfig({callbacks:[callback]});
       return configured[key](input,config);
@@ -68,12 +74,15 @@ export function requestObservationContext(request) {
 export function observeRequest(request,response,action) {
   if(!enabled())return action();
   const info=requestObservationContext(request);
+  const activity={executed:false};
+  const ordinaryQuery=['GET','HEAD'].includes(request.method);
   const result=propagateAttributes({sessionId:info.sessionId,metadata:info.metadata},()=>
     startActiveObservation(info.name,async span=>{
       response.setHeader('X-Trace-Id',span.otelSpan.spanContext().traceId);
-      try {return {value:await action()};}
-      catch(error){span.update({level:'ERROR',statusMessage:safeErrorCode(error)});return {error};}
-      finally {span.update({metadata:{...info.metadata,http_status:response.statusCode},
+      try {return {value:await requestActivity.run(activity,action)};}
+      catch(error){activity.failed=true;span.update({level:'ERROR',statusMessage:safeErrorCode(error)});return {error};}
+      finally {span.otelSpan.setAttribute(suppressionAttribute,ordinaryQuery && !activity.executed && !activity.failed && response.statusCode<400);
+        span.update({metadata:{...info.metadata,http_status:response.statusCode},
         ...(response.statusCode>=400?{level:response.statusCode>=500?'ERROR':'WARNING',
           statusMessage:response.observationError||`HTTP_${response.statusCode}`}:{})});}
     }));
@@ -84,6 +93,7 @@ function unwrap(result){if('error' in result)throw result.error;return result.va
 
 export function observeModel(metadata,action) {
   if(!enabled())return action({update:()=>{}});
+  markAgentExecution();
   const result=startActiveObservation('model.call',async span=>{
     span.update({model:metadata.model,metadata});
     try{return {value:await action(span)};}

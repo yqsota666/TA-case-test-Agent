@@ -14,7 +14,7 @@ test('only whitelisted metadata survives and URL query/unknown path values are e
   assert.equal(maskObservationData({data:'customer raw text'}),'[content not collected]');
   assert.equal(requestObservationContext({method:'GET',url:'/api/files/private-secret?key=secret'}).name,'GET /api/files/:id');
 });
-test('enabled graph/model traces correlate concurrent requests and exclude state and raw exception text',async()=>{
+test('enabled graph/model traces correlate concurrent requests and exclude state and raw exception text',async t=>{
   const spans=[];
   let offline=false;
   const exporter={export(batch,done){spans.push(...batch);done(offline?{code:1,error:new Error('synthetic exporter offline')}:{code:0});},shutdown:async()=>{},forceFlush:async()=>{}};
@@ -41,6 +41,38 @@ test('enabled graph/model traces correlate concurrent requests and exclude state
     const raw=JSON.stringify(spans.map(s=>({name:s.name,attributes:s.attributes,status:s.status,events:s.events})));
     assert.ok(!raw.includes('PRIVATE_STATE'));assert.ok(!raw.includes('PRIVATE_ERROR'));assert.ok(raw.includes('MODEL_TIMEOUT'));
     assert.ok(!spans.filter(s=>['discussion','confirm_plan_data'].includes(s.name)).some(s=>s.attributes['langfuse.observation.level']==='ERROR'));
+    await t.test('successful ordinary queries are dropped while failures, execution and writes survive',async()=>{
+      const run=async(method,status,action)=>{
+        let trace;
+        const value=await observeRequest({method,url:'/api/chats'},{statusCode:status,setHeader:(_k,v)=>{trace=v;}},action);
+        return {trace,value};
+      };
+      const [query,head,modelRead,write,failedRead]=await Promise.all([
+        run('GET',200,async()=>{await new Promise(r=>setTimeout(r,5));return 'read';}),
+        run('HEAD',204,async()=>null),
+        run('GET',200,()=>observeModel({model:'synthetic'},async()=>42)),
+        run('PATCH',200,async()=>({saved:true})),
+        run('GET',503,async()=>({failed:true})),
+      ]);
+      let thrownTrace;
+      const thrown=Object.assign(new Error('PRIVATE_QUERY_ERROR'),{code:'STORE_UNAVAILABLE'});
+      await assert.rejects(observeRequest({method:'GET',url:'/api/data/catalog'},{statusCode:200,setHeader:(_k,v)=>{thrownTrace=v;}},async()=>{throw thrown;}),e=>e===thrown);
+      const pureGraph=observeGraph(new StateGraph(new StateSchema({value:z.number()})).addNode('read_facts',async()=>({value:1})).addEdge(START,'read_facts').addEdge('read_facts',END).compile());
+      const graphRead=await run('GET',200,()=>pureGraph.invoke({value:0}));
+      await flushObservability();
+      const group=trace=>spans.filter(s=>s.spanContext().traceId===trace);
+      assert.equal(query.value,'read');
+      assert.equal(modelRead.value,42);
+      assert.equal(graphRead.value.value,1);
+      assert.equal(group(query.trace).length,0);
+      assert.equal(group(head.trace).length,0);
+      for(const r of [modelRead,write,failedRead,graphRead])assert.ok(group(r.trace).some(s=>s.name.endsWith('/api/chats')));
+      assert.ok(group(modelRead.trace).some(s=>s.name==='model.call'));
+      assert.ok(group(graphRead.trace).some(s=>s.name==='read_facts'));
+      assert.ok(group(failedRead.trace).some(s=>s.attributes['langfuse.observation.level']==='ERROR'));
+      assert.ok(group(thrownTrace).some(s=>s.attributes['langfuse.observation.status_message']==='STORE_UNAVAILABLE'));
+      assert.ok(!JSON.stringify(group(thrownTrace).map(s=>s.attributes)).includes('PRIVATE_QUERY_ERROR'));
+    });
     offline=true;
     assert.equal(await observeModel({model:'synthetic'},async()=>42),42);
     await flushObservability().catch(()=>{});
