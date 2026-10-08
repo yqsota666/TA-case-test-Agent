@@ -1,5 +1,6 @@
 import {GlobalDataCatalog} from './global-data-catalog.jsx';
 import {GlobalFileCatalog} from './global-file-catalog.jsx';
+import {ProjectLifecycleCard} from './project-lifecycle.jsx';
 import {accountStorageKey} from './account-storage.js';
 import React, {useEffect, useLayoutEffect, useRef, useState} from 'react';
 import {ArrowUp, ChevronRight, Folder, Menu, SquarePen, Workflow, Table2, File, FileText, FileArchive, UserRound, X} from 'lucide-react';
@@ -301,6 +302,7 @@ export function CaseWorkbench() {
           {!newConversation && state.plan?.proposal?.exchangePlan?.status==='READY' && <button type="button" className="cw-result" onClick={()=>setModal({type:'exchange'})}>
             <span className="cw-result-icon" aria-hidden="true"><FileArchive size={18}/></span><span className="cw-result-copy"><span className="cw-result-title">文件交换</span><span className="cw-result-summary">申请文件与 TA 回传</span></span><span className="cw-result-action">查看详情<ChevronRight size={14}/></span>
           </button>}
+          {!newConversation && currentSet.id && <ProjectLifecycleCard chatId={currentSet.id} caseId={state.selected} onChanged={async()=>applySnapshot(await liveSnapshot(currentSet.id,state.selected))} onNavigate={async target=>{if(target.casePublicId)await openCatalogCase(target.chatPublicId,target.casePublicId);else {applySnapshot(await liveSnapshot(target.chatPublicId,null));openNewConversation(target.chatPublicId);}}}/>}
           {(loading || running || state.pending) && <p className="cw-node-status" role="status">{loading ? '连接讨论服务…' : (state.pending?.kind==='PROPOSE_PLAN' || activeAction==='PROPOSE_PLAN')?'正在整理方案…':'正在回复…'}</p>}
           
           {nodeError && <div className="cw-node-error" role="alert"><p>{nodeError}</p>{retryInput && !completed && <button type="button" disabled={running} onClick={()=>submitFirstNode(retryInput,retryAction)}>重试原输入</button>}</div>}
