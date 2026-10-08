@@ -1,4 +1,4 @@
-These components adapt the Thread and MarkdownText elements from assistant-ui.
+These components adapt assistant-ui Thread, MarkdownText, ArtifactCard, CanvasSplit, ApprovalCard, ThreadList, MessageAttachments, QuoteReply, AgentStatus, ToolCall, Timeline, Reasoning and Sources elements.
 
 Source revision: cf81a88583c952d1942df0644ac1782ed95090f3
 
@@ -6,6 +6,10 @@ Source revision: cf81a88583c952d1942df0644ac1782ed95090f3
 - https://github.com/assistant-ui/assistant-ui/blob/cf81a88583c952d1942df0644ac1782ed95090f3/packages/ui/src/components/react/assistant-ui/elements/markdown-text.tsx
 
 Changes: JSX and plain CSS, existing theme tokens and Case slots, supported text-only actions, Chinese labels, local clipboard failure feedback.
+
+Additional upstream elements: https://github.com/assistant-ui/assistant-ui/tree/cf81a88583c952d1942df0644ac1782ed95090f3/packages/ui/src/components/react/assistant-ui/elements
+
+Adaptations: transpiled JSX, existing liquid theme CSS, Chinese business labels, accessible Artifact button, no illustrative word/version counters, no permanent approval, current workflow rather than implied tool success, separate quoted context, actual plan explanation/evidence only. No streaming reasoning or fabricated citations.
 
 MIT License
 
