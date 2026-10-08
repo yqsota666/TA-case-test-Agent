@@ -1,3 +1,4 @@
+import {QuoteReply} from './quote-reply.jsx';
 import React, {forwardRef, useEffect, useMemo, useRef, useState} from 'react';
 import {ActionBarPrimitive, ComposerPrimitive, MessagePrimitive, ThreadPrimitive} from '@assistant-ui/react';
 import {MarkdownTextPrimitive, useIsMarkdownCodeBlock, unstable_memoizeMarkdownComponents as memoizeMarkdownComponents} from '@assistant-ui/react-markdown';
@@ -68,16 +69,20 @@ export function MessageActions({text, durationMs, createdAt}) {
     <div className="aui-message-meta">{validDate && <time dateTime={date.toISOString()} title={date.toLocaleString('zh-CN')}>{date.toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit',hour12:false})}</time>}{duration && <span>用时 {duration}</span>}</div>
   </div>;
 }
-export function ChatMessage({message, text, children}) {
+export function ChatMessage({message, text, children, onQuote}) {
+  const [selection,setSelection]=useState('');
+  const capture=event=>{if(event.target.closest('[data-slot="quote-reply"]'))return;const selected=window.getSelection();setSelection(selected&&!selected.isCollapsed&&event.currentTarget.contains(selected.anchorNode)&&event.currentTarget.contains(selected.focusNode)?selected.toString().trim():'');};
   const content = [text, message.continuation].filter(Boolean).join('\n\n');
   const user = message.role==='user';
   const parts = useMemo(() => ({Text: () => <MarkdownText displayText={content}/>}), [content]);
   return <MessagePrimitive.Root asChild><article className={`cw-message cw-message-${message.role} aui-message aui-message-${message.role}`}
+    onPointerUp={user||!onQuote?undefined:capture} onKeyUp={user||!onQuote?undefined:capture}
     data-slot={user?'aui-user-message':'aui-assistant-message'} aria-label={user?'我的消息':'AI 回复'}>
     <div className={user?'aui-user-message-content':'aui-assistant-message-content'}>
       {user ? <p>{content}</p> : <MessagePrimitive.Parts components={parts}/>}
       {children}
     </div>
+    {!user && !!selection && onQuote && <QuoteReply toolbarVisible actions={[{key:'quote',label:'引用并追问',icon:'quote'}]} onAction={()=>{onQuote(selection);setSelection('');window.getSelection()?.removeAllRanges();}}/>}
     {!user && <MessageActions text={content} durationMs={message.durationMs} createdAt={message.createdAt}/>}
   </article></MessagePrimitive.Root>;
 }

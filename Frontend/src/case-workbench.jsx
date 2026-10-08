@@ -1,3 +1,5 @@
+import {QuoteReply} from './assistant-ui/quote-reply.jsx';
+import {quotedInput} from './assistant-ui/quoted-input.js';
 import {CanvasSplit} from './assistant-ui/canvas-split.jsx';
 import {DetailPanel} from './assistant-ui/detail-panel.jsx';
 import {ArtifactCard} from './assistant-ui/artifact-card.jsx';
@@ -106,6 +108,8 @@ export function CaseWorkbench({accountControl}) {
   const draftKey = newConversation ? `new:${newProjectId}` : state.selected;
   const draft = state.drafts[draftKey] || '';
   const images=imageDrafts[draftKey]||[];
+  const quote=state.quotes?.[draftKey]||'';
+  const [retryOriginalInput,setRetryOriginalInput]=useState('');
   const inputDisabled=loading||running||!!state.pending||((completed||projectReadOnly)&&!newConversation);
   const addImages=async files=>{if(inputDisabled||readingImages)return;const request=viewRequest.current;setReadingImages(true);try{const added=await readMessageImages(files,images);if(request===viewRequest.current)setImageDrafts(v=>({...v,[draftKey]:[...(v[draftKey]||[]),...added]}));}catch(e){setNotice(e.message);}finally{setReadingImages(false);}};
   const messages = newConversation ? [] : state.messages[state.selected] || [];
@@ -151,7 +155,9 @@ export function CaseWorkbench({accountControl}) {
       liveSnapshot(project.id,state.selected).then(snapshot=>{
         if(!active || request!==viewRequest.current)return;
         applySnapshot(snapshot);
-        if(!snapshot.pending)setState(value=>({...value,drafts:{...value.drafts,[state.selected]:value.drafts[state.selected]?.trim()===input.trim()?'':value.drafts[state.selected]}}));
+        if(!snapshot.pending&&snapshot.turns.some(turn=>turn.role==='user'&&turn.content===input)) {
+          setState(value=>{let matches=false;try{matches=quotedInput(value.drafts[state.selected]||'',value.quotes?.[state.selected])===input.trim();}catch{}return matches?{...value,drafts:{...value.drafts,[state.selected]:''},quotes:{...value.quotes,[state.selected]:''}}:value;});
+        }
       }).catch(()=>{});
     },5000);
     return()=>{active=false;clearInterval(timer);};
@@ -185,10 +191,10 @@ export function CaseWorkbench({accountControl}) {
   };
   const openCatalogCase=async(chatId,caseId)=>{const request=++viewRequest.current;const url=new URL(location.href);url.searchParams.delete('page');url.searchParams.delete('draftTable');url.searchParams.set('chatId',chatId);url.searchParams.set('caseId',caseId);history.replaceState(null,'',url);setPage('chat');setDataSetId(null);setModal(null);setLoading(true);try{const snapshot=await liveSnapshot(chatId,caseId);if(request===viewRequest.current)applySnapshot(snapshot);}catch(error){if(request===viewRequest.current)setNodeError(error.message);}finally{if(request===viewRequest.current)setLoading(false);}};
   const toggleSet = id => setState(value => ({...value, sets: value.sets.map(set => set.id === id ? {...set, expanded: !set.expanded} : set)}));
-  const submitFirstNode = async (text, action=discussionAction({text,waiting:state.workflow?.waiting,messages}),sentImages=[]) => {
+  const submitFirstNode = async (text, action=discussionAction({text,waiting:state.workflow?.waiting,messages}),sentImages=[],originalInput=text) => {
     if (running || loading || ((completed || projectReadOnly) && !newConversation)) return;
     const request=viewRequest.current;
-    setRunning(true); setNodeError('');setNodeErrorCode(''); setRetryInput(text);setRetryImages(sentImages); setRetryAction(action); setActiveAction(action);
+    setRetryOriginalInput(originalInput);setRunning(true); setNodeError('');setNodeErrorCode(''); setRetryInput(text);setRetryImages(sentImages); setRetryAction(action); setActiveAction(action);
     pendingScroll.current = true;
     try {
       let chatId=currentSet.id,caseId=state.selected;
@@ -201,7 +207,7 @@ export function CaseWorkbench({accountControl}) {
       const beforeSnapshot=await liveSnapshot(chatId,caseId);
       if(request===viewRequest.current) {
         applySnapshot(beforeSnapshot);
-        setState(value=>({...value,drafts:{...value.drafts,[caseId]:value.drafts[draftKey] || text},messages:{...value.messages,[caseId]:[...(value.messages[caseId]||[]),{id:'sending-user',role:'user',text,images:sentImages}]}}));
+        setState(value=>({...value,drafts:{...value.drafts,[caseId]:value.drafts[draftKey] || originalInput},quotes:{...value.quotes,[caseId]:value.quotes?.[draftKey]||''},messages:{...value.messages,[caseId]:[...(value.messages[caseId]||[]),{id:'sending-user',role:'user',text,images:sentImages}]}}));
       }
       const path=casePath(chatId,caseId);
       const before=await requestCase(path+'/workflow');
@@ -212,7 +218,7 @@ export function CaseWorkbench({accountControl}) {
       const snapshot=await liveSnapshot(chatId,caseId);
       if(request===viewRequest.current)applySnapshot(snapshot);
       setImageDrafts(v=>({...v,[draftKey]:[],[caseId]:[]}));
-      setState(value=>({...value,drafts:{...value.drafts,[draftKey]:'',[caseId]:''}}));
+      setState(value=>({...value,drafts:{...value.drafts,[draftKey]:'',[caseId]:''},quotes:{...value.quotes,[draftKey]:'',[caseId]:''}}));
     } catch(error) {
       if(request===viewRequest.current) {
         setNodeError(error.message);setNodeErrorCode(error.code||'');
@@ -221,12 +227,16 @@ export function CaseWorkbench({accountControl}) {
           if(['BUSINESS_UNRELATED','BUSINESS_PURPOSE_REQUIRED'].includes(error.code)) {
             const id=new URL(window.location.href).searchParams.get('caseId')||draftKey;
             setRetryInput('');setRetryImages([]);
-            setState(v=>({...v,drafts:{...v.drafts,[id]:text}}));
+            setState(v=>({...v,drafts:{...v.drafts,[id]:originalInput}}));
             setImageDrafts(v=>({...v,[id]:sentImages}));
           }else{setRetryInput(text);setRetryImages(sentImages);setRetryAction(action);}
         }
       }
     } finally {pendingScroll.current=false;setRunning(false);}
+  };
+  const sendComposer = text => {
+    try {const body=quotedInput(text,quote);return submitFirstNode(body,quote||images.length?'DISCUSS':undefined,images,text);}
+    catch(error){setNotice(error.message);}
   };
   const savePlanContent = async (index,item) => {
     const request=viewRequest.current;
@@ -312,7 +322,7 @@ export function CaseWorkbench({accountControl}) {
     <a className="cw-skip" href="#cw-main">跳到对话</a>
     <aside id="cw-sidebar" className="cw-sidebar">{sidebar}{sidebarResize.separator}</aside>
     <CaseAssistant key={draftKey} messages={messages} draft={draft} loading={loading} running={running || !!state.pending}
-      disabled={inputDisabled || readingImages} onSend={text=>submitFirstNode(text,images.length?'DISCUSS':undefined,images)}>
+      disabled={inputDisabled || readingImages} onSend={sendComposer}>
     <Thread id="cw-main" className="cw-main" tabIndex={-1}>
       <header className={`cw-header ${page!=='chat'?'is-catalog':''}`}>
         <button className="cw-icon cw-menu" aria-label="打开侧边栏" onClick={() => setModal({type: 'navigation'})}><Menu size={21}/></button>
@@ -329,7 +339,7 @@ export function CaseWorkbench({accountControl}) {
               text: runtimeMessage.content.filter(part => part.type === 'text').map(part => part.text).join('\n'),
             };
             if (!message.text && !message.result && !message.continuation && !message.images?.length) return null;
-            return <ChatMessage message={message} text={message.result && state.plan ? planSummary(state.plan.proposal) : message.kind==='PROPOSE_PLAN'?'已整理测试方案。原回复保留在详情中。':message.text}>
+            return <ChatMessage message={message} onQuote={inputDisabled?undefined:text=>{setState(v=>({...v,quotes:{...v.quotes,[draftKey]:text}}));composer.current?.focus();}} text={message.result && state.plan ? planSummary(state.plan.proposal) : message.kind==='PROPOSE_PLAN'?'已整理测试方案。原回复保留在详情中。':message.text}>
             <MessageImages images={message.images} onOpen={image=>setModal({type:'image',image})}/>
             {message.kind==='PROPOSE_PLAN' && !message.result && <ArtifactCard title="历史测试方案" meta="查看原回复" onClick={()=>setModal({type:'historical-plan',message})}/>}
             {message.result && <ArtifactCard title="测试方案" meta={state.plan?.status==='LOCKED'?'已确认':'查看与修改'} onClick={()=>{setPlanError('');setModal({type:state.workflow?.stage==='CONFIRM_EXPECTATIONS'?'expectations':'result'});}}/>}
@@ -349,7 +359,7 @@ export function CaseWorkbench({accountControl}) {
           {!newConversation && <WorkflowProgress workflow={state.workflow} caseStatus={currentCase.status} plan={state.plan} data={state.generatedData} loading={loading} running={running||!!state.pending} error={nodeError} activeAction={state.pending?.kind||activeAction}/>}
           {newConversation && (loading||running) && <p role="status">{loading?'连接讨论服务…':'正在回复…'}</p>}
           
-          {nodeError && <div className="cw-node-error cw-node-feedback" role="alert"><MessageSquare size={16} className="cw-feedback-icon"/><div className="cw-feedback-content"><p>{nodeError}</p>{retryInput && !completed && nodeErrorCode!=='MODEL_BUDGET_EXHAUSTED' && <button type="button" disabled={running} aria-busy={running} onClick={()=>submitFirstNode(retryInput,retryAction,retryImages)}><RotateCcw size={15}/><span>{running?'重试中…':'重试原输入'}</span></button>}</div></div>}
+          {nodeError && <div className="cw-node-error cw-node-feedback" role="alert"><MessageSquare size={16} className="cw-feedback-icon"/><div className="cw-feedback-content"><p>{nodeError}</p>{retryInput && !completed && nodeErrorCode!=='MODEL_BUDGET_EXHAUSTED' && <button type="button" disabled={running} aria-busy={running} onClick={()=>submitFirstNode(retryInput,retryAction,retryImages,retryOriginalInput||retryInput)}><RotateCcw size={15}/><span>{running?'重试中…':'重试原输入'}</span></button>}</div></div>}
           {state.pending && !running && !nodeError && <div className="cw-workflow-actions"><button type="button" onClick={()=>submitFirstNode(state.pending.userInput,state.pending.kind,state.pending.images||[])}>重试原请求</button></div>}
         </div>
       </ThreadViewport>
@@ -362,12 +372,13 @@ export function CaseWorkbench({accountControl}) {
       <div hidden={!!dataSetId || page!=='chat'} className="cw-composer-area">
         <ThreadPrimitive.ScrollToBottom className="cw-scroll-bottom" aria-label="回到最新消息" title="回到最新消息"><ArrowUp size={18}/></ThreadPrimitive.ScrollToBottom>
         <div className="cw-composer-frame" onDragOver={event=>{if(Array.from(event.dataTransfer.types).includes('Files'))event.preventDefault();}} onDrop={event=>{if(event.dataTransfer.files.length){event.preventDefault();addImages(event.dataTransfer.files);}}}>
+        {quote && <div className="aui-quote-draft"><QuoteReply quoted={quote} toolbarVisible={false}/><button className="cw-icon" type="button" aria-label="移除引用" disabled={inputDisabled} onClick={()=>setState(v=>({...v,quotes:{...v.quotes,[draftKey]:''}}))}><X size={16}/></button></div>}
         <MessageImages images={images} onRemove={index=>setImageDrafts(v=>({...v,[draftKey]:(v[draftKey]||[]).filter((_,i)=>i!==index)}))} onOpen={image=>setModal({type:'image',image})} disabled={inputDisabled||readingImages}/>
         {newConversation && <div className="cw-project-bar"><ProjectPicker projects={state.sets} value={newProjectId} onChange={setNewProjectId}/></div>}
         <input ref={imageInput} type="file" hidden accept="image/png,image/jpeg,image/webp,image/gif" multiple onChange={event=>{addImages(event.target.files);event.target.value='';}}/>
         <Composer ref={composer} value={draft} hasImages={images.length>0} disabled={inputDisabled||readingImages}
           onAttach={()=>imageInput.current.click()}
-          onImageSend={()=>submitFirstNode(draft.trim()||'请解析图片内容。','DISCUSS',images)}
+          onImageSend={()=>sendComposer(draft.trim()||(quote?'':'请解析图片内容。'))}
           onPaste={event=>{const files=Array.from(event.clipboardData.items).filter(i=>i.kind==='file'&&i.type.startsWith('image/')).map(i=>i.getAsFile()).filter(Boolean);if(files.length){event.preventDefault();addImages(files);}}}
           onChange={event=>setState(value=>({...value,drafts:{...value.drafts,[draftKey]:event.target.value}}))}/>
         </div>
