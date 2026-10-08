@@ -1,3 +1,6 @@
+import {GlobalDataCatalog} from './global-data-catalog.jsx';
+import {GlobalFileCatalog} from './global-file-catalog.jsx';
+import {ProjectLifecycleCard} from './project-lifecycle.jsx';
 import {accountStorageKey} from './account-storage.js';
 import React, {useEffect, useLayoutEffect, useRef, useState} from 'react';
 import {ArrowUp, ChevronRight, Folder, Menu, SquarePen, Workflow, Table2, File, FileText, FileArchive, UserRound, X} from 'lucide-react';
@@ -54,6 +57,7 @@ function Modal({title, children, onClose, className = ''}) {
 export function CaseWorkbench() {
   const [state, setState] = useState(readState);
   const [modal, setModal] = useState(null);
+  const [page,setPage]=useState(()=>['data','files'].includes(new URLSearchParams(location.search).get('page'))?new URLSearchParams(location.search).get('page'):'chat');
   const resultDirty=useRef(false);
   const [newConversation, setNewConversation] = useState(true);
   const [newProjectId, setNewProjectId] = useState('');
@@ -148,10 +152,11 @@ export function CaseWorkbench() {
   const selectCase = async id => {
     const project=state.sets.find(item=>item.cases.some(c=>c.id===id));
     if(!project)return;
-    const url=new URL(window.location.href);url.searchParams.delete('draftTable');url.searchParams.set('chatId',project.id);url.searchParams.set('caseId',id);window.history.replaceState(null,'',url);
-    setLoading(true);setNodeError('');setDataSetId(null);setModal(null);
+    const url=new URL(window.location.href);url.searchParams.delete('draftTable');url.searchParams.delete('page');url.searchParams.set('chatId',project.id);url.searchParams.set('caseId',id);window.history.replaceState(null,'',url);
+    setPage('chat');setLoading(true);setNodeError('');setDataSetId(null);setModal(null);
     try {applySnapshot(await liveSnapshot(project.id,id));} catch(error){setNodeError(error.message);} finally {setLoading(false);}
   };
+  const openCatalogCase=async(chatId,caseId)=>{const url=new URL(location.href);url.searchParams.delete('page');url.searchParams.delete('draftTable');url.searchParams.set('chatId',chatId);url.searchParams.set('caseId',caseId);history.replaceState(null,'',url);setPage('chat');setDataSetId(null);setModal(null);setLoading(true);try{applySnapshot(await liveSnapshot(chatId,caseId));}catch(error){setNodeError(error.message);}finally{setLoading(false);}};
   const toggleSet = id => setState(value => ({...value, sets: value.sets.map(set => set.id === id ? {...set, expanded: !set.expanded} : set)}));
   const submitFirstNode = async (text, action=discussionAction({text,waiting:state.workflow?.waiting,messages})) => {
     if (running || loading || (completed && !newConversation)) return;
@@ -163,7 +168,7 @@ export function CaseWorkbench() {
         chatId=newProjectId;
         if(!chatId)chatId=(await requestCase('/chats',{title:'新项目'})).publicId;
         caseId=(await requestCase(`/chats/${chatId}/cases`,{title:'新对话'})).publicId;
-        const url=new URL(window.location.href);url.searchParams.delete('draftTable');url.searchParams.set('chatId',chatId);url.searchParams.set('caseId',caseId);window.history.replaceState(null,'',url);
+        const url=new URL(window.location.href);url.searchParams.delete('draftTable');url.searchParams.delete('page');url.searchParams.set('chatId',chatId);url.searchParams.set('caseId',caseId);window.history.replaceState(null,'',url);
       }
       applySnapshot(await liveSnapshot(chatId,caseId));
       setState(value=>({...value,messages:{...value.messages,[caseId]:[...(value.messages[caseId]||[]),{id:'sending-user',role:'user',text}]}}));
@@ -227,14 +232,14 @@ export function CaseWorkbench() {
     if (draft.trim()) submitFirstNode(draft.trim());
   };
   const openNewConversation = projectId => {
-    setNewProjectId(projectId); setNewConversation(true); setDataSetId(null); setModal(null); setNotice('');
+    setPage('chat'); setNewProjectId(projectId); setNewConversation(true); setDataSetId(null); setModal(null); setNotice('');
   };
   const sidebar = <>
     <div className="cw-brand"><img className="cw-brand-logo" src="/brand/ta-agent-bot-white.png" alt="" width="44" height="44"/><span>TA Test Agent</span></div>
     <nav className="cw-primary" aria-label="业务页面">
-      <button aria-current={newConversation ? 'page' : undefined} onClick={() => openNewConversation(currentSet.id)}><SquarePen size={20}/><span>Chat</span></button>
-      <button onClick={() => {setModal(null); setNotice('数据页将在后续搭建。');}}><Table2 size={20}/><span>数据</span></button>
-      <button onClick={() => {setModal(null); setNotice('文件页将在后续搭建。');}}><File size={20}/><span>文件</span></button>
+      <button aria-current={page==='chat' && newConversation ? 'page' : undefined} onClick={() => openNewConversation(currentSet.id)}><SquarePen size={20}/><span>Chat</span></button>
+      <button onClick={() => {setPage('data');setModal(null);setNotice('');const url=new URL(location.href);url.searchParams.set('page','data');history.replaceState(null,'',url);}}><Table2 size={20}/><span>数据</span></button>
+      <button onClick={() => {setPage('files');setModal(null);setNotice('');const url=new URL(location.href);url.searchParams.set('page','files');history.replaceState(null,'',url);}}><File size={20}/><span>文件</span></button>
     </nav>
     <div className="cw-list-label">项目</div>
     <nav className="cw-sets" aria-label="项目与 Case">
@@ -251,10 +256,7 @@ export function CaseWorkbench() {
               title={item.name} aria-current={!dataSetId && !newConversation && state.selected === item.id ? 'page' : undefined} onClick={() => selectCase(item.id)}>
               <span>{item.name}</span>
             </button>)}
-            <button className={`cw-draft-data ${dataSetId === set.id ? 'is-selected' : ''}`} aria-current={dataSetId === set.id ? 'page' : undefined}
-              aria-label={`${set.name}的草稿数据`} onClick={() => {setDataSetId(set.id); setNewConversation(false); setModal(null); setNotice('');}}>
-              <span>草稿数据</span>
-            </button>
+
           </div>
         </div>
       </div>)}
@@ -266,12 +268,12 @@ export function CaseWorkbench() {
     <a className="cw-skip" href="#cw-main">跳到对话</a>
     <aside className="cw-sidebar">{sidebar}</aside>
     <main id="cw-main" className="cw-main" tabIndex={-1}>
-      <header className="cw-header">
+      <header hidden={page!=='chat'} className="cw-header">
         <button className="cw-icon cw-menu" aria-label="打开侧边栏" onClick={() => setModal({type: 'navigation'})}><Menu size={21}/></button>
         {state.workflow && !newConversation && <button className="cw-live-flow cw-icon" title="查看当前流程" aria-label="查看当前流程" onClick={openWorkflow}><Workflow size={18} strokeWidth={1.6}/></button>}
         <h1 hidden={newConversation} title={`${dataSet?.name || currentSet.name} / ${dataSet ? '草稿数据' : currentCase.name}`}><span>{dataSet?.name || currentSet.name}</span><span className="cw-slash"> / </span>{dataSet ? '草稿数据' : currentCase.name}</h1>
       </header>
-      <section ref={scroller} hidden={!!dataSetId} className="cw-conversation" aria-label={newConversation ? '新对话' : `${currentCase.name}的对话`}
+      <section ref={scroller} hidden={!!dataSetId || page!=='chat'} className="cw-conversation" aria-label={newConversation ? '新对话' : `${currentCase.name}的对话`}
         onScroll={event => {if (!dataSetId && !newConversation) positions.current[state.selected] = event.currentTarget.scrollTop;}}>
         <div className={`cw-messages ${newConversation ? 'cw-new-conversation' : ''}`}>
           {newConversation && <div className="cw-new-welcome"><span className="cw-welcome-bot"><img className="cw-welcome-logo" src="/brand/ta-agent-bot-white.png" alt="" width="144" height="144"/></span><h2>开始新对话</h2></div>}
@@ -298,19 +300,20 @@ export function CaseWorkbench() {
           {!newConversation && state.plan?.proposal?.exchangePlan?.status==='READY' && <button type="button" className="cw-result" onClick={()=>setModal({type:'exchange'})}>
             <span className="cw-result-icon" aria-hidden="true"><FileArchive size={18}/></span><span className="cw-result-copy"><span className="cw-result-title">文件交换</span><span className="cw-result-summary">申请文件与 TA 回传</span></span><span className="cw-result-action">查看详情<ChevronRight size={14}/></span>
           </button>}
+          {!newConversation && currentSet.id && <ProjectLifecycleCard chatId={currentSet.id} caseId={state.selected} onChanged={async()=>applySnapshot(await liveSnapshot(currentSet.id,state.selected))} onNavigate={async target=>{if(target.casePublicId)await openCatalogCase(target.chatPublicId,target.casePublicId);else {applySnapshot(await liveSnapshot(target.chatPublicId,null));openNewConversation(target.chatPublicId);}}}/>}
           {(loading || running || state.pending) && <p className="cw-node-status" role="status">{loading ? '连接讨论服务…' : (state.pending?.kind==='PROPOSE_PLAN' || activeAction==='PROPOSE_PLAN')?'正在整理方案…':'正在回复…'}</p>}
           
           {nodeError && <div className="cw-node-error" role="alert"><p>{nodeError}</p>{retryInput && !completed && <button type="button" disabled={running} onClick={()=>submitFirstNode(retryInput,retryAction)}>重试原输入</button>}</div>}
           {state.pending && !running && !nodeError && <div className="cw-workflow-actions"><button type="button" onClick={()=>submitFirstNode(state.pending.userInput,state.pending.kind)}>重试原请求</button></div>}
         </div>
       </section>
-      {dataSet && <section className="cw-draft-page" aria-label={`${dataSet.name}的草稿数据`}>
+      {page==='chat' && dataSet && <section className="cw-draft-page" aria-label={`${dataSet.name}的草稿数据`}>
         <h2>草稿数据</h2>{dataSet.id===currentSet.id && state.generatedData?.status==='VALIDATED' ? <>
           <GeneratedData data={state.generatedData}/>
           {state.workflow?.stage==='CONFIRM_DRAFT' && <footer className="cw-plan-confirm-footer">{planError&&<p role="alert">{planError}</p>}<button type="button" className="cw-primary-button" disabled={planBusy||running} onClick={confirmDraft}>{planBusy?'确认中…':'确认草稿'}</button></footer>}
         </> : <p>尚未生成。</p>}
       </section>}
-      <div hidden={!!dataSetId} className="cw-composer-area">
+      <div hidden={!!dataSetId || page!=='chat'} className="cw-composer-area">
         <div className="cw-composer-frame">
         {newConversation && <div className="cw-project-bar">
           <ProjectPicker projects={state.sets} value={newProjectId} onChange={setNewProjectId}/>
@@ -324,6 +327,8 @@ export function CaseWorkbench() {
         </form>
         </div>
       </div>
+      {page==='data' && <GlobalDataCatalog onOpenCase={openCatalogCase}/>}
+      {page==='files' && <GlobalFileCatalog onOpenCase={openCatalogCase}/>}
     </main>
     <div className={`cw-notice ${notice ? 'is-visible' : ''}`} role="status">{notice}</div>
     {modal?.type === 'review-result' && <Modal title="结果核对" className="cw-result-review-modal" onClose={()=>{if(!resultDirty.current||window.confirm('有未保存的结果，确定关闭？'))setModal(null);}}><ResultReview chatId={currentSet.id} caseId={state.selected} readOnly={completed||currentSet.status!=='ACTIVE'} onDirtyChange={dirty=>{resultDirty.current=dirty;}} onChanged={async isCurrent=>{const snapshot=await liveSnapshot(currentSet.id,state.selected);if(isCurrent())applySnapshot(snapshot);}}/></Modal>}
