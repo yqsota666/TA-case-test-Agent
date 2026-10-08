@@ -1,4 +1,5 @@
 import {GlobalDataCatalog} from './global-data-catalog.jsx';
+import {GlobalFileCatalog} from './global-file-catalog.jsx';
 import {accountStorageKey} from './account-storage.js';
 import React, {useEffect, useLayoutEffect, useRef, useState} from 'react';
 import {ArrowUp, ChevronRight, Folder, Menu, SquarePen, Workflow, Table2, File, FileText, FileArchive, UserRound, X} from 'lucide-react';
@@ -239,7 +240,7 @@ export function CaseWorkbench() {
     <nav className="cw-primary" aria-label="业务页面">
       <button aria-current={page==='chat' && newConversation ? 'page' : undefined} onClick={() => openNewConversation(currentSet.id)}><SquarePen size={20}/><span>Chat</span></button>
       <button onClick={() => {setPage('data');setModal(null);setNotice('');const url=new URL(location.href);url.searchParams.set('page','data');history.replaceState(null,'',url);}}><Table2 size={20}/><span>数据</span></button>
-      <button onClick={()=>setNotice('文件页将在后续搭建。')}><File size={20}/><span>文件</span></button>
+      <button onClick={() => {setPage('files');setModal(null);setNotice('');const url=new URL(location.href);url.searchParams.set('page','files');history.replaceState(null,'',url);}}><File size={20}/><span>文件</span></button>
     </nav>
     <div className="cw-list-label">项目</div>
     <nav className="cw-sets" aria-label="项目与 Case">
@@ -327,6 +328,7 @@ export function CaseWorkbench() {
         </div>
       </div>
       {page==='data' && <GlobalDataCatalog onOpenCase={openCatalogCase}/>}
+      {page==='files' && <GlobalFileCatalog onOpenCase={openCatalogCase}/>}
     </main>
     <div className={`cw-notice ${notice ? 'is-visible' : ''}`} role="status">{notice}</div>
     {modal?.type === 'review-result' && <Modal title="结果核对" className="cw-result-review-modal" onClose={()=>{if(!resultDirty.current||window.confirm('有未保存的结果，确定关闭？'))setModal(null);}}><ResultReview chatId={currentSet.id} caseId={state.selected} readOnly={completed||currentSet.status!=='ACTIVE'} onDirtyChange={dirty=>{resultDirty.current=dirty;}} onChanged={async isCurrent=>{const snapshot=await liveSnapshot(currentSet.id,state.selected);if(isCurrent())applySnapshot(snapshot);}}/></Modal>}
