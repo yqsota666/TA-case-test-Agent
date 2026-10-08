@@ -17,6 +17,7 @@ import {MessageBody} from './message-body.jsx';
 import {ThemePicker} from './theme-picker.jsx';
 import {ProjectPicker} from './project-picker.jsx';
 import {PlanDocument, planSummary} from './plan-document.jsx';
+import {useSidebarResize} from './sidebar-resize.jsx';
 
 const storageKey = () => accountStorageKey();
 const initialState = {selected: null, sets: [], drafts: {}, messages: {}};
@@ -55,6 +56,7 @@ function Modal({title, children, onClose, className = ''}) {
 }
 
 export function CaseWorkbench() {
+  const sidebarResize = useSidebarResize();
   const [state, setState] = useState(readState);
   const [modal, setModal] = useState(null);
   const [page,setPage]=useState(()=>['data','files'].includes(new URLSearchParams(location.search).get('page'))?new URLSearchParams(location.search).get('page'):'chat');
@@ -266,9 +268,9 @@ export function CaseWorkbench() {
     <div className="cw-user"><UserRound size={18}/><span>用户名</span><ThemePicker /></div>
   </>;
 
-  return <div className={`cw-shell ${page!=='chat'?'cw-catalog-view':''}`}>
+  return <div className={`cw-shell ${page!=='chat'?'cw-catalog-view':''}`} style={sidebarResize.style}>
     <a className="cw-skip" href="#cw-main">跳到对话</a>
-    <aside className="cw-sidebar">{sidebar}</aside>
+    <aside id="cw-sidebar" className="cw-sidebar">{sidebar}{sidebarResize.separator}</aside>
     <main id="cw-main" className="cw-main" tabIndex={-1}>
       <header className={`cw-header ${page!=='chat'?'is-catalog':''}`}>
         <button className="cw-icon cw-menu" aria-label="打开侧边栏" onClick={() => setModal({type: 'navigation'})}><Menu size={21}/></button>

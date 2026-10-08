@@ -28,7 +28,7 @@
   --cw-content-width: 820px;
 }
 html, body {overflow-x: clip;}
-.cw-shell {height: 100dvh; min-height: 360px; display: grid; grid-template-columns: 272px minmax(0, 1fr); background: var(--cw-surface); color: var(--cw-ink); font-family: var(--cw-font); line-height: 1.6; -webkit-font-smoothing: antialiased;}
+.cw-shell {height: 100dvh; min-height: 360px; display: grid; grid-template-columns: var(--cw-sidebar-width, 272px) minmax(0, 1fr); background: var(--cw-surface); color: var(--cw-ink); font-family: var(--cw-font); line-height: 1.6; -webkit-font-smoothing: antialiased;}
 .cw-shell button, .cw-modal button {border: 0; cursor: pointer; color: inherit; background: transparent; padding: 0; font: inherit; text-align: left; touch-action: manipulation;}
 .cw-shell svg {stroke-width: 1.65; flex-shrink: 0;}
 .cw-shell button:focus-visible, .cw-modal button:focus-visible, .cw-modal input:focus-visible {outline: 2px solid var(--cw-focus); outline-offset: 3px;}
@@ -110,7 +110,7 @@ html, body {overflow-x: clip;}
 .cw-sr-only, .cw-skip {position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;}
 .cw-skip:focus {width: auto; height: auto; margin: 0; clip-path: none; top: 8px; left: 8px; padding: 8px 16px; z-index: 20; background: var(--cw-surface); color: var(--cw-ink);}
 @media (max-width: 1000px) {
-  .cw-shell {grid-template-columns: 252px minmax(0, 1fr);}
+  .cw-shell {grid-template-columns: var(--cw-sidebar-width, 252px) minmax(0, 1fr);}
   .cw-notice {left: calc(50% + 126px);}
   .cw-messages {width: calc(100% - 64px);}
   .cw-composer-area {padding-left: 32px; padding-right: 32px;}
