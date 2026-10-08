@@ -28,8 +28,8 @@ export function createAdmissionRepository({transaction}) {
     }),
     claim:(token,chat,caseId,hash)=>transaction(async db=>{
       const {keys}=await scoped(db,token,chat,caseId),lease=randomUUID();
-      await db.execute(`INSERT IGNORE INTO case_business_admissions
-        (workspace_id,chat_id,case_id,input_hash,lease,expires_at) VALUES (?,?,?,?,?,DATE_ADD(NOW(3),INTERVAL 120 SECOND))`,[...keys,hash,lease]);
+      await db.execute(`INSERT INTO case_business_admissions
+        (workspace_id,chat_id,case_id,input_hash,lease,expires_at) VALUES (?,?,?,?,?,DATE_ADD(NOW(3),INTERVAL 120 SECOND)) ON DUPLICATE KEY UPDATE input_hash=input_hash`,[...keys,hash,lease]);
       const [[row]]=await db.execute(`SELECT lease,decision,expires_at>NOW(3) AS active FROM case_business_admissions
         WHERE workspace_id=? AND chat_id=? AND case_id=? AND input_hash=? FOR UPDATE`,[...keys,hash]);
       if(row.decision)return {result:{decision:row.decision}};

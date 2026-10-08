@@ -28,7 +28,7 @@ export function createModelConsumptionRepository({transaction,config=modelBudget
     reserve:(token,{model,purpose,reservedTokens})=>transaction(async db=>{
       if(!Number.isSafeInteger(reservedTokens)||reservedTokens<1||reservedTokens>1e7)throw storeError('MODEL_INPUT_TOO_LARGE',413,'模型输入过长，请缩小材料后重试');
       const auth=await authenticateSession(db,token);
-      await db.execute("INSERT IGNORE INTO model_budget_buckets(bucket_key,budget_day) VALUES ('mutex','2000-01-01')");
+      await db.execute("INSERT INTO model_budget_buckets(bucket_key,budget_day) VALUES ('mutex','2000-01-01') ON DUPLICATE KEY UPDATE booked_tokens=booked_tokens");
       await db.execute("SELECT booked_tokens FROM model_budget_buckets WHERE bucket_key='mutex' AND budget_day='2000-01-01' FOR UPDATE");
       const [[clock]]=await db.execute(`SELECT DATE_FORMAT(DATE_ADD(UTC_TIMESTAMP(),INTERVAL 8 HOUR),'%Y-%m-%d') AS budget_day`);
       const day=String(clock.budget_day);
@@ -39,13 +39,14 @@ export function createModelConsumptionRepository({transaction,config=modelBudget
         if(Number(bucket.booked_tokens)+reservedTokens>limit)throw storeError('MODEL_BUDGET_EXHAUSTED',429,'今日 AI 使用额度不足，请明天再试或联系管理员调整额度');
       }
       // The global bucket lock serializes claims across API processes; no lock spans the provider call.
-      const [[activity]]=await db.execute(`SELECT
-        SUM(status='RESERVED' AND expires_at>NOW(3)) AS global_active,
-        SUM(status='RESERVED' AND expires_at>NOW(3) AND workspace_id=?) AS workspace_active,
-        SUM(status='RESERVED' AND expires_at>NOW(3) AND user_id=?) AS user_active,
-        SUM(created_at>DATE_SUB(NOW(3),INTERVAL 1 MINUTE)) AS global_rate,
-        SUM(created_at>DATE_SUB(NOW(3),INTERVAL 1 MINUTE) AND user_id=?) AS user_rate
-        FROM model_consumption WHERE created_at>DATE_SUB(NOW(3),INTERVAL 5 MINUTE)`,[auth.workspace_id,auth.user_id,auth.user_id]);
+      const [recent]=await db.execute(`SELECT workspace_id,user_id,status,expires_at>NOW(3) AS active,
+        created_at>DATE_SUB(NOW(3),INTERVAL 1 MINUTE) AS recent
+        FROM model_consumption WHERE created_at>DATE_SUB(NOW(3),INTERVAL 5 MINUTE) FOR UPDATE`);
+      const active=recent.filter(row=>row.status==='RESERVED' && Number(row.active)===1);
+      const minute=recent.filter(row=>Number(row.recent)===1);
+      const activity={global_active:active.length,workspace_active:active.filter(row=>String(row.workspace_id)===String(auth.workspace_id)).length,
+        user_active:active.filter(row=>String(row.user_id)===String(auth.user_id)).length,
+        global_rate:minute.length,user_rate:minute.filter(row=>String(row.user_id)===String(auth.user_id)).length};
       if(Number(activity.global_active)>=config.globalConcurrent || Number(activity.workspace_active)>=config.workspaceConcurrent || Number(activity.user_active)>=config.userConcurrent)
         throw storeError('MODEL_CONCURRENCY_LIMIT',429,'AI 正在处理其他请求，请稍后重试');
       if(Number(activity.global_rate)>=config.globalPerMinute || Number(activity.user_rate)>=config.userPerMinute)

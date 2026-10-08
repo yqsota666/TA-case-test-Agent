@@ -39,6 +39,14 @@ test('MySQL budgets serialize parallel claims, isolate owners, survive timeout a
     const independent=await b.reserve(other,input);await b.settle(independent.id,{prompt_tokens:10,completion_tokens:10});
     const [[row]]=await pool.execute('SELECT status,charged_tokens,input_tokens FROM model_consumption WHERE id=?',[next.id]);
     assert.equal(row.status,'UNCERTAIN');assert.equal(Number(row.charged_tokens),90);assert.equal(row.input_tokens,null);
+    const third=await owner();
+    const serial=createModelConsumptionRepository({transaction,config:{...config,userConcurrent:1}});
+    const parallel=await Promise.allSettled([serial.reserve(third,{...input,reservedTokens:1}),serial.reserve(third,{...input,reservedTokens:1})]);
+    assert.equal(parallel.filter(c=>c.status==='fulfilled').length,1);
+    assert.equal(parallel.find(c=>c.status==='rejected').reason.code,'MODEL_CONCURRENCY_LIMIT');
+    await serial.settle(parallel.find(c=>c.status==='fulfilled').value.id,{prompt_tokens:1,completion_tokens:0});
+    const limited=createModelConsumptionRepository({transaction,config:{...config,userPerMinute:1}});
+    await assert.rejects(limited.reserve(third,{...input,reservedTokens:1}),{code:'MODEL_RATE_LIMIT'});
     const [[count]]=await pool.execute("SELECT COUNT(*) AS n FROM model_consumption WHERE model='synthetic-flash'");
     assert.ok(Number(count.n)>=3);
   }finally{await pool.end();}
