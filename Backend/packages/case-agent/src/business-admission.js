@@ -32,7 +32,7 @@ export function createBusinessAdmission({repository, complete}) {
         await repository.finish(token, chatPublicId, casePublicId, hash, claim.lease, value);
       } catch (error) {
         await repository.release(token, chatPublicId, casePublicId, hash, claim.lease);
-        if (error.code?.startsWith('MODEL_')) throw fail('ADMISSION_UNAVAILABLE',503,'业务审核暂不可用，请稍后重试');
+        if (['MODEL_TIMEOUT','MODEL_UNAVAILABLE','MODEL_PROVIDER_REJECTED','MODEL_EMPTY_OUTPUT'].includes(error.code)) throw fail('ADMISSION_UNAVAILABLE',503,'业务审核暂不可用，请稍后重试');
         throw error;
       }
     }

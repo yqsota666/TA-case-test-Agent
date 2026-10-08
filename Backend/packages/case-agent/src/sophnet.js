@@ -4,7 +4,7 @@ export function createSophnetCompletion({
   apiKey = process.env.SOPHNET_API_KEY,
   baseURL = 'https://www.sophnet.com/api/open-apis/v1',
   model = 'DeepSeek-V4-Pro-0813',
-  client,
+  client, govern, maxTokens: defaultMaxTokens,
 } = {}) {
   if (!client && !apiKey) throw new Error('SOPHNET_API_KEY is required');
   const sdk = client ?? new OpenAI({ apiKey, baseURL, maxRetries: 0, timeout: 90000 });
@@ -14,14 +14,18 @@ export function createSophnetCompletion({
     }
     if(reasoningEffort!==undefined && !['low','high','max'].includes(reasoningEffort))throw new TypeError('invalid reasoningEffort');
     if(thinkingMode!==undefined && !['enabled','disabled'].includes(thinkingMode))throw new TypeError('invalid thinkingMode');
+    const outputLimit=maxTokens??defaultMaxTokens;
+    if(outputLimit!==undefined && (!Number.isSafeInteger(outputLimit)||outputLimit<1))throw new TypeError('invalid maxTokens');
+    const limitedTokens=defaultMaxTokens===undefined?outputLimit:Math.min(outputLimit,defaultMaxTokens);
+    const providerMessages=[{role:'system',content:system},...(messages??[{role:'user',content:user}])];
+    const invoke=async()=>{
     let response;
     try {response = await sdk.chat.completions.create({
       ...(thinkingMode===undefined?{}:{thinking:{type:thinkingMode}}),
       ...(reasoningEffort===undefined?{}:{reasoning_effort:reasoningEffort}),
       model,
-      ...(maxTokens===undefined?{}:{max_tokens:maxTokens}),
-      messages: [{ role: 'system', content: system },
-        ...(messages ?? [{ role: 'user', content: user }])],
+      ...(limitedTokens===undefined?{}:{max_tokens:limitedTokens}),
+      messages:providerMessages,
     });
     } catch (error) {
       let code,status,message;
@@ -34,6 +38,9 @@ export function createSophnetCompletion({
       }else throw error;
       throw Object.assign(new Error(message),{code,status});
     }
+    return response;
+    };
+    const response=govern?await govern({model,messages:providerMessages,maxTokens:limitedTokens,invoke}):await invoke();
     const content = response.choices?.[0]?.message?.content;
     if (typeof content !== 'string') {
       const error = new Error('模型没有返回文本');

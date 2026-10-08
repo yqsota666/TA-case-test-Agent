@@ -58,13 +58,13 @@ async function jsonBody(request, limit = 256 * 1024) {
   }
 }
 
-export function createCaseHttpHandler({ globalDataCatalog, globalFileCatalog, admit, planContentComplete, repository, discussionService, confirmPlan, executeData,
+export function createCaseHttpHandler({ modelRuntime, globalDataCatalog, globalFileCatalog, admit, planContentComplete, repository, discussionService, confirmPlan, executeData,
   reviseData, exchangeRepository, applicationPreparation, confirmData, returnParsing, returnConfirmation, holdingsReturn, taReceipts, caseResult, exchangePlanSupplement, chatLifecycle, durableWorkflow, taReset, accountAuth, secureCookie, allowedOrigin }) {
   if (!repository || !discussionService || !confirmPlan || !executeData || !reviseData || !allowedOrigin) {
     throw new TypeError('API dependencies required');
   }
   const accountHandler=createAccountHttpHandler({accountAuth,allowedOrigin,secureCookie});
-  return async (request, response) => {
+  const handle = async (request, response) => {
     if(await accountHandler(request,response))return;
     const pathname = new URL(request.url, 'http://localhost').pathname;
     const reset=taReset && taResetPath.exec(pathname);
@@ -405,6 +405,7 @@ export function createCaseHttpHandler({ globalDataCatalog, globalFileCatalog, ad
           ...(error.status ? { message: error.message } : {}) });
     }
   };
+  return (request,response)=>modelRuntime?modelRuntime.run({token:cookieToken(request.headers.cookie),purpose:new URL(request.url,'http://localhost').pathname.split('/').at(-1).slice(0,40)},()=>handle(request,response)):handle(request,response);
 }
 
 export function createCaseHttpServer(dependencies) {
