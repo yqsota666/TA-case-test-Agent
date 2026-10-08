@@ -79,3 +79,19 @@ The current platform branch is codex/assistant-ui at /Users/apple/.codex/worktre
 Validation: backend355 passed with15 opt-in database tests skipped; frontend23 passed and build succeeded. Actual HTTP account/quota authorization checks passed. Browser5197 shows the quota bar and image attachment entry. No new provider calls were made in this integration; prior real-model and MySQL evidence remains in the risk acceptance records. Existing local sessions, Cases and consumption history are preserved.
 
 5195 is a historical fallback preview, not the development entry. PR40/41 remain separate unmerged draft PRs; this local merge is not a merge into remote main.
+
+## 2026-10-08：成套组件与网页方案区
+
+本地分支仍为 codex/assistant-ui，Frontend5197/API3104。使用同一官方源修订的 ArtifactCard、CanvasSplit、ApprovalCard、ThreadList、MessageAttachments、QuoteReply、AgentStatus、ToolCall、Timeline、Reasoning 和 Sources 的 JSX 适配；来源与许可在 Frontend/src/assistant-ui/NOTICE.md。
+
+- 方案卡打开右侧文档，聊天保留；窄屏改为完整详情并可关闭返回。保留方案编辑、准备数据与预期结果两个真实确认接口及版本校验，切换 Case 时丢弃过期异步显示结果。
+- 项目层级保留，项目内 Case 用 ThreadList；图片继续沿用原格式、数量、大小和读取限制，改用官方附件展示。
+- 文字选择后可引用并追问，独立可移除引用不覆盖输入草稿。引用按账户/Case保存，只作为讨论上下文传给原 discussion 接口；无问题不可单发，包含引用的总输入不能超过4000字。失败保留输入/引用/图片，成功清除对应草稿。引用没有扩展后端能力或替代业务准入。
+- 默认仅当前动作，点击 ToolCall 展开真实流程 Timeline；不把等待当完成。方案说明与核对依据只使用已有 proposal 的 preconditions/openQuestions/evidence，不显示模型私有推理、不伪造来源链接。
+- 不加入编辑已发送消息、重新生成或回答分支。
+
+验证：27项常规前端测试通过，Vite构建通过（原大包警告仍存在，当前gzip274.61kB）。隔离合成页检查2/4种情况、不同字段、长说明、缺失信息与独立读取内容；原有真实31bb4946 Case的回复只读渲染正常。实际选择文字→引用、切换Case隔离、发送503失败后保留问题/引用、DATA确认→EXPECTATIONS确认→已锁定均已通过浏览器检查。390px iframe页面检查窄屏完整详情和关闭返回，浏览器视口覆盖能力未实际改变尺寸，故采用真实iframe视口；不把1280px检查记作手机验收。本轮没有新增真实模型调用，也没有对用户真实Case点击确认或产生TA文件。
+
+合成页 http://127.0.0.1:5198/test/assistant-ui.html?theme=liquid&mode=plan ，所有/live-api请求被夹具拦截，不连接业务服务。截图 .context/assistant-ui/visual-suite.png。合成确认不代表真实业务确认。
+
+回滚点：f5bcb025官方组件适配；ed6949b9方案区/确认/列表/附件/真实流程接线；6eea5f0c引用发送；be12271b窄屏键盘隔离。按依赖逆序回滚可恢复789b31b3。均仅本地，未push/PR。
