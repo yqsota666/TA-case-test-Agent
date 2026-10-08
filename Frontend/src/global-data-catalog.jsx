@@ -1,5 +1,5 @@
 import React,{useEffect,useState} from 'react';
-import {Search,RefreshCw,ChevronLeft,ChevronRight} from 'lucide-react';
+import {Search,RefreshCw,ChevronLeft,ChevronRight} from './ui-icons.jsx';
 import {requestCase} from './live-case-api.js';
 import './global-catalog.css';
 const tables=[['customers','客户'],['accounts','账户'],['funds','基金'],['holdings','持仓'],['applications','申请记录']];

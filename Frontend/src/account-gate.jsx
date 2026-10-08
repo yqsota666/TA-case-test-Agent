@@ -1,5 +1,5 @@
 import React,{useEffect,useRef,useState} from 'react';
-import {ArrowRight,Eye,EyeOff,LogOut} from 'lucide-react';
+import {ArrowRight,Eye,EyeOff,LogOut} from './ui-icons.jsx';
 import {requestCase} from './live-case-api.js';
 import {setAccountStorageOwner} from './account-storage.js';
 import './account-gate.css';

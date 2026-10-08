@@ -1,5 +1,5 @@
 import React,{useEffect,useRef,useState} from 'react';
-import {Upload} from 'lucide-react';
+import {Upload} from './ui-icons.jsx';
 import {requestCase} from './live-case-api.js';
 import {exchangeStepTime} from './plan-language.js';
 import {holdingsParseForStep,holdingsReviewRows} from './holdings-review.js';

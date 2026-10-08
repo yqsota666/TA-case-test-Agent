@@ -1,5 +1,5 @@
 import React,{useEffect,useRef,useState} from 'react';
-import {Download,Upload,FileText,ChevronRight} from 'lucide-react';
+import {Download,Upload,FileText,ChevronRight} from './ui-icons.jsx';
 import {requestCase,casePath} from './live-case-api.js';
 import {exchangeReviewRows} from './exchange-review.js';
 import './file-exchange.css';

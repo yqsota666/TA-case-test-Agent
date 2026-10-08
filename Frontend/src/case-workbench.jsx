@@ -3,7 +3,7 @@ import {GlobalFileCatalog} from './global-file-catalog.jsx';
 import {ProjectLifecycleCard} from './project-lifecycle.jsx';
 import {accountStorageKey} from './account-storage.js';
 import React, {useEffect, useLayoutEffect, useRef, useState} from 'react';
-import {ArrowUp, ChevronRight, Folder, Menu, SquarePen, Workflow, Table2, File, FileText, FileArchive, UserRound, X} from 'lucide-react';
+import {ArrowUp, ChevronRight, Folder, Menu, SquarePen, Workflow, Table2, File, FileText, FileArchive, UserRound, X} from './ui-icons.jsx';
 import './case-workbench.css';
 import './workflow-actions.css';
 import {FileExchangePanel} from './file-exchange.jsx';
@@ -239,16 +239,16 @@ export function CaseWorkbench() {
   const sidebar = <>
     <div className="cw-brand"><img className="cw-brand-logo" src="/brand/ta-agent-bot-white.png" alt="" width="44" height="44"/><span>TA Test Agent</span></div>
     <nav className="cw-primary" aria-label="业务页面">
-      <button aria-current={page==='chat' && newConversation ? 'page' : undefined} onClick={() => openNewConversation(currentSet.id)}><SquarePen size={20}/><span>Chat</span></button>
-      <button onClick={() => {setPage('data');setModal(null);setNotice('');const url=new URL(location.href);url.searchParams.set('page','data');history.replaceState(null,'',url);}}><Table2 size={20}/><span>数据</span></button>
-      <button onClick={() => {setPage('files');setModal(null);setNotice('');const url=new URL(location.href);url.searchParams.set('page','files');history.replaceState(null,'',url);}}><File size={20}/><span>文件</span></button>
+      <button aria-current={page==='chat' && newConversation ? 'page' : undefined} onClick={() => openNewConversation(currentSet.id)}><SquarePen size={18}/><span>Chat</span></button>
+      <button onClick={() => {setPage('data');setModal(null);setNotice('');const url=new URL(location.href);url.searchParams.set('page','data');history.replaceState(null,'',url);}}><Table2 size={18}/><span>数据</span></button>
+      <button onClick={() => {setPage('files');setModal(null);setNotice('');const url=new URL(location.href);url.searchParams.set('page','files');history.replaceState(null,'',url);}}><FileText size={18}/><span>文件</span></button>
     </nav>
     <div className="cw-list-label">项目</div>
     <nav className="cw-sets" aria-label="项目与 Case">
       {state.sets.map(set => <div className={`cw-set ${set.status!=='ACTIVE'?'is-sealed':''}`} key={set.id}>
         <div className="cw-set-heading">
           <button className="cw-set-toggle" aria-expanded={set.expanded} aria-controls={`cases-${set.id}`} onClick={() => toggleSet(set.id)}>
-            <Folder size={20}/><span>{set.name}</span>
+            <Folder size={18}/><span>{set.name}</span>
           </button>
           <button className="cw-icon cw-add" aria-label={`在${set.name}中新建 Case`} title="新建 Case" disabled={set.status!=='ACTIVE'} onClick={() => openNewConversation(set.id)}><SquarePen size={18}/></button>
         </div>

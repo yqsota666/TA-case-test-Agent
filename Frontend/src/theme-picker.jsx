@@ -1,5 +1,5 @@
 import {createContext, useContext, useEffect, useRef, useState} from 'react';
-import {Palette, Check} from 'lucide-react';
+import {Palette, Check} from './ui-icons.jsx';
 import './theme-picker.css';
 
 export const themes = [

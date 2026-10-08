@@ -1,7 +1,7 @@
 import React, {useCallback,useEffect,useMemo,useRef,useState} from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import {Activity,ArrowDownToLine,ArrowUp,Check,ChevronDown,ChevronRight,Database,FileArchive,FolderClosed,FolderOpen,LogOut,MessageSquare,Moon,Plus,RefreshCw,RotateCcw,Send,Sun,Table2,UploadCloud,X} from 'lucide-react';
+import {Activity,ArrowDownToLine,ArrowUp,Check,ChevronDown,ChevronRight,Database,FileArchive,FolderClosed,FolderOpen,LogOut,MessageSquare,Moon,Plus,RefreshCw,RotateCcw,Send,Sun,Table2,UploadCloud,X} from './ui-icons.jsx';
 import {BatchDataPreview} from './batch-data-preview.jsx';
 import {WorkflowDatabaseBrowser} from './workflow-database-browser.jsx';
 import {WorkflowDataEditor} from './workflow-data-editor.jsx';

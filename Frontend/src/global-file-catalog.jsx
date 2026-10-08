@@ -1,5 +1,5 @@
 import React,{useEffect,useState} from 'react';
-import {Search,RefreshCw,ChevronLeft,ChevronRight,Download} from 'lucide-react';
+import {Search,RefreshCw,ChevronLeft,ChevronRight,Download} from './ui-icons.jsx';
 import {requestCase} from './live-case-api.js';
 import './global-catalog.css';
 const downloadUrl=file=>'/live-api/files/catalog/download?'+new URLSearchParams({kind:file.kind,id:file.locator,fileName:file.fileName});

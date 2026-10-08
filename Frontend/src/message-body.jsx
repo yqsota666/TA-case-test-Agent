@@ -1,7 +1,7 @@
 import React, {useEffect, useRef, useState} from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import {Copy, Check, LoaderCircle} from 'lucide-react';
+import {Copy, Check, LoaderCircle} from './ui-icons.jsx';
 
 export function formatDuration(milliseconds) {
   if (typeof milliseconds !== 'number' || !Number.isFinite(milliseconds) || milliseconds < 0) return null;

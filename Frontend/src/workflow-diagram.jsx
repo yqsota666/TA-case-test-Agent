@@ -1,5 +1,5 @@
 import React from 'react';
-import {Play, MessagesSquare, ListChecks, ClipboardCheck, Database, BadgeCheck, GitBranch, ArrowLeftRight, ScanSearch, CheckCheck, Flag, Archive} from 'lucide-react';
+import {Play, MessagesSquare, ListChecks, ClipboardCheck, Database, BadgeCheck, GitBranch, ArrowLeftRight, ScanSearch, CheckCheck, Flag, Archive} from './ui-icons.jsx';
 import {diagramStates} from './workflow-diagram-model.js';
 import './workflow-diagram.css';
 const icons=[Play,MessagesSquare,ListChecks,ClipboardCheck,Database,BadgeCheck,GitBranch,ArrowLeftRight,ScanSearch,CheckCheck,Flag,Archive];

@@ -1,5 +1,5 @@
 import React,{useEffect,useState} from 'react';
-import {ArrowDownToLine,FileArchive,RefreshCw} from 'lucide-react';
+import {ArrowDownToLine,FileArchive,RefreshCw} from './ui-icons.jsx';
 import './workflow-application-files.css';
 
 export function WorkflowApplicationFiles({data,chatId,caseId,request}){

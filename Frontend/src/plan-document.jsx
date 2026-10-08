@@ -1,6 +1,6 @@
 import {planText,exchangeStepLabel,exchangeStepTime} from './plan-language.js';
 import React, {useState, useEffect, useRef} from 'react';
-import {ChevronRight, X} from 'lucide-react';
+import {ChevronRight, X} from './ui-icons.jsx';
 import './plan-editor.css';
 import {PlanComparison} from './plan-comparison.jsx';
 const text=value=>typeof value==='string'?planText(value.trim()):'';

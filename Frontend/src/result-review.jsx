@@ -1,5 +1,5 @@
 import React,{useEffect,useRef,useState} from 'react';
-import {Check,Minus,RefreshCw,Upload} from 'lucide-react';
+import {Check,Minus,RefreshCw,Upload} from './ui-icons.jsx';
 import {requestCase,casePath} from './live-case-api.js';
 import './result-review.css';
 const fieldNames={status:'处理结果',returnCode:'返回码',transactionAccountId:'交易账户',fundCode:'基金代码',shareClass:'份额类别',confirmedAmount:'确认金额',confirmedVolume:'确认份额',taAccountId:'TA账户',branchCode:'分支',totalVolume:'总份额',availableVolume:'可用份额',frozenVolume:'冻结份额',snapshotDate:'持仓日期'};

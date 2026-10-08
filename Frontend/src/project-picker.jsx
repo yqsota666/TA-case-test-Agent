@@ -1,6 +1,6 @@
 import {useEffect, useId, useLayoutEffect, useRef, useState} from 'react';
 import {createPortal} from 'react-dom';
-import {Check, ChevronDown, Folder, Plus} from 'lucide-react';
+import {Check, ChevronDown, Folder, Plus} from './ui-icons.jsx';
 import './project-picker.css';
 
 export function ProjectPicker({projects, value, onChange}) {

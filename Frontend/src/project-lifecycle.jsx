@@ -1,5 +1,5 @@
 import React,{useEffect,useId,useRef,useState} from 'react';
-import {Archive,ChevronRight,RotateCcw,X} from 'lucide-react';
+import {Archive,ChevronRight,RotateCcw,X} from './ui-icons.jsx';
 import {requestCase} from './live-case-api.js';
 import {lifecycleView,lifecycleCommand,caseStatusLabel} from './project-lifecycle.js';
 import './project-lifecycle.css';

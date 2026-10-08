@@ -1,5 +1,5 @@
 import React,{useEffect,useRef,useState} from 'react';
-import {ChevronRight,ClipboardCheck,Plus,X} from 'lucide-react';
+import {ChevronRight,ClipboardCheck,Plus,X} from './ui-icons.jsx';
 import './plan-comparison.css';
 export function ExpectedText({text=''}) {
   const parts=text.match(/[^；;\n]+[；;]?/g)?.map(p=>p.trim()).filter(Boolean)||[];

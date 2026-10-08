@@ -38,7 +38,7 @@ html, body {overflow-x: clip;}
 .cw-brand {font-size: 18px; font-weight: 600; letter-spacing: -.35px; line-height: 28px; margin: 0 14px 15px;}
 .cw-primary {display: grid; gap: 0; margin-bottom: 22px;}
 .cw-primary button {display: flex; align-items: center; gap: 8px; padding: 0 14px; height: 32px; border-radius: 9px; color: var(--cw-ink); font-size: 14px; transition: background 180ms var(--cw-ease), color 180ms var(--cw-ease);}
-.cw-primary svg {width: 16px; height: 16px;}
+.cw-primary svg {width: 18px; height: 18px;}
 .cw-set-toggle svg {width: 18px; height: 18px;}
 .cw-primary button:hover, .cw-case:hover, .cw-icon:hover {background: var(--cw-hover); color: var(--cw-ink);}
 .cw-list-label {font-size: 14px; font-weight: 500; color: var(--cw-muted); margin: 0 14px 10px;}
