@@ -1,8 +1,9 @@
 import { StateGraph, StateSchema, START, END } from '@langchain/langgraph';
 import { z } from 'zod';
+import {DISCUSSION_VOICE,checkDiscussionReply} from './discussion-reply.js';
 
-export const FIRST_DISCUSSION_PROMPT_VERSION = 'first-node-format-v4';
-export const FIRST_DISCUSSION_PROMPT = '你是测试方案讨论助手。根据使用者刚提供的需求，询问其最想验证的目标，说明你的初步理解，并指出仍需澄清的信息。不要预设具体业务规则、测试方法或最终方案；本轮不要给出测试步骤、测试数据或 SOP 内容。输出简短中文纯文本，严格只写以下三行，每行小标题后直接写简短内容，不加空行，不使用 Markdown 标题、列表符号、加粗符号或代码块。第一行必须是以问号结尾的问题，中文或英文问号均可；后两行不限定句末标点：\n想先确认：询问使用者最想验证什么？\n初步理解：说明你目前的理解，未确认的内容不要写成事实。\n还需明确：指出继续讨论所需的关键信息。';
+export const FIRST_DISCUSSION_PROMPT_VERSION = 'first-discussion-guided-v4';
+export const FIRST_DISCUSSION_PROMPT = DISCUSSION_VOICE + '\n这是首轮。需求已说明重点时不要再问用户最想验证什么；优先把关键风险与下一步说清楚。';
 
 const FirstDiscussionState = new StateSchema({
   userInput: z.string(),
@@ -10,21 +11,7 @@ const FirstDiscussionState = new StateSchema({
   phase: z.enum(['DISCUSSING', 'AWAITING_USER']).default('DISCUSSING'),
 });
 
-export function checkFirstDiscussionReply(reply) {
-  if (typeof reply === 'string') reply = reply.replace(/[ \t]+(?=\n|$)/g, '');
-  const lines = typeof reply === 'string' ? reply.split('\n') : [];
-  if (typeof reply !== 'string' || reply.length < 30 || reply.length > 300 ||
-      reply !== reply.trim() || /\r|(?:\*\*|__|`|\*[^*\n]+\*|(?<![A-Za-z0-9_])_[^_\n]+_(?![A-Za-z0-9_])|\[[^\]\n]+\]\([^)\n]+\)|^\s{0,3}(?:#{1,6}\s|[-*+]\s|\d+[.)]\s))|(?:测试步骤|测试数据|执行步骤|SOP)[：:]/mi.test(reply) ||
-      lines.length !== 3 ||
-      !/^想先确认：\S.+[？?]$/.test(lines[0]) ||
-      !/^初步理解：\S.+$/.test(lines[1]) ||
-      !/^还需明确：\S.+$/.test(lines[2])) {
-    const error = new Error('第一轮回复不符合三行中文纯文本格式');
-    error.code = 'MODEL_OUTPUT_FORMAT';
-    throw error;
-  }
-  return reply;
-}
+export const checkFirstDiscussionReply = checkDiscussionReply;
 
 export function createFirstDiscussionGraph({ complete }) {
   if (typeof complete !== 'function') throw new TypeError('complete must be a function');

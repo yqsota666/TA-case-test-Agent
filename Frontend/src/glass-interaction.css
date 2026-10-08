@@ -1,0 +1,17 @@
+html:is([data-theme=liquid],[data-theme=prism]) .cw-composer-frame {position:relative;}
+html:is([data-theme=liquid],[data-theme=prism]) .cw-composer-frame::before {
+  content:"";position:absolute;inset:0;border-radius:inherit;padding:2px;pointer-events:none;
+  background:radial-gradient(ellipse at var(--glass-x,50%) var(--glass-y,0%),#fff 0%,rgb(255 255 255 / 85%) 18%,rgb(163 210 230 / 25%) 45%,transparent 70%);
+  -webkit-mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);
+  mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);-webkit-mask-composite:xor;mask-composite:exclude;
+}
+html[data-theme=prism] .cw-composer-frame::before {
+  background:conic-gradient(from var(--glass-angle,120deg) at var(--glass-x,50%) var(--glass-y,50%),#d6a8e6,#9bcced,#bee8d6,#ecd3ac,#d6a8e6);
+}
+html[data-theme=prism] .cw-composer-frame:focus-within {border-color:transparent;}
+@supports not ((mask-composite:exclude) or (-webkit-mask-composite:xor)) {
+  html:is([data-theme=liquid],[data-theme=prism]) .cw-composer-frame::before {display:none;}
+}
+@media(prefers-reduced-motion:reduce) {
+  html:is([data-theme=liquid],[data-theme=prism]) .cw-composer-frame::before {--glass-x:50%;--glass-y:0%;--glass-angle:120deg;}
+}

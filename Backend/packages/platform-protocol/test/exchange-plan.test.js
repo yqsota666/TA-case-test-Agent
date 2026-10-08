@@ -32,3 +32,11 @@ test('unknown plan, wrong step/type/date and impossible calendar date cannot be 
  const p=structuredClone(plan);p.steps[0].businessTime.value='20260230';assert.equal(validExchangePlan(p),false);
  assert.equal(validExchangePlan({status:'UNPLANNED',steps:[],openQuestions:['需要哪一天？']}),true);
 });
+
+test('non-file business plans are explicit and cannot authorize TA file execution',()=>{
+ const none={status:'NOT_REQUIRED',steps:[],openQuestions:[]};
+ assert.equal(validExchangePlan(none),true);
+ assert.equal(validExchangePlan({...none,steps:[step('unexpected','01')]}),false);
+ assert.equal(validExchangePlan({...none,openQuestions:['unknown']}),false);
+ assert.throws(()=>validateExchangeOrder({plan:none,stepId:'unexpected',direction:'SEND',fileType:'01',businessDate:'20261006'}),{code:'EXCHANGE_PLAN_REQUIRED'});
+});

@@ -1,0 +1,27 @@
+.cw-appearance {position:relative;margin-left:auto;flex:none;}
+.cw-appearance-trigger {display:grid;place-items:center;width:27px;height:27px;padding:0;border:0;border-radius:7px;background:transparent;color:var(--study-icon);cursor:pointer;}
+.cw-appearance-trigger:hover,.cw-appearance-trigger[aria-expanded=true] {background:var(--study-hover);}
+.cw-user .cw-appearance svg {width:17px;height:17px;padding:0;border-radius:0;background:transparent;color:inherit;}
+.cw-appearance-panel {position:absolute;z-index:20;bottom:36px;right:0;width:184px;max-height:min(440px,70dvh);overflow:auto;padding:6px;border:1px solid var(--study-line);border-radius:14px;background:var(--study-modal);color:var(--study-ink);box-shadow:var(--study-modal-shadow);color-scheme:var(--study-scheme);}
+.cw-appearance-panel button {display:flex;align-items:center;gap:10px;width:100%;min-height:34px;padding:5px 8px;border:0;border-radius:8px;background:transparent;color:inherit;font:inherit;font-size:13px;text-align:left;cursor:pointer;}
+.cw-appearance-panel button:hover,.cw-appearance-panel button[aria-pressed=true] {background:var(--study-hover);}
+.cw-appearance-panel button svg {margin-left:auto;width:14px;height:14px;}
+.cw-appearance button:focus-visible {outline:2px solid var(--study-focus);outline-offset:2px;}
+.cw-appearance-swatch {width:18px;height:18px;flex:none;border-radius:6px;border:1px solid rgb(120 130 145 / 28%);box-shadow:inset 0 1px 0 rgb(255 255 255 / 55%);}
+.cw-swatch-liquid {background:linear-gradient(135deg,#f5fcff,#a7cddd);}
+.cw-swatch-prism {background:linear-gradient(135deg,#c8c4fa,#f1d7ef,#a2e4ec);}
+.cw-swatch-opal {background:linear-gradient(135deg,#fff8e8,#efd8df);}
+.cw-swatch-glacier {background:linear-gradient(125deg,#edf5fc 48%,#b2c6db 50%,#e1eaf5);}
+.cw-swatch-aurora {background:linear-gradient(135deg,#b8dfd6,#d6c9ed);}
+.cw-swatch-porcelain {background:linear-gradient(135deg,#fff,#e0e5eb);}
+.cw-swatch-folio {background:linear-gradient(135deg,#fff9ef,#e8ddc7);}
+.cw-swatch-jade {background:linear-gradient(135deg,#d7e6d9,#7fa291);}
+.cw-swatch-copper {background:linear-gradient(135deg,#f7e5d6,#b97f65);}
+.cw-swatch-obsidian {background:linear-gradient(135deg,#495567,#1a202c);}
+.cw-swatch-graphite {background:linear-gradient(135deg,#737980,#24272c 46%,#101215);}
+.cw-swatch-abyss {background:linear-gradient(135deg,#a6cadf,#3b5067 46%,#233348);}
+@media (pointer:coarse) {
+  .cw-appearance-trigger {width:44px;height:44px;}
+  .cw-appearance-panel {bottom:52px;}
+  .cw-appearance-panel button {min-height:44px;}
+}

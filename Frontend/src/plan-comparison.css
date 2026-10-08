@@ -1,0 +1,34 @@
+/* finesse · component: plan-comparison · register=product · tokens: inherited */
+.cw-review-common {margin:0 0 24px;color:var(--cw-muted);font-size:13px;}
+.cw-review-common summary,.cw-review-detail summary {display:flex;align-items:center;gap:8px;cursor:pointer;list-style:none;min-height:36px;}
+.cw-review-common summary::-webkit-details-marker,.cw-review-detail summary::-webkit-details-marker {display:none;}
+.cw-review-common[open] > summary svg,.cw-review-detail[open] > summary svg {transform:rotate(90deg);}
+.cw-review-common ul {margin:10px 0 0;padding-left:20px;line-height:1.85;color:var(--cw-ink);}
+.cw-review-table-wrap {overflow-x:auto;overscroll-behavior-x:contain;overscroll-behavior-y:auto;border:1px solid var(--cw-line);border-radius:14px;}
+.cw-review-table {width:100%;table-layout:fixed;border-collapse:collapse;color:var(--cw-ink);font-size:13px;line-height:1.8;}
+.cw-review-table thead {background:var(--cw-hover);color:var(--cw-muted);}
+.cw-review-table th,.cw-review-table td {padding:20px 18px;vertical-align:top;text-align:left;overflow-wrap:anywhere;}
+.cw-review-table thead th {padding-top:13px;padding-bottom:13px;font-weight:500;font-size:12px;}
+.cw-review-table th:first-child {width:19%;}
+.cw-review-table th:nth-child(2) {width:31%;}
+.cw-review-table tbody th {font-weight:600;}
+.cw-review-table tbody tr + tr {border-top:1px solid var(--cw-line);}
+.cw-review-table th:last-child:has(.cw-sr-only),.cw-review-edit {width:60px;}
+.cw-review-points {list-style:none;margin:0;padding:0;display:grid;gap:10px;}
+.cw-review-detail {margin-top:12px;font-size:12px;color:var(--cw-muted);}
+.cw-review-detail dl {margin:8px 0 0;}.cw-review-detail dt {margin-top:12px;color:var(--cw-muted);}.cw-review-detail dd {margin:3px 0 0;color:var(--cw-ink);}
+.cw-review-edit button {min-height:40px;padding:8px 6px;font-size:12px;color:var(--cw-muted);border-radius:7px;white-space:nowrap;}
+.cw-plan-item-editor {width:min(660px,calc(100vw - 32px));max-height:calc(100dvh - 48px);padding:0;}
+.cw-plan-item-editor[open] {display:flex;flex-direction:column;}
+.cw-plan-item-editor > header {padding:22px 28px;flex:none;}
+.cw-plan-item-editor form {min-height:0;overflow:auto;padding:0 28px 24px;overscroll-behavior:contain;}
+.cw-plan-edit-fields {display:grid;gap:22px;}
+.cw-plan-edit-fields label {display:grid;gap:8px;font-size:13px;}
+.cw-plan-edit-fields input,.cw-plan-edit-fields textarea {width:100%;box-sizing:border-box;padding:12px 14px;border:1px solid var(--cw-line);border-radius:10px;background:var(--cw-surface);color:var(--cw-ink);font:inherit;line-height:1.7;resize:vertical;}
+.cw-plan-item-editor footer {display:flex;justify-content:flex-end;gap:18px;margin-top:24px;}
+.cw-plan-item-editor footer button {min-height:44px;min-width:80px;white-space:nowrap;}
+.cw-plan-item-editor :disabled {opacity:.5;cursor:not-allowed;}
+.cw-review-edit button:focus-visible,.cw-review-common summary:focus-visible,.cw-review-detail summary:focus-visible,.cw-plan-edit-fields :is(input,textarea):focus-visible,.cw-plan-item-editor button:focus-visible,.cw-review-table-wrap:focus-visible {outline:2px solid var(--cw-accent);outline-offset:3px;}
+.cw-review-edit button:active,.cw-plan-item-editor button:active {transform:translateY(1px);}
+@media(hover:hover) {.cw-review-edit button:hover,.cw-review-common summary:hover,.cw-review-detail summary:hover {color:var(--cw-ink);}.cw-review-edit button:hover {background:var(--cw-hover);}}
+@media(max-width:600px) {.cw-review-table,.cw-review-table tbody {display:block;width:100%;}.cw-review-table thead {display:none;}.cw-review-table tbody tr {display:grid;grid-template-columns:minmax(0,1fr);padding:18px;gap:16px;}.cw-review-table tbody :is(th,td) {display:block;width:auto;padding:0;}.cw-review-table tbody th:first-child {width:auto;font-size:14px;}.cw-review-table td[data-label]::before {content:attr(data-label);display:block;margin-bottom:6px;font-size:11px;color:var(--cw-muted);}.cw-review-edit {text-align:right!important;}.cw-review-detail {margin-top:6px;}.cw-plan-item-editor > header {padding:20px;}.cw-plan-item-editor form {padding:0 20px 20px;}}

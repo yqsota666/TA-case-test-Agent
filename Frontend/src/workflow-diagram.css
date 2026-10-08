@@ -1,0 +1,37 @@
+.cw-modal.cw-flow-modal {width:min(1040px, calc(100vw - 40px)); padding:26px 30px 22px; overflow:auto;}
+.cw-flow {color:var(--cw-ink);}
+.cw-flow-summary {display:flex; align-items:center; gap:9px; padding-top:22px; font-size:14px; font-weight:500;}
+.cw-flow-summary > span:last-child {font-size:12px; color:var(--cw-muted); margin-left:auto; font-weight:400;}
+.cw-flow-live-dot {width:6px; height:6px; border-radius:50%; background:var(--cw-accent); box-shadow:0 0 0 4px color-mix(in srgb,var(--cw-accent) 9%,transparent);}
+.cw-flow-canvas {overflow:auto; margin-top:8px; outline-offset:3px;}
+.cw-flow-canvas:focus-visible {outline:2px solid var(--cw-accent); border-radius:12px;}
+.cw-flow-canvas > svg {display:block; width:100%; min-width:710px;}
+.cw-flow-edge {fill:none; stroke:color-mix(in srgb,var(--cw-muted) 42%,transparent); stroke-width:1.3;}
+.cw-flow-edge path {stroke-dasharray:5 6;}
+.cw-flow-edge.is-done {stroke:var(--cw-accent);}
+.cw-flow-edge.is-done path {stroke-dasharray:none;}
+.cw-flow-node {color:var(--cw-muted);}
+.cw-flow-circle {fill:var(--cw-surface); stroke:color-mix(in srgb,var(--cw-muted) 24%,transparent); stroke-width:1;}
+.cw-flow-label {fill:var(--cw-ink); font-size:14px; font-weight:500; font-family:inherit;}
+.cw-flow-status {fill:var(--cw-muted); font-size:11px; font-family:inherit;}
+.cw-flow-node.is-done {color:var(--cw-accent);}
+.cw-flow-node.is-done .cw-flow-circle {fill:color-mix(in srgb,var(--cw-accent) 6%,var(--cw-surface)); stroke:color-mix(in srgb,var(--cw-accent) 40%,transparent);}
+.cw-flow-node.is-current {color:var(--cw-surface);}
+.cw-flow-node.is-current .cw-flow-circle {fill:var(--cw-accent); stroke:var(--cw-accent);}
+.cw-flow-node.is-current .cw-flow-status {fill:var(--cw-accent); font-weight:500;}
+.cw-flow-halo {fill:color-mix(in srgb,var(--cw-accent) 7%,transparent); stroke:color-mix(in srgb,var(--cw-accent) 16%,transparent); stroke-width:1;}
+.cw-flow-node.is-blocked .cw-flow-circle {stroke:var(--cw-muted); stroke-dasharray:3 3;}
+.cw-flow-legend {display:flex; justify-content:center; gap:24px; padding:10px 0 2px; color:var(--cw-muted); font-size:12px;}
+.cw-flow-legend > span {display:flex; align-items:center; gap:8px;}
+.cw-flow-legend i {display:block; width:22px; border-top:1px dashed var(--cw-muted);}
+.cw-flow-legend i.is-done {border-top:1px solid var(--cw-accent);}
+.cw-flow-legend b {width:7px; height:7px; border-radius:50%; background:var(--cw-accent);}
+@media (max-width:600px) {.cw-modal.cw-flow-modal {width:calc(100vw - 24px); padding:20px 16px;} .cw-flow-legend {gap:14px;}}
+
+.cw-flow-feedback {min-height:420px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px; color:var(--cw-muted); font-size:14px;}
+.cw-flow-feedback button {padding:12px 20px; border:1px solid var(--cw-line); border-radius:10px; color:var(--cw-ink); background:var(--cw-surface);}
+.cw-flow-feedback button:focus-visible, .cw-live-flow:focus-visible {outline:2px solid var(--cw-accent); outline-offset:3px;}
+.cw-flow-feedback button:active, .cw-live-flow:active {transform:translateY(1px);}
+@media (hover:hover) {.cw-flow-feedback button:hover, .cw-live-flow:hover {background:var(--cw-hover);}}
+
+html[data-theme] .cw-modal.cw-flow-modal {background:var(--study-modal),#fff;}

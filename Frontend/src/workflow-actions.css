@@ -1,0 +1,7 @@
+.cw-workflow-actions {display:flex; align-items:center; margin-top:12px;}
+.cw-workflow-actions button {display:inline-flex; align-items:center; gap:7px; min-height:36px; padding:6px 12px; border:1px solid var(--cw-line); border-radius:10px; color:var(--cw-text); background:var(--cw-surface); font:inherit; font-size:12px; cursor:pointer; transition:background 140ms ease, box-shadow 140ms ease;}
+.cw-workflow-actions button:hover:not(:disabled) {box-shadow:0 2px 8px var(--cw-shadow-light);}
+.cw-workflow-actions button:focus-visible {outline:2px solid var(--cw-muted); outline-offset:3px;}
+.cw-workflow-actions button:disabled {opacity:.5; cursor:default;}
+@media (max-width:760px) {.cw-workflow-actions button {min-height:44px;}}
+@media (prefers-reduced-motion:reduce) {.cw-workflow-actions button {transition:none;}}

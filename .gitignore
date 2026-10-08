@@ -2,3 +2,11 @@ node_modules/
 .env*
 !.env.example
 .github-token
+
+node_modules/
+.context/
+
+node_modules
+
+Frontend/public/*
+!Frontend/public/brand/

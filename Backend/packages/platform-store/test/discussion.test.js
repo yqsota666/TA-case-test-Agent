@@ -158,3 +158,26 @@ test('proposal completion rejects too little discussion before writing a SOP', a
   assert.ok(calls.filter(c=>c.sql.includes('FROM case_discussion_turns')).every(c=>c.values[0]===31&&c.values[1]===41&&c.values[2]===51));
   await assert.rejects(repository.beginCaseDiscussionTurn(...scope,{expectedRevision:1,userInput:'写入'}),{code:'CHAT_CLOSED'});
  });
+
+
+test('discussion exposes persisted start and completion times without inventing missing timestamps', async () => {
+  const {repository} = fixture({initialTurns:[{turn_number:1,status:'COMPLETE',turn_kind:'DISCUSS',user_text:'边界',assistant_text:reply,created_at:new Date('2026-10-07T01:00:00Z'),finished_at:new Date('2026-10-07T01:01:19Z')}]});
+  const history=await repository.readCaseDiscussion(...scope);
+  assert.equal(history.turns[0].createdAt,'2026-10-07T01:00:00.000Z');
+  assert.equal(history.turns[1].createdAt,'2026-10-07T01:01:19.000Z');
+  assert.equal(history.turns[1].durationMs,79000);
+});
+
+
+test('proposal turns expose their kind so historical proposals are not rendered as ordinary chat',async()=>{
+ const {repository}=fixture({initialTurns:[{turn_number:1,status:'COMPLETE',turn_kind:'PROPOSE_PLAN',user_text:'请整理方案',assistant_text:reply}]});
+ const history=await repository.readCaseDiscussion(...scope);
+ assert.equal(history.turns[1].kind,'PROPOSE_PLAN');
+});
+
+
+test('proposal identity retains its real turn number across abandoned attempts',async()=>{
+ const {repository}=fixture({initialTurns:[{turn_number:1,status:'ABANDONED',turn_kind:'PROPOSE_PLAN',user_text:'失败尝试'}, {turn_number:2,status:'COMPLETE',turn_kind:'PROPOSE_PLAN',user_text:'重新整理',assistant_text:reply}]});
+ const history=await repository.readCaseDiscussion(...scope);
+ assert.equal(history.turns.length,2);assert.equal(history.turns[1].sourceTurnNumber,2);
+});

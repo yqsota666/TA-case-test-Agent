@@ -1,3 +1,7 @@
+import {createProjectExchangeService} from './project-exchange.js';
+import {createAccountAuth} from './account-auth.js';
+import {localWorkspaceInitializer} from './local-workspace-profile.js';
+import {dataExchangeRequirementIssues} from '../../platform-protocol/src/data-exchange-requirements.js';
 import {createTaResetRepository} from '../../platform-store/src/ta-reset.js';
 import {createChatLifecycleRepository} from '../../platform-store/src/chat-lifecycle.js';
 import { createDurableWorkflowRepository } from '../../platform-store/src/durable-workflow.js';
@@ -43,6 +47,7 @@ const transaction = async action => {
     throw error;
   } finally { connection.release(); }
 };
+const accountAuth=createAccountAuth({transaction,initializeWorkspace:localWorkspaceInitializer(migrationConfig()),allowDemo:Boolean(localWorkspaceInitializer(migrationConfig()))});
 const taReset=createTaResetRepository({transaction});
 const chatLifecycle=createChatLifecycleRepository({transaction});
 const durableWorkflow = createDurableWorkflowRepository({pool});
@@ -71,6 +76,8 @@ const executeData = async ({ token, chatPublicId, casePublicId, versionNumber, s
     const error = new Error('须先确认对应版本的 Plan');
     error.code = 'PLAN_NOT_CONFIRMED'; error.status = 409; throw error;
   }
+  const issues=dataExchangeRequirementIssues(plan.proposal);
+  if(issues.length)throw Object.assign(new Error(issues.join('；')),{code:'DATA_EXCHANGE_REQUIRED',status:409});
   const existing = await repository.generatedData(token, chatPublicId, casePublicId);
   if (existing.status === 'VALIDATED') return { ...existing, replayed: true };
   specification ??= plan.proposal.contract?.dataSpecification ?? await deriveDataSpecification(completeData, plan.proposal);
@@ -106,8 +113,18 @@ const reviseData = async ({ token, chatPublicId, casePublicId, revision, userInp
 };
 const applicationPreparation = createApplicationPreparationService({ repository, preparations,
   exchangeRepository, confirmedSales: returnConfirmation, derive: context => deriveApplicationPreparation(completeData, context) });
+const projectExchange=createProjectExchangeService({repository,preparations,exchangeRepository,applicationPreparation,returnParsing,returnConfirmation,
+  applyAtomically:(token,jobs)=>transaction(async db=>{
+    const service=createReturnConfirmationService({repository:createReturnConfirmationRepository({transaction:action=>action(db)})});
+    const results=[];
+    for(const job of jobs)results.push({casePublicId:job.casePublicId,...await service.apply(token,job)});
+    return {businessApplied:true,projectResults:results};
+  })});
+const projectPreparation={read:projectExchange.readPreparation,prepare:projectExchange.prepare};
+const projectParsing={...returnParsing,parse:projectExchange.parse};
+const projectConfirmation={...returnConfirmation,read:projectExchange.readConfirmation,apply:projectExchange.apply};
 const confirmData = ({ token, chatPublicId, casePublicId, revision }) =>
   repository.confirmGeneratedData(token, chatPublicId, casePublicId, revision);
-const server = createCaseHttpServer({ repository, discussionService, confirmPlan,
-  executeData, reviseData, exchangeRepository, applicationPreparation, confirmData, returnParsing, returnConfirmation, holdingsReturn, taReceipts, caseResult, exchangePlanSupplement, chatLifecycle, durableWorkflow, taReset, allowedOrigin });
+const server = createCaseHttpServer({planContentComplete:complete, repository, discussionService, confirmPlan,
+  executeData, reviseData, exchangeRepository, applicationPreparation:projectPreparation, confirmData, returnParsing:projectParsing, returnConfirmation:projectConfirmation, holdingsReturn, taReceipts, caseResult, exchangePlanSupplement, chatLifecycle, durableWorkflow, taReset, accountAuth, secureCookie:process.env.NODE_ENV==='production', allowedOrigin });
 server.listen(Number(process.env.CASE_API_PORT ?? 3100), '127.0.0.1');

@@ -1,11 +1,14 @@
+import {createAccountHttpHandler} from './account-http.js';
 import { createServer } from 'node:http';
 import { DataEditSchema } from '../../case-agent/src/index.js';
+import {revisePreparedPlanContent} from './prepared-plan-content.js';
+import { revisePreparedPlanData } from './prepared-plan-data.js';
 import { parseDataFile } from '../../platform-protocol/src/index.js';
 
 const taResetPath=/^\/api\/exchange\/channels\/([1-9]\d*)\/ta-reset(?:\/(confirm))?$/i;
 const chatCollectionPath=/^\/api\/chats(?:\/([0-9a-f-]{36})\/cases)?$/i;
 const lifecyclePath=/^\/api\/chats\/([0-9a-f-]{36})\/lifecycle(?:\/(close|retest|new-run))?$/i;
-const pathPattern = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/(discussion|plan|plan\/confirm|data|data\/execute|data\/review|data\/confirm|application-preparation)$/i;
+const pathPattern = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/(discussion|discussion\/cancel|plan|plan\/data|plan\/content|plan\/confirm|data|data\/execute|data\/review|data\/confirm|application-preparation)$/i;
 const applicationPath = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/applications$/i;
 const bindingPath = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/ta-bindings$/i;
 const batchPath = /^\/api\/chats\/([0-9a-f-]{36})\/batches(?:\/([0-9a-f-]{36})\/generate)?$/i;
@@ -13,7 +16,7 @@ const filesPath = /^\/api\/chats\/([0-9a-f-]{36})\/files(?:\/([1-9]\d*))?$/i;
 const supplementPath = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/exchange-plan\/confirm$/i;
 const confirmationPath = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/return-confirmation(?:\/(delivery|apply|account))?$/i;
 const workflowPath = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/workflow(?:\/(resume))?$/i;
-const resultPath = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/result-review(?:\/(evaluate|confirm))?$/i;
+const resultPath = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/result-review(?:\/(evaluate|confirm|business-output))?$/i;
 const receiptsPath = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/ta-receipts(?:\/(parse))?$/i;
 const holdingsPath = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/holdings-return(?:\/(parse|apply))?$/i;
 const parsingPath = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/return-parsing(?:\/(02|04))?$/i;
@@ -52,12 +55,14 @@ async function jsonBody(request, limit = 256 * 1024) {
   }
 }
 
-export function createCaseHttpHandler({ repository, discussionService, confirmPlan, executeData,
-  reviseData, exchangeRepository, applicationPreparation, confirmData, returnParsing, returnConfirmation, holdingsReturn, taReceipts, caseResult, exchangePlanSupplement, chatLifecycle, durableWorkflow, taReset, allowedOrigin }) {
+export function createCaseHttpHandler({ planContentComplete, repository, discussionService, confirmPlan, executeData,
+  reviseData, exchangeRepository, applicationPreparation, confirmData, returnParsing, returnConfirmation, holdingsReturn, taReceipts, caseResult, exchangePlanSupplement, chatLifecycle, durableWorkflow, taReset, accountAuth, secureCookie, allowedOrigin }) {
   if (!repository || !discussionService || !confirmPlan || !executeData || !reviseData || !allowedOrigin) {
     throw new TypeError('API dependencies required');
   }
+  const accountHandler=createAccountHttpHandler({accountAuth,allowedOrigin,secureCookie});
   return async (request, response) => {
+    if(await accountHandler(request,response))return;
     const pathname = new URL(request.url, 'http://localhost').pathname;
     const reset=taReset && taResetPath.exec(pathname);
     const resetRoute=Boolean(reset && ((!reset[2] && request.method==='GET') || (reset[2] && request.method==='POST')));
@@ -76,7 +81,7 @@ export function createCaseHttpHandler({ repository, discussionService, confirmPl
     const workflow=durableWorkflow && workflowPath.exec(pathname);
     const workflowRoute=Boolean(workflow && ((!workflow[3] && request.method==='GET') || (workflow[3] && request.method==='POST')));
     const resultReview=caseResult && resultPath.exec(pathname);
-    const resultRoute=Boolean(resultReview && ((!resultReview[3] && request.method==='GET') || (resultReview[3] && request.method==='POST')));
+    const resultRoute=Boolean(resultReview && (((!resultReview[3] || resultReview[3]==='business-output') && request.method==='GET') || (resultReview[3] && request.method==='POST')));
     const receipts=taReceipts && receiptsPath.exec(pathname);
     const receiptsRoute=Boolean(receipts && ((!receipts[3] && request.method==='GET') || (receipts[3] && request.method==='POST')));
     const holdings = holdingsReturn && holdingsPath.exec(pathname);
@@ -97,7 +102,7 @@ export function createCaseHttpHandler({ repository, discussionService, confirmPl
         (files && request.method === 'GET')));
     if (!resetRoute && !workflowRoute && !receiptsRoute && !collectionRoute && !lifecycleRoute && !resultRoute && !holdingsRoute && !supplementRoute && !catalog && !salesRoute && !confirmationRoute && !exchangeRoute && !parsingRoute && (!match || !['GET', 'POST', 'PATCH'].includes(request.method) ||
         (request.method === 'PATCH' && match?.[3] !== 'data') ||
-        (['plan/confirm', 'data/execute', 'data/confirm'].includes(match?.[3]) && request.method !== 'POST') ||
+        (['discussion/cancel','plan/data','plan/content','plan/confirm', 'data/execute', 'data/confirm'].includes(match?.[3]) && request.method !== 'POST') ||
         (match?.[3] === 'data/review' && !['GET', 'POST'].includes(request.method)) ||
         (match?.[3] === 'data' && !['GET', 'PATCH'].includes(request.method)))) {
       send(response, 404, { error: 'NOT_FOUND' }); return;
@@ -105,6 +110,10 @@ export function createCaseHttpHandler({ repository, discussionService, confirmPl
     try {
       const token = cookieToken(request.headers.cookie);
       if (!token) { send(response, 401, { error: 'UNAUTHENTICATED' }); return; }
+      if(request.headers['x-case-account'] && accountAuth){
+        const current=await accountAuth.current(token);
+        if(current.user.id!==request.headers['x-case-account']){send(response,409,{error:'ACCOUNT_CHANGED',message:'账户已切换，请重新连接'});return;}
+      }
       if(repository.assertCaseWritable && match && request.method==='POST' && ['discussion','plan','data/execute','data/review','application-preparation'].includes(match[3])){
         await repository.assertCaseWritable(token,match[1],match[2],{discussion:['discussion','plan'].includes(match[3])});
       }
@@ -153,12 +162,13 @@ export function createCaseHttpHandler({ repository, discussionService, confirmPl
       }
       if(resultRoute){
         const scope={chatPublicId:resultReview[1],casePublicId:resultReview[2]};
-        if(request.method==='GET'){send(response,200,await caseResult.read(token,scope));return;}
+        if(request.method==='GET'){send(response,200,await caseResult[resultReview[3]==='business-output'?'readBusinessOutput':'read'](token,scope));return;}
         if(request.headers.origin!==allowedOrigin){send(response,403,{error:'INVALID_ORIGIN'});return;}
         if(!/^application\/json(?:\s*;|$)/i.test(request.headers['content-type']??'')){send(response,415,{error:'UNSUPPORTED_MEDIA_TYPE'});return;}
-        const body=await jsonBody(request,4096);const keys=resultReview[3]==='evaluate'?[]:['reviewId','verdict','reason'];
+        const businessOutput=resultReview[3]==='business-output';
+        const body=await jsonBody(request,businessOutput?256*1024:4096);const keys=businessOutput?['requestId','planVersion','sourceKind','content']:resultReview[3]==='evaluate'?[]:['reviewId','verdict','reason'];
         if(!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).length!==keys.length||!keys.every(k=>Object.hasOwn(body,k))){send(response,400,{error:'INVALID_INPUT'});return;}
-        send(response,200,await caseResult[resultReview[3]](token,{...scope,...body}));return;
+        send(response,200,await caseResult[businessOutput?'saveBusinessOutput':resultReview[3]](token,{...scope,...body}));return;
       }
       if(receiptsRoute) {
         const scope={chatPublicId:receipts[1],casePublicId:receipts[2]};
@@ -304,6 +314,16 @@ export function createCaseHttpHandler({ repository, discussionService, confirmPl
         send(response, 415, { error: 'UNSUPPORTED_MEDIA_TYPE' }); return;
       }
       const body = await jsonBody(request);
+      if (action === 'discussion/cancel') {
+        if(!body || typeof body!=='object' || Array.isArray(body) || Object.keys(body).length!==1 || !Number.isSafeInteger(body.turnNumber) || body.turnNumber<1){send(response,400,{error:'INVALID_INPUT'});return;}
+        send(response,200,await discussionService.abandon({token,chatPublicId,casePublicId,turnNumber:body.turnNumber}));return;
+      }
+      if (action === 'plan/content') {
+        send(response,200,await revisePreparedPlanContent({repository,complete:planContentComplete,token,chatPublicId,casePublicId,body}));return;
+      }
+      if (action === 'plan/data') {
+        send(response,200,await revisePreparedPlanData({repository,token,chatPublicId,casePublicId,body})); return;
+      }
       if (action === 'application-preparation') {
         if (!body || typeof body !== 'object' || Array.isArray(body) ||
           Object.keys(body).some(key => !['revision','userInput','channelId'].includes(key)) ||

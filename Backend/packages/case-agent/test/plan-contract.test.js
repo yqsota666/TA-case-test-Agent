@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {validPlanContract} from '../../platform-protocol/src/plan-contract.js';
+import {businessExpectationsFor,validPlanContract} from '../../platform-protocol/src/plan-contract.js';
 import {definePlanContract} from '../src/plan-contract.js';
 import {compareConfirmedExpectations,createCaseResultGraph} from '../src/case-result-graph.js';
 import {planContract} from './plan-contract-fixture.js';
@@ -12,9 +12,11 @@ test('strict Plan validates linked drafts, typed expectations and fixed applicat
  for(const mutate of [c=>c.expectations[0].selector.accountIndex=9,c=>c.expectations[0].source='constructor',c=>c.expectations[0].selector.businessDate='20260230',c=>c.expectations[0].field='invented',c=>c.expectations=[],c=>c.applications[0].fields.TAAccountID='invented',c=>c.dataSpecification.accounts.push({customerIndex:9,branchCode:'306'})]){
   const c=structuredClone(contract);mutate(c);assert.equal(validPlanContract(c,plan),false);
  }
- const calls=[];
- const result=await definePlanContract(async input=>{calls.push(input);if(calls.length===1)return JSON.stringify(contract.dataSpecification);const {version,protocolVersion,dataSpecification,...derived}=contract;return JSON.stringify(derived);},plan);
- assert.deepEqual(result.contract,contract);assert.equal(calls.length,2);
+ const calls=[],context=[{role:'user',content:'这些是原讨论已明确的条件'}];
+ const result=await definePlanContract(async input=>{calls.push(input);if(calls.length===1)return JSON.stringify(contract.dataSpecification);const {version,protocolVersion,dataSpecification,...derived}=contract;return JSON.stringify(derived);},plan,context);
+ assert.deepEqual(result.contract,{...contract,version:2,businessExpectations:[]});assert.equal(calls.length,2);
+ assert.deepEqual(JSON.parse(calls[0].user).plan,plan);
+ for(const call of calls){assert.deepEqual(JSON.parse(call.user).discussionContext,context);assert.ok(!call.system.includes(context[0].content));}
  await assert.rejects(definePlanContract(async()=>'{invalid',plan),{code:'DATA_SPEC_INVALID'});
 });
 test('confirmed typed expectations match the exact account/round; ambiguity, missing and wrong outcomes never pass',async()=>{
@@ -146,4 +148,52 @@ test('independent 05 preparation prompt keeps existing formal identity and final
  assert.equal(requests.length,2);
  assert.match(requests[0].system,/三个数组必须保持为空/);assert.match(requests[0].system,/不得倒填为初始模拟/);assert.match(requests[0].system,/不因为草稿schema没有availableVolume\/frozenVolume而列missing/);
  assert.deepEqual(result.contract.dataSpecification,data);assert.equal(result.contract.applications.length,0);assert.equal(result.contract.expectations.length,3);assert.deepEqual(result.contract.missing,[]);
+});
+
+
+test('contract graph repairs a malformed evidence binding once while retaining strict validation',async()=>{
+ const invalid=structuredClone(contract);invalid.expectations[0].selector.fileType='04';
+ const calls=[];
+ const result=await definePlanContract(async input=>{
+  calls.push(input);
+  if(calls.length===1)return JSON.stringify(contract.dataSpecification);
+  const {version,protocolVersion,dataSpecification,...derived}=calls.length===2?invalid:contract;
+  return JSON.stringify(derived);
+ },plan);
+ assert.deepEqual(result.contract,{...contract,version:2,businessExpectations:[]});assert.equal(calls.length,3);
+ assert.deepEqual(JSON.parse(calls[2].user).previous.expectations[0].selector.fileType,'04');
+ assert.ok(JSON.parse(calls[2].user).validationIssues.length);
+});
+
+
+test('typed TA parse-result wording binds status while questions and negations cannot pass',()=>{
+ const p={...plan,scenarios:[{expected:'04解析结果为CONFIRMED（成功确认）'}]};
+ const c=planContract(p);c.expectations[0].expectedQuote=p.scenarios[0].expected;
+ assert.equal(validPlanContract(c,p),true);
+ for(const expected of ['04解析结果不为CONFIRMED','04解析结果为CONFIRMED吗？','04解析结果为CONFIRMED或FAILED']){
+  const altered={...p,scenarios:[{expected}]};const candidate=structuredClone(c);candidate.expectations[0].expectedQuote=expected;
+  assert.equal(validPlanContract(candidate,altered),false);
+ }
+});
+
+
+test('opening contract uses the 01 protocol field set instead of transaction-only fields',()=>{
+ const opening={...plan,exchangePlan:{status:'READY',openQuestions:[],steps:[{...exchangePlan.steps[0],fileType:'01'}]}};
+ const c=planContract(opening);c.dataSpecification.accounts=[{customerIndex:0,branchCode:'306'}];
+ c.applications[0].accountIndex=0;c.applications[0].transactionAccountId=null;
+ Object.assign(c.expectations[0].selector,{accountIndex:0,transactionAccountId:null,fileType:'01'});
+ assert.equal(validPlanContract(c,opening),true);
+ c.applications[0].fields.CurrencyType='156';assert.equal(validPlanContract(c,opening),false);
+ delete c.applications[0].fields.CurrencyType;c.applications[0].fields.ChargeType='0';assert.equal(validPlanContract(c,opening),false);
+});
+
+
+test('broad protocol evidence quotes never erase independent business expectations',()=>{
+ const quote='确认金额100元；触发外部计算，费用归投资人';
+ const p={scenarios:[{expected:quote}]};
+ const assertions=[{scenarioIndex:0,expectedQuote:quote,field:'confirmedAmount',operator:'eq',expectedValue:'100.00'}];
+ assert.deepEqual(businessExpectationsFor(p,assertions),[{scenarioIndex:0,expectedQuote:quote}]);
+ assertions[0].expectedQuote='确认金额100元';
+ assert.deepEqual(businessExpectationsFor(p,assertions),[{scenarioIndex:0,expectedQuote:quote}]);
+ assert.deepEqual(businessExpectationsFor({scenarios:[{expected:'确认金额100元'}]},assertions),[]);
 });

@@ -52,7 +52,7 @@ export function hasNumericFieldExpectation(field, value, quote, operator) {
   return expected !== null && numericQuoteBindings(quote).some(binding => binding.field === field && preciseDecimal(binding.value) === expected && (operator === undefined || binding.operator === operator));
 }
 const literalLabels = {
-  status: ['最终状态', '申请状态', '确认状态', '状态', '确认成功', 'status'],
+  status: ['解析结果', 'TA业务结果', '最终状态', '申请状态', '确认状态', '状态', '确认成功', 'status'],
   returnCode: ['TA返回代码', '返回代码', '返回码', '结果代码', '结果码', '错误代码', '错误码', 'returnCode'],
   transactionAccountId: ['交易账户号', '交易账号', '交易账户', '销售账号', 'transactionAccountId'],
   taAccountId: ['TA账户号', 'TA账号', 'TA账户', 'TA号', 'taAccountId'],
@@ -63,19 +63,23 @@ const literalLabels = {
 };
 const literalAliases = Object.entries(literalLabels).flatMap(([field, names]) => names.map(name => ({ field, name })));
 const literalMarker = new RegExp(literalAliases.map(({ name }) => name).sort((a, b) => b.length - a.length).join('|'), 'gi');
-export function hasLiteralExpectation(value, quote, field) {
-  if (typeof value !== 'string' || !value.length || !Object.hasOwn(literalLabels, field)) return false;
+export function literalExpectationSpans(value, quote, field) {
+  if (typeof value !== 'string' || !value.length || !Object.hasOwn(literalLabels, field)) return [];
   const escaped = value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const positive = new RegExp(`^(?:\\s|[=:：,，]|均为|应为|应该为|应当为|为|是|等于)*${escaped}(?![A-Za-z0-9_.+-])`);
   const matches = [...String(quote).matchAll(literalMarker)];
-  return matches.some((match, i) => {
+  return matches.flatMap((match, i) => {
     const alias = literalAliases.find(alias => alias.name.toLowerCase() === match[0].toLowerCase());
-    if (alias.name === '确认成功' && value !== 'CONFIRMED') return false;
-    if (alias.field !== field || negatedPrefix(fieldPrefix(quote, match.index)) || /是否/.test(fieldPrefix(quote, match.index))) return false;
+    if (alias.name === '确认成功' && value !== 'CONFIRMED') return [];
+    if (alias.field !== field || negatedPrefix(fieldPrefix(quote, match.index)) || /是否/.test(fieldPrefix(quote, match.index))) return [];
     const segment = quote.slice(match.index + match[0].length, matches[i + 1]?.index);
     const matched=positive.exec(segment);
-    if(!matched)return false;
+    if(!matched)return [];
     const tail=segment.slice(matched[0].length).split(/[，,。；;\n]/)[0];
-    return !uncertainTail(tail);
+    return uncertainTail(tail)?[]:[{start:match.index,end:match.index+match[0].length+matched[0].length}];
   });
+}
+
+export function hasLiteralExpectation(value, quote, field) {
+ return literalExpectationSpans(value,quote,field).length>0;
 }

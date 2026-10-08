@@ -1,3 +1,4 @@
+import {dataExchangeRequirementIssues} from '../../platform-protocol/src/data-exchange-requirements.js';
 import {readPredecessorContext} from './predecessor-context.js';
 import { isDeepStrictEqual } from 'node:util';
 import { validPlanContract } from '../../platform-protocol/src/plan-contract.js';
@@ -146,7 +147,7 @@ export function createCaseRepository({ transaction }) {
     });
   }
 
-  async function saveSopProposal(token, chatPublicId, casePublicId, proposal) {
+  async function saveSopProposal(token, chatPublicId, casePublicId, proposal, options = {}) {
     chatPublicId = requiredUuid(chatPublicId, 'Chat');
     casePublicId = requiredUuid(casePublicId, 'Case');
     if (!validSopPlan(proposal)) {
@@ -176,10 +177,11 @@ export function createCaseRepository({ transaction }) {
       if (latestTurn?.status === 'PENDING') {
         throw storeError('DISCUSSION_IN_PROGRESS', 409, '请先完成当前讨论');
       }
-      const [[latest]] = await db.execute(`SELECT id,version_number,status FROM case_sop_versions
+      const [[latest]] = await db.execute(`SELECT id,version_number,status,source_turn_number FROM case_sop_versions
         WHERE workspace_id=? AND chat_id=? AND case_id=?
         ORDER BY version_number DESC LIMIT 1 FOR UPDATE`,
       [auth.workspace_id, chat.id, caseRow.id]);
+      if (options.expectedVersion !== undefined && (Number(latest?.version_number) !== options.expectedVersion || latest?.status !== 'PENDING_CONFIRMATION')) throw storeError('STALE_PLAN',409,'方案已更新或锁定，请刷新后再修改');
       if (latest?.status === 'LOCKED') throw storeError('SOP_LOCKED', 409, 'SOP 已锁定');
       if (latest?.status === 'PENDING_CONFIRMATION') {
         await db.execute(`UPDATE case_sop_versions SET status='DRAFT'
@@ -188,9 +190,9 @@ export function createCaseRepository({ transaction }) {
       }
       const versionNumber = (latest?.version_number ?? 0) + 1;
       await db.execute(`INSERT INTO case_sop_versions
-        (workspace_id,chat_id,case_id,version_number,plan_json,status)
-        VALUES (?,?,?,?,?,'PENDING_CONFIRMATION')`,
-      [auth.workspace_id, chat.id, caseRow.id, versionNumber, planJson]);
+        (workspace_id,chat_id,case_id,version_number,plan_json,status,source_turn_number)
+        VALUES (?,?,?,?,?,'PENDING_CONFIRMATION',?)`,
+      [auth.workspace_id, chat.id, caseRow.id, versionNumber, planJson, options.expectedVersion !== undefined ? latest.source_turn_number : null]);
       if (caseRow.status === 'DISCUSSING') {
         await db.execute(`UPDATE cases SET status='SOP_PENDING'
           WHERE workspace_id=? AND chat_id=? AND id=?`,
@@ -260,7 +262,7 @@ export function createCaseRepository({ transaction }) {
       if (!validSopPlan(plan)) {
         throw storeError('INVALID_PLAN', 409, '已保存的 Plan 结构无效，请重新生成');
       }
-      if (!plan.exchangePlan || plan.exchangePlan.status !== 'READY') {
+      if (!plan.exchangePlan || !['READY','NOT_REQUIRED'].includes(plan.exchangePlan.status)) {
         throw storeError('EXCHANGE_PLAN_REQUIRED',409,'请先讨论文件的轮次、业务时间和顺序，再确认 Plan');
       }
       if (plan.openQuestions.length) {
@@ -269,11 +271,16 @@ export function createCaseRepository({ transaction }) {
       if (!plan.contract || !validPlanContract(plan.contract,plan)) {
         throw storeError('PLAN_CONTRACT_REQUIRED',409,'请重新生成带准备数据和结构化预期的Plan');
       }
+      const exchangeIssues=dataExchangeRequirementIssues(plan);
+      if(exchangeIssues.length)throw storeError('DATA_EXCHANGE_REQUIRED',409,exchangeIssues.join('；'));
       if (![ 'DATA','EXPECTATIONS' ].includes(section)) {
         throw storeError('PLAN_SECTION_REQUIRED',400,'请明确确认准备数据或预期结果');
       }
       if (plan.contract.dataSpecification.missing.length || (section==='EXPECTATIONS' && plan.contract.missing.length)) {
         throw storeError('PLAN_HAS_OPEN_QUESTIONS',409,'准备数据或预期还有待澄清事项');
+      }
+      if (section==='EXPECTATIONS' && plan.exchangePlan.status==='NOT_REQUIRED' && plan.contract.version===1) {
+        throw storeError('NO_EXCHANGE_WORKFLOW_UNSUPPORTED',409,'当前流程尚未支持无需文件交换的结果核对；准备数据可审阅，方案暂不能锁定');
       }
       const keys=[auth.workspace_id,chat.id,caseRow.id,versionNumber];
       const [confirmed] = await db.execute(`SELECT section FROM case_plan_section_confirmations
@@ -311,7 +318,7 @@ export function createCaseRepository({ transaction }) {
         WHERE workspace_id=? AND chat_id=? AND public_id=?`,
       [auth.workspace_id, chat.id, casePublicId]);
       if (!caseRow) throw storeError('CASE_NOT_FOUND', 404, 'Case 不存在');
-      const [rows] = await db.execute(`SELECT turn_number,user_text,assistant_text,status,turn_kind
+      const [rows] = await db.execute(`SELECT turn_number,user_text,assistant_text,status,turn_kind,created_at,finished_at
         FROM case_discussion_turns WHERE workspace_id=? AND chat_id=? AND case_id=?
         ORDER BY turn_number`, [auth.workspace_id, chat.id, caseRow.id]);
       const turns = [];
@@ -321,8 +328,16 @@ export function createCaseRepository({ transaction }) {
           throw storeError('CORRUPT_HISTORY', 500, 'Case 讨论记录不连续');
         }
         if (row.status === 'COMPLETE') {
-          turns.push({ role: 'user', content: row.user_text },
-            { role: 'assistant', content: row.assistant_text });
+          const started = row.created_at ? new Date(row.created_at) : null;
+          const finished = row.finished_at ? new Date(row.finished_at) : null;
+          const hasStart = started && Number.isFinite(started.getTime());
+          const hasFinish = finished && Number.isFinite(finished.getTime());
+          turns.push({ role: 'user', content: row.user_text,
+              ...(hasStart ? {createdAt:started.toISOString()} : {}) },
+            { role: 'assistant', content: row.assistant_text,
+              ...(row.turn_kind === 'PROPOSE_PLAN' ? {kind:'PROPOSE_PLAN',sourceTurnNumber:Number(row.turn_number)} : {}),
+              ...(hasFinish ? {createdAt:finished.toISOString()} : {}),
+              ...(hasStart && hasFinish && finished >= started ? {durationMs:finished-started} : {}) });
         } else if (row.status === 'PENDING' && index === rows.length - 1) {
           pending = { turnNumber: Number(row.turn_number), userInput: row.user_text, kind: row.turn_kind };
         } else if (row.status !== 'ABANDONED') {

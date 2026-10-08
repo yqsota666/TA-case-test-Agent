@@ -17,6 +17,34 @@ export function createCaseResultRepository({transaction}){
   if(!owner)throw storeError('CASE_NOT_FOUND',404,'Case不存在');
   return {auth,owner,keys:[auth.workspace_id,owner.chat_id,owner.case_id]};
  }
+ async function businessOutput(db,keys,planVersion,write=false){
+  const [[row]]=await db.execute(`SELECT CAST(id AS CHAR) AS id,plan_version AS planVersion,source_kind AS sourceKind,content_text AS content,content_sha256 AS sha256,created_at AS createdAt
+   FROM case_business_outputs WHERE workspace_id=? AND chat_id=? AND case_id=? AND plan_version=? ORDER BY id DESC LIMIT 1${write?' FOR UPDATE':''}`,[...keys,planVersion]);
+  return row??null;
+ }
+ async function readBusinessOutput(token,input){return transaction(async db=>{
+  const {keys}=await context(db,token,input);
+  const [[plan]]=await db.execute(`SELECT version_number FROM case_sop_versions WHERE workspace_id=? AND chat_id=? AND case_id=? AND status='LOCKED' ORDER BY version_number DESC LIMIT 1`,keys);
+  return {businessOutput:plan?await businessOutput(db,keys,plan.version_number):null};
+ });}
+ async function saveBusinessOutput(token,input){
+  if(!uuid.test(input.requestId??'') || !Number.isSafeInteger(input.planVersion) || input.planVersion<1 || !['USER_RESULT','SYNTHETIC_TEST'].includes(input.sourceKind) || typeof input.content!=='string' || !input.content.trim() || input.content.length>32000)
+   throw storeError('INVALID_INPUT',400,'请提供实际业务输出，并注明来源');
+  return transaction(async db=>{
+   const {auth,owner,keys}=await context(db,token,input,true);
+   if(owner.chat_status!=='ACTIVE'||['PASS','FAIL'].includes(owner.case_status))throw storeError('CASE_NOT_WRITABLE',409,'Chat或Case已结束');
+   const [[plan]]=await db.execute(`SELECT version_number FROM case_sop_versions WHERE workspace_id=? AND chat_id=? AND case_id=? AND status='LOCKED' ORDER BY version_number DESC LIMIT 1 FOR UPDATE`,keys);
+   if(!plan || Number(plan.version_number)!==input.planVersion)throw storeError('PLAN_NOT_CONFIRMED',409,'请使用当前已确认方案补充实际结果');
+   const hash=crypto.createHash('sha256').update(input.content,'utf8').digest('hex');
+   const [[prior]]=await db.execute(`SELECT CAST(id AS CHAR) AS id,plan_version AS planVersion,source_kind AS sourceKind,content_text AS content,content_sha256 AS sha256,created_at AS createdAt FROM case_business_outputs WHERE workspace_id=? AND chat_id=? AND case_id=? AND request_id=? FOR UPDATE`,[...keys,input.requestId.toLowerCase()]);
+   if(prior){
+    if(Number(prior.planVersion)!==input.planVersion || prior.sourceKind!==input.sourceKind || prior.sha256!==hash || prior.content!==input.content)throw storeError('BUSINESS_OUTPUT_CONFLICT',409,'同一次提交内容已改变，请重新提交');
+    return {businessOutput:prior,duplicate:true};
+   }
+   const [saved]=await db.execute(`INSERT INTO case_business_outputs(workspace_id,chat_id,case_id,plan_version,request_id,source_kind,content_text,content_sha256,actor_user_id) VALUES (?,?,?,?,?,?,?,?,?)`,[...keys,input.planVersion,input.requestId.toLowerCase(),input.sourceKind,input.content,hash,auth.user_id]);
+   return {businessOutput:await businessOutput(db,keys,input.planVersion),duplicate:false};
+  });
+ }
  async function collect(db,keys,write=false){
   const lock=write?' FOR UPDATE':'';
   const [[planRow]]=await db.execute(`SELECT version_number,plan_json FROM case_sop_versions WHERE workspace_id=? AND chat_id=? AND case_id=? AND status='LOCKED' ORDER BY version_number DESC LIMIT 1${lock}`,keys);
@@ -86,7 +114,7 @@ export function createCaseResultRepository({transaction}){
      if(!accepted.length || accepted.some(e=>!parses.find(p=>p.id===e.holdingsParseId)?.applied_json))pending.push(`步骤${s.stepId}的05尚未确认同步`);
     }
    }
-  }catch(e){if(e.code!=='EXCHANGE_PLAN_REQUIRED')throw e;issues.push('Plan尚无已确认文件时序');}
+  }catch(e){if(e.code!=='EXCHANGE_PLAN_REQUIRED')throw e;if(plan.exchangePlan?.status!=='NOT_REQUIRED')issues.push('Plan尚无已确认文件时序');}
   const [returnSources]=await db.execute(`SELECT CAST(parse_id AS CHAR) AS parseId,file_name AS fileName,content_sha256 AS expectedHash,SHA2(raw_bytes,256) AS actualHash FROM case_return_parse_files WHERE workspace_id=? AND chat_id=? AND case_id=? ORDER BY parse_id,file_name LIMIT 2001${lock}`,keys);
   const [holdingSources]=await db.execute(`SELECT CAST(parse_id AS CHAR) AS parseId,file_name AS fileName,content_sha256 AS expectedHash,SHA2(raw_bytes,256) AS actualHash FROM case_holdings_return_files WHERE workspace_id=? AND chat_id=? AND case_id=? ORDER BY parse_id,file_name LIMIT 2001${lock}`,keys);
   if([...returnSources,...holdingSources].some(s=>s.expectedHash!==s.actualHash))issues.push('原始TA文件摘要不一致，需要人工核查');
@@ -100,7 +128,9 @@ export function createCaseResultRepository({transaction}){
   if(incomplete(returnPackages,returnSources) || incomplete(parses,holdingSources))issues.push('原始TA文件包缺失或摘要不一致，需要补齐完整原文件');
   if(returnSources.length>2000 || holdingSources.length>2000)issues.push('原始证据文件超过处理上限');
   for(const blocker of blockers)evidence.push({id:'dependency-failure:'+blocker.applicationId+':'+blocker.failedStepId,source:{kind:'TA_DEPENDENCY_FAILURE',...blocker},values:{status:'FAILED'}});
-  const snapshot={...(terminalFailuresTruncated?{terminalFailuresTruncated:true}:{}),...(unresolvedFailures.length?{unresolvedFailures}:{}),...(blockers.length?{blockers}:{}),...(preparedAccounts?{preparedAccounts}:{}),sources:{returns:returnSources,holdings:holdingSources},planVersion:planRow.version_number,plan,evidence,pending:[...new Set(pending)],issues};
+  const latestBusinessOutput=await businessOutput(db,keys,planRow.version_number,write);
+  if(latestBusinessOutput && crypto.createHash('sha256').update(latestBusinessOutput.content,'utf8').digest('hex')!==latestBusinessOutput.sha256)issues.push('实际业务输出摘要不一致，请重新提交');
+  const snapshot={businessOutput:latestBusinessOutput,...(terminalFailuresTruncated?{terminalFailuresTruncated:true}:{}),...(unresolvedFailures.length?{unresolvedFailures}:{}),...(blockers.length?{blockers}:{}),...(preparedAccounts?{preparedAccounts}:{}),sources:{returns:returnSources,holdings:holdingSources},planVersion:planRow.version_number,plan,evidence,pending:[...new Set(pending)],issues};
   return {...snapshot,sha256:digest(snapshot)};
  }
  async function snapshot(token,input){return transaction(async db=>{const {keys,owner}=await context(db,token,input);if(owner.chat_status!=='ACTIVE'||['PASS','FAIL'].includes(owner.case_status))throw storeError('CASE_NOT_WRITABLE',409,'Chat或Case已结束');return collect(db,keys);});}
@@ -140,5 +170,5 @@ export function createCaseResultRepository({transaction}){
    return {finalVerdict:input.verdict,duplicate:false};
   });
  }
- return Object.freeze({snapshot,save,read,confirm});
+ return Object.freeze({snapshot,save,read,confirm,readBusinessOutput,saveBusinessOutput});
 }
