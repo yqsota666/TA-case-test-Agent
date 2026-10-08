@@ -4,7 +4,7 @@ import { boundPreparationHistory } from '../../platform-store/src/application-pr
 
 export function createApplicationPreparationService({ repository, preparations, exchangeRepository, derive, confirmedSales }) {
   const error = (code, message) => Object.assign(new Error(message), { code, status: 409 });
-  async function prepare({ token, chatPublicId, casePublicId, revision, userInput = '', channelId }) {
+  async function prepare({ token, chatPublicId, casePublicId, revision, userInput = '', channelId, deferBatching = false }) {
     const scope = { chatPublicId, casePublicId };
     const [previous, draftData, plan, channelResult, bindingResult] = await Promise.all([
       preparations.read(token, scope), repository.generatedData(token, chatPublicId, casePublicId),
@@ -36,7 +36,7 @@ export function createApplicationPreparationService({ repository, preparations, 
       throw error('APPLICATION_ALREADY_STAGED', '已有申请进入原通道，不能切换通道');
     }
     userInput = [previous.pendingUserInput, userInput].filter(Boolean).join('\n');
-    const recovering = ['PREPARING', 'WAITING_OPERATION', 'WAITING_TA'].includes(previous.phase) && previous.intents.length && !userInput;
+    const recovering = (deferBatching || ['PREPARING', 'WAITING_OPERATION', 'WAITING_TA'].includes(previous.phase)) && previous.intents.length && !userInput;
     const history = boundPreparationHistory(previous);
     if(plan.proposal.contract && data!==draftData){
       data={...data,customers:[...draftData.customers,...data.customers],accounts:[...draftData.accounts.filter(a=>!data.accounts.some(r=>r.account_no===a.account_no)),...data.accounts]};
@@ -97,7 +97,7 @@ export function createApplicationPreparationService({ repository, preparations, 
       const batches = new Set(applications.filter(item => ours.has(item.applicationNumber) &&
         item.status === 'BATCHED').map(item => item.batchPublicId));
       const dates = new Set(compiled.records.map(item => item.businessDate));
-      for (const date of dates) {
+      for (const date of deferBatching ? [] : dates) {
         const ready = applications.filter(item => ours.has(item.applicationNumber) && item.status === 'READY' &&
           item.channelId === channelId && item.businessDate.replaceAll('-','') === date);
         if (!ready.length) continue;
@@ -110,7 +110,7 @@ export function createApplicationPreparationService({ repository, preparations, 
           waitingChat = true;
         }
       }
-      for (const batchPublicId of batches) {
+      for (const batchPublicId of deferBatching ? [] : batches) {
         await exchangeRepository.generateOutboundFiles(token, { chatPublicId, batchPublicId });
       }
     } catch (cause) {
@@ -128,7 +128,7 @@ export function createApplicationPreparationService({ repository, preparations, 
       .filter(item => ourBatches.has(item.batchPublicId));
     const questions = [...new Set([...suggestion.questions, ...compiled.questions])];
     const phase = questions.length ? 'NEEDS_INPUT' : waitingChat ? 'WAITING_CHAT' :
-      compiled.waiting.length ? 'WAITING_TA' : suggestion.intents.length ? 'GENERATED' : 'NO_APPLICATION';
+      compiled.waiting.length ? 'WAITING_TA' : deferBatching ? 'STAGED' : suggestion.intents.length ? 'GENERATED' : 'NO_APPLICATION';
     return preparations.save(token, { ...scope, revision: state.revision, state: { ...state,
       phase, files, questions, reply: phase === 'WAITING_TA' ?
         '已准备当前可生成的申请。03 申请还在等待对应账户的成功 02 回传；收到后可继续生成。' :
