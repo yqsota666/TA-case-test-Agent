@@ -1,3 +1,5 @@
+import {createGlobalDataCatalog} from '../../platform-store/src/global-data-catalog.js';
+import {createGlobalFileCatalog} from '../../platform-store/src/global-file-catalog.js';
 import {createAccountAuth} from './account-auth.js';
 import {localWorkspaceInitializer} from './local-workspace-profile.js';
 import {dataExchangeRequirementIssues} from '../../platform-protocol/src/data-exchange-requirements.js';
@@ -114,6 +116,6 @@ const applicationPreparation = createApplicationPreparationService({ repository,
   exchangeRepository, confirmedSales: returnConfirmation, derive: context => deriveApplicationPreparation(completeData, context) });
 const confirmData = ({ token, chatPublicId, casePublicId, revision }) =>
   repository.confirmGeneratedData(token, chatPublicId, casePublicId, revision);
-const server = createCaseHttpServer({planContentComplete:complete, repository, discussionService, confirmPlan,
+const server = createCaseHttpServer({globalDataCatalog:createGlobalDataCatalog({transaction}),globalFileCatalog:createGlobalFileCatalog({transaction}),planContentComplete:complete, repository, discussionService, confirmPlan,
   executeData, reviseData, exchangeRepository, applicationPreparation, confirmData, returnParsing, returnConfirmation, holdingsReturn, taReceipts, caseResult, exchangePlanSupplement, chatLifecycle, durableWorkflow, taReset, accountAuth, secureCookie:process.env.NODE_ENV==='production', allowedOrigin });
 server.listen(Number(process.env.CASE_API_PORT ?? 3100), '127.0.0.1');
