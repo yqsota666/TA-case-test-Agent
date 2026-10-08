@@ -45,7 +45,8 @@ export function FileExchangePanel({chatId,caseId,plan,draft,workflow,readOnly,on
     });
   };
   const eligible=plan?.status==='LOCKED'&&draft?.reviewStatus==='CONFIRMED'&&!readOnly;
-  const files=data?.preparation.files??[],steps=data?.returns.steps??[];
+  const files=[...(data?.preparation.files??[])],steps=data?.returns.steps??[];
+  if(plan?.proposal?.contract?.version===4)files.sort((a,b)=>a.fileName.localeCompare(b.fileName));
   const canGenerate=eligible&&(!files.length||workflow?.waiting?.some(action=>action?.action==='GENERATE_AND_DELIVER'));
   const ready=Boolean(data);
   const holdingsSteps=plannedHoldingsSteps(plan);
@@ -57,6 +58,7 @@ export function FileExchangePanel({chatId,caseId,plan,draft,workflow,readOnly,on
       {data?.preparation.phase==='WAITING_CHAT'&&<p role="status" className="cw-exchange-muted">等待项目中的其他 Case 确认数据后，统一生成申请文件。</p>}
       {ready&&data.preparation.questions?.length>0&&data.channels.length>0&&<p role="alert" className="cw-exchange-error">{data.preparation.questions.join('；')}</p>}
       {!files.length&&<p className="cw-exchange-muted">{eligible?'尚未生成申请文件。':'确认方案与草稿后，可生成申请文件。'}</p>}
+      {[...new Set(files.map(file=>file.batchPublicId))].map(batchId=><a key={batchId} className="cw-exchange-button" href={`/live-api${chatPath}/files/package/${batchId}`} download aria-label="下载申请包 ZIP"><Download size={15}/>下载申请包 ZIP（含索引）</a>)}
       {files.map(file=><div className="cw-exchange-file" key={file.id}>
         <FileText size={20}/><div><button type="button" className="cw-exchange-name" onClick={()=>setPreview(preview===file.fileName?null:file.fileName)}>{file.fileName}<ChevronRight size={14}/></button><small>{stamp(file.createdAt)}</small></div>
         <a className="cw-exchange-button" href={`/live-api${chatPath}/files/${file.id}`} download={file.fileName} aria-label={`下载 ${file.fileName}`}><Download size={15}/>下载</a>
