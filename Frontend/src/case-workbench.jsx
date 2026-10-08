@@ -302,7 +302,7 @@ export function CaseWorkbench({accountControl}) {
     <a className="cw-skip" href="#cw-main">跳到对话</a>
     <aside id="cw-sidebar" className="cw-sidebar">{sidebar}{sidebarResize.separator}</aside>
     <CaseAssistant key={draftKey} messages={messages} draft={draft} loading={loading} running={running || !!state.pending}
-      disabled={loading || running || !!state.pending || ((completed || projectReadOnly) && !newConversation)} onSend={text=>submitFirstNode(text,images.length?'DISCUSS':undefined,images)}>
+      disabled={inputDisabled || readingImages} onSend={text=>submitFirstNode(text,images.length?'DISCUSS':undefined,images)}>
     <Thread id="cw-main" className="cw-main" tabIndex={-1}>
       <header className={`cw-header ${page!=='chat'?'is-catalog':''}`}>
         <button className="cw-icon cw-menu" aria-label="打开侧边栏" onClick={() => setModal({type: 'navigation'})}><Menu size={21}/></button>
