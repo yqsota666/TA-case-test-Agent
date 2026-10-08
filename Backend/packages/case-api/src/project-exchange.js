@@ -93,7 +93,9 @@ export function createProjectExchangeService({repository,preparations,exchangeRe
     for(const batchPublicId of batches)await exchangeRepository.generateOutboundFiles(input.token,{chatPublicId:input.chatPublicId,batchPublicId});
     for(const state of states) {
       const current=await readPreparation(input.token,state);
-      await preparations.save(input.token,{...state,revision:current.revision,state:{...current,phase:current.waiting?.length?'WAITING_TA':current.files.length?'GENERATED':'WAITING_CHAT',reply:current.waiting?.length?'申请已统一生成，接收对应回传后继续。':current.files.length?'申请已统一生成，可以下载。':'等待同组 Case 准备完成后统一生成。'}});
+      const reply=current.tasks?.some(t=>t.state==='BLOCKED')?'部分操作的前序结果不满足条件，请查看任务单并核对实际回传。':current.waiting?.length?
+        (current.files.length?'当前满足条件的申请已生成。后续操作在对应回传明确同步后继续。':'后续操作仍在等待前序回传明确同步，请查看任务单。'):current.files.length?'申请已统一生成，可以下载。':'等待同组 Case 准备完成后统一生成。';
+      await preparations.save(input.token,{...state,revision:current.revision,state:{...current,phase:current.waiting?.length?'WAITING_TA':current.files.length?'GENERATED':'WAITING_CHAT',reply}});
     }
     return readPreparation(input.token,input);
   }

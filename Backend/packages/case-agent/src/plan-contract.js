@@ -15,7 +15,7 @@ const businessReviewPrompt=`你整理无需TA文件交换的测试方案。所�
 原Plan.scenarios.expected由系统逐字保存为独立业务预期，供用户编辑和确认，之后由AI与用户结合实际信息核对。业务计算、字段变化、日志或外部观察不是TA协议字段；不能因后端没有这些字段而列missing，不能虚构对应的协议证据，不宣称已执行或通过。历史对话中的“标为后端待接入”不改变当前的职责。
 只输出JSON对象，恰好包含assumptions、applications、expectations、missing。assumptions为已明确假设的字符串数组。没有SEND步骤，applications必须为空数组。expectations只提取用户明确要求直接核对的现有正式账户或正式持仓协议字段；如果没有此类协议预期，该数组为空。用户的其他预期已经由独立业务结构保存，不算遗漏。missing只列实际缺失的协议绑定信息；没有协议预期时missing必须为空数组。业务规则真正缺失应由Plan.openQuestions保留并继续讨论，不把审阅本身作为缺失事项。
 需要直接核对协议字段时按以下格式：{scenarioIndex:场景索引,expectedQuote:预期原文片段,source:FORMAL_ACCOUNT或CURRENT_FORMAL_HOLDING,selector:{accountIndex:准备账户索引或null,transactionAccountId:已明确正式账号或null,channelId:已明确通道或null,fundCode:基金代码或null,shareClass:类别或null,fileType:null,businessDate:null},field:核对字段,operator:eq或gte或lte,expectedValue:原文字面值}。FORMAL_ACCOUNT允许transactionAccountId,taAccountId,branchCode；CURRENT_FORMAL_HOLDING允许totalVolume,availableVolume,frozenVolume,snapshotDate。账户索引和正式账号必须且只能填一个。未明确值不猜测，不从实际数据倒填预期。`;
-const operationPrompt = `本轮输出通用账户业务操作链。以下规则覆盖前文只允许001/022的限制。根据supportedBusinesses目录拆出用户要求的每一笔操作，不把所有03动作写成申购。严格JSON层级：applicationKey只在expectations[].selector内，禁止放在expectations[]外层。每个selector必须恰好有applicationKey、accountIndex、transactionAccountId、channelId、fundCode、shareClass、fileType、businessDate这八个字段。每笔新账户后续操作包括多轮交易必须直接列出本账户开户CONFIRMED依赖，即使已有前序交易依赖仍不能省略。applications每项增加dependsOn:[{applicationKey:前序申请key,condition:CONFIRMED或FAILED或SENT}]，无依赖为空数组。新账户除开户外的操作必须依赖本账户开户CONFIRMED；后续交易根据Case条件依赖相应前序交易，不能仅以账户已开户代替。不要添加用户未要求的交易依赖。不同账户可独立推进。申请顺序按依赖，不靠数组排序。同一发送步骤的申请不能互相依赖，需要不同轮次。业务字段按目录填写，赎回使用ApplicationVol而不是ApplicationAmount。不编造当前尚未发生的申请号、TA流水或正式结果。每项expectations.selector增加applicationKey：申请结果必须精确引用相应申请key，正式账户和持仓填null，避免同日多笔结果混淆。预期来自原Plan，不推测用户未要求的成功或失败。`;
+const operationPrompt = `本轮输出通用账户业务操作链。以下规则覆盖前文只允许001/022的限制。根据supportedBusinesses目录拆出用户要求的每一笔操作，不把所有03动作写成申购。用户已明确允许合成客户及证件时，你负责生成不同的明显合成ASCII证件号（SYN前缀），填写CertificateNo，使用短合成值而非按字段最大长度补零，编码器负责补位；不要求用户提供真实证件或系统生成的值；协议只校验字段格式，除非Case明确要求证件真实性业务核验，不新增身份证真实性规则。 严格JSON层级：applicationKey只在expectations[].selector内，禁止放在expectations[]外层。每个selector必须恰好有applicationKey、accountIndex、transactionAccountId、channelId、fundCode、shareClass、fileType、businessDate这八个字段。每笔新账户后续操作包括多轮交易必须直接列出本账户开户CONFIRMED依赖，即使已有前序交易依赖仍不能省略。applications每项增加dependsOn:[{applicationKey:前序申请key,condition:CONFIRMED或FAILED或SENT}]，无依赖为空数组。新账户除开户外的操作必须依赖本账户开户CONFIRMED；后续交易根据Case条件依赖相应前序交易，不能仅以账户已开户代替。不要添加用户未要求的交易依赖。不同账户可独立推进。申请顺序按依赖，不靠数组排序。同一发送步骤的申请不能互相依赖，需要不同轮次。业务字段按目录填写，赎回使用ApplicationVol而不是ApplicationAmount。不编造当前尚未发生的申请号、TA流水或正式结果。每项expectations.selector增加applicationKey：申请结果必须精确引用相应申请key，正式账户和持仓填null，避免同日多笔结果混淆。预期来自原Plan，不推测用户未要求的成功或失败。`;
 export function createPlanContractGraph({ complete, discussionContext=[], preparedData=null }) {
   const graph = new StateGraph(new StateSchema({ plan:z.unknown(), dataSpecification:z.unknown().nullable().default(null), contract:z.unknown().nullable().default(null) }));
   graph.addNode('define_plan_data', async ({plan}) => {
@@ -33,7 +33,12 @@ export function createPlanContractGraph({ complete, discussionContext=[], prepar
       if(!derived || Object.keys(derived).sort().join(',')!=='applications,assumptions,expectations,missing')throw Object.assign(new Error('预期结构无效'),{code:'INVALID_PLAN_CONTRACT',status:422});
       const businessExpectations=businessExpectationsFor(plan,derived.expectations);
       const contract={version:derived.applications.some(a=>Object.hasOwn(a,'dependsOn')) || derived.expectations.some(a=>Object.hasOwn(a.selector??{},'applicationKey'))?3:2,protocolVersion:'22',dataSpecification,...derived,businessExpectations};
-      if(validPlanContract(contract,plan))return {contract};
+      if(validPlanContract(contract,plan)){
+        const checked=validatePlanApplications(plan,contract);
+        const omitted=checked.missing.filter(q=>!contract.missing.includes(q));
+        if(contract.version!==3 || !omitted.length || attempt===1 || contract.applications.some(a=>!canApplyOperation(plan.exchangePlan.steps.find(s=>s.stepId===a.stepId).fileType,a.businessCode)))return {contract:checked};
+        previous=derived;issues=omitted;continue;
+      }
       previous=derived;issues=planContractValidationIssues(contract,plan);
     }
     throw Object.assign(new Error('系统尚未完成方案构造，请重试；无需补充技术字段'),{code:'INVALID_PLAN_CONTRACT',status:422});

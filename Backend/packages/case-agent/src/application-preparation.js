@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import {APPLICATION_SYSTEM_FIELDS} from '../../platform-protocol/src/operation-chain.js';
 import { z } from 'zod';
 import { FIELD_REQUIREMENTS, TRANSACTION_BUSINESSES, TRANSACTION_FIELD_INPUTS,
   fieldsForFile, encodeRecord } from '../../platform-protocol/src/index.js';
@@ -14,9 +15,7 @@ const Intent = z.object({
 const Reply = z.object({ reply: z.string().trim().min(1).max(4000),
   intents: z.array(Intent).max(80), questions: z.array(z.string().trim().min(1).max(500)).max(20),
 }).strict();
-const owned = new Set(['AppSheetSerialNo', 'TransactionAccountID', 'DistributorCode',
-  'BusinessCode', 'BranchCode', 'InvestorName', 'IndividualOrInstitution', 'TAAccountID', 'TargetTAAccountID',
-  'TargetTransactionAccountID', 'TargetBranchCode', 'TargetDistributorCode', 'FundCode', 'ShareClass', 'CodeOfTargetFund', 'TargetShareType', 'TransactionDate']);
+const owned = new Set(APPLICATION_SYSTEM_FIELDS);
 const meanings = { CertificateType: '证件类型', CertificateNo: '模拟证件号',
   TransactionDate: '业务日期', TransactionTime: '申请时间', CurrencyType: '币种',
   ApplicationAmount: '申请金额', ApplicationVol: '申请份额', ChargeType: '收费方式',
@@ -126,7 +125,10 @@ export function compileApplicationIntents({ intents, data, channel, bindings, ca
       }
     }
     try { encodeRecord(intent.fileType, record, channel.protocolVersion); }
-    catch { invalid.push('已提供的申请字段格式不符合协议，请核对长度和数值格式'); }
+    catch(error) {
+      const field=fieldsForFile(channel.protocolVersion,intent.fileType).find(f=>error.message.startsWith(f.name+' '));
+      invalid.push(field?`${meanings[field.name]??TRANSACTION_FIELD_INPUTS[field.name]?.label??field.name}的长度或数值格式不符合协议（最多${field.length}${field.type==='N'?'位数字':'字节'}${field.type==='N'?`，小数${field.scale}位`:''}）`:'已提供的申请字段格式不符合协议，请核对长度和数值格式');
+    }
     if (invalid.length) questions.push(`${customer.name}（网点 ${account.branch_code}）：${invalid.join('；')}`);
     if (missing.length || invalid.length || (needsBinding && !binding)) continue;
     records.push({ key: intent.key, fileType: intent.fileType,

@@ -5,6 +5,7 @@ import {validPlanContract} from '../../platform-protocol/src/plan-contract.js';
 import {operationSerial,reconcileOperations,createOperationChainGraph} from '../src/operation-chain-graph.js';
 import {compareConfirmedExpectations} from '../src/case-result-graph.js';
 import {operationFailureBlockers} from '../../platform-store/src/operation-failure.js';
+import {definePlanContract} from '../src/plan-contract.js';
 
 const scope={casePublicId:'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',channelId:'7'};
 const actual=(key,status)=>({channelId:'7',applicationNumber:operationSerial({...scope,key}),status});
@@ -68,4 +69,13 @@ test('optional or already delivered branches are not sealed as required unexecut
 test('later waves may inherit opening receipt gates through earlier file dependencies',()=>{
   const plan=operationPlan();plan.exchangePlan.steps.find(s=>s.stepId==='trade_1').dependsOn=[{stepId:'returned_0',condition:'PARSED'}];
   assert.equal(validPlanContract(plan.contract,plan),true);
+});
+test('model construction retries omitted required protocol inputs before asking for business information',async()=>{
+  const plan=operationPlan();const {version,protocolVersion,dataSpecification,businessExpectations,...valid}=plan.contract;
+  for(const value of [undefined,'SYN'+'0'.repeat(40)]){
+    const incomplete=structuredClone(valid);if(value===undefined)delete incomplete.applications[0].fields.CertificateNo;else incomplete.applications[0].fields.CertificateNo=value;
+    let calls=0;
+    const result=await definePlanContract(async request=>{calls++;if(calls===2)assert.ok(JSON.parse(request.user).validationIssues.some(q=>q.includes('模拟证件号')&&(value===undefined||q.includes('最多40字节'))));return JSON.stringify(calls===1?incomplete:valid);},plan,[],dataSpecification);
+    assert.equal(calls,2);assert.deepEqual(result.contract.missing,[]);
+  }
 });

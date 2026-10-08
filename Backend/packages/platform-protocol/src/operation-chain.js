@@ -1,4 +1,11 @@
 import {TRANSACTION_BUSINESSES} from './businesses.js';
+import {FIELD_REQUIREMENTS} from './definitions.js';
+
+export const APPLICATION_SYSTEM_FIELDS=['AppSheetSerialNo','TransactionAccountID','DistributorCode','BusinessCode','BranchCode','InvestorName','IndividualOrInstitution','TAAccountID','TargetTAAccountID','TargetTransactionAccountID','TargetBranchCode','TargetDistributorCode','FundCode','ShareClass','CodeOfTargetFund','TargetShareType','TransactionDate'];
+export function editableOperationFields(task) {
+  const required=FIELD_REQUIREMENTS[task.fileType];
+  return {...Object.fromEntries([...(required?.required??[]),...(required?.requiredByBusiness[task.businessCode]??[])].filter(key=>!APPLICATION_SYSTEM_FIELDS.includes(key)).map(key=>[key,''])),...task.fields};
+}
 
 const accountNames = { '001':'开户', '002':'销户', '003':'账户信息变更', '004':'账户冻结', '005':'账户解冻', '006':'账户登记', '007':'账户业务', '008':'账户业务', '009':'账户业务' };
 export const operationName = (type, code) => type === '01' ? accountNames[code] ?? `账户业务 ${code}` : TRANSACTION_BUSINESSES[code]?.name ?? `交易业务 ${code}`;
