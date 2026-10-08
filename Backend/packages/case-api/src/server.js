@@ -1,3 +1,8 @@
+import {createModelRuntime} from './model-runtime.js';
+import {createAccountModelQuotas} from '../../platform-store/src/account-model-quotas.js';
+import {modelBudgetConfig,createModelConsumptionRepository} from '../../platform-store/src/model-consumption.js';
+import {createBusinessAdmission} from '../../case-agent/src/business-admission.js';
+import {createAdmissionRepository} from '../../platform-store/src/business-admission.js';
 import {createGlobalDataCatalog} from '../../platform-store/src/global-data-catalog.js';
 import {createGlobalFileCatalog} from '../../platform-store/src/global-file-catalog.js';
 import {createProjectExchangeService} from './project-exchange.js';
@@ -12,7 +17,7 @@ import { createCaseRepository } from '../../platform-store/src/index.js';
 import { createExchangeRepository } from '../../platform-store/src/exchange.js';
 import { createApplicationPreparationRepository } from '../../platform-store/src/application-preparation.js';
 import { migrationConfig } from '../../platform-store/src/migrate.js';
-import { createPersistedDiscussionService, createSophnetCompletion,
+import { createPersistedDiscussionService,
   createPlanConfirmationGraph, decidePlan, deriveDataSpecification,
   createDataGenerationGraph, deriveDataReview, deriveApplicationPreparation } from '../../case-agent/src/index.js';
 import { createCaseHttpServer } from './http.js';
@@ -49,6 +54,8 @@ const transaction = async action => {
     throw error;
   } finally { connection.release(); }
 };
+const accountModelQuotas=createAccountModelQuotas({transaction,defaultDaily:modelBudgetConfig().userDaily});
+const modelRuntime=createModelRuntime({repository:createModelConsumptionRepository({transaction}),maxCalls:Number(process.env.MODEL_RUN_MAX_CALLS||8),maxInput:Number(process.env.MODEL_MAX_INPUT_TOKENS||600000),maxOutput:Number(process.env.MODEL_MAX_OUTPUT_TOKENS||8192)});
 const accountAuth=createAccountAuth({transaction,initializeWorkspace:localWorkspaceInitializer(migrationConfig()),allowDemo:Boolean(localWorkspaceInitializer(migrationConfig()))});
 const taReset=createTaResetRepository({transaction});
 const chatLifecycle=createChatLifecycleRepository({transaction});
@@ -61,9 +68,10 @@ const taReceipts = createTaReceiptsRepository({transaction});
 const holdingsReturn = createHoldingsReturnRepository({transaction});
 const exchangeRepository = createExchangeRepository({ transaction });
 const preparations = createApplicationPreparationRepository({ transaction });
+const admit=createBusinessAdmission({repository:createAdmissionRepository({transaction}),complete:modelRuntime.completion({model:process.env.SOPHNET_ADMISSION_MODEL||'DeepSeek-V4-Flash-0731'})});
 const discussionService = createPersistedDiscussionService({ repository,
-  complete: createSophnetCompletion() });
-const complete = createSophnetCompletion();
+  complete: modelRuntime.completion(),visionComplete:modelRuntime.completion({model:process.env.SOPHNET_VISION_MODEL||'qwen3-vl-plus'}),admit });
+const complete = modelRuntime.completion();
 const caseResult = createCaseResultService({repository:createCaseResultRepository({transaction}),complete});
 const completeData = async input => {
   try { return await complete(input); }
@@ -107,6 +115,7 @@ const reviseData = async ({ token, chatPublicId, casePublicId, revision, userInp
     const error = new Error('数据已更新，请刷新后重试');
     error.code = 'DATA_EDIT_CONFLICT'; error.status = 409; throw error;
   }
+  await admit({token,chatPublicId,casePublicId,text:userInput,purpose:'DATA_REVIEW'});
   const suggestion = await deriveDataReview(completeData,
     { plan: plan.proposal, data, turns: history.turns, userInput });
   const updated = await repository.editGeneratedData(token, chatPublicId, casePublicId,
@@ -114,7 +123,7 @@ const reviseData = async ({ token, chatPublicId, casePublicId, revision, userInp
   return { reply: suggestion.reply, data: updated };
 };
 const applicationPreparation = createApplicationPreparationService({ repository, preparations,
-  exchangeRepository, confirmedSales: returnConfirmation, derive: context => deriveApplicationPreparation(completeData, context) });
+  exchangeRepository, confirmedSales: returnConfirmation, admit,derive: context=>deriveApplicationPreparation(completeData,context) });
 const projectExchange=createProjectExchangeService({repository,preparations,exchangeRepository,applicationPreparation,returnParsing,returnConfirmation,
   applyAtomically:(token,jobs)=>transaction(async db=>{
     const service=createReturnConfirmationService({repository:createReturnConfirmationRepository({transaction:action=>action(db)})});
@@ -127,6 +136,6 @@ const projectParsing={...returnParsing,parse:projectExchange.parse};
 const projectConfirmation={...returnConfirmation,read:projectExchange.readConfirmation,apply:projectExchange.apply};
 const confirmData = ({ token, chatPublicId, casePublicId, revision }) =>
   repository.confirmGeneratedData(token, chatPublicId, casePublicId, revision);
-const server = createCaseHttpServer({globalDataCatalog:createGlobalDataCatalog({transaction}),globalFileCatalog:createGlobalFileCatalog({transaction}),planContentComplete:complete, repository, discussionService, confirmPlan,
+const server = createCaseHttpServer({accountModelQuotas,modelRuntime,globalDataCatalog:createGlobalDataCatalog({transaction}),globalFileCatalog:createGlobalFileCatalog({transaction}),admit,planContentComplete:complete, repository, discussionService, confirmPlan,
   executeData, reviseData, exchangeRepository, applicationPreparation:projectPreparation, confirmData, returnParsing:projectParsing, returnConfirmation:projectConfirmation, holdingsReturn, taReceipts, caseResult, exchangePlanSupplement, chatLifecycle, durableWorkflow, taReset, accountAuth, secureCookie:process.env.NODE_ENV==='production', allowedOrigin });
 server.listen(Number(process.env.CASE_API_PORT ?? 3100), '127.0.0.1');

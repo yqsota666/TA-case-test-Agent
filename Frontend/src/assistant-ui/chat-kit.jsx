@@ -81,11 +81,11 @@ export function ChatMessage({message, text, children}) {
     {!user && <MessageActions text={content} durationMs={message.durationMs} createdAt={message.createdAt}/>}
   </article></MessagePrimitive.Root>;
 }
-export const Composer = forwardRef(function Composer({value, onChange}, ref) {
+export const Composer = forwardRef(function Composer({value, onChange, onPaste, onAttach, onImageSend, hasImages=false, disabled=false}, ref) {
   return <ComposerPrimitive.Root className="cw-composer aui-composer" data-slot="aui-composer">
     <label className="cw-sr-only" htmlFor="cw-message">输入消息</label>
-    <ComposerPrimitive.Input id="cw-message" ref={ref} value={value} onChange={onChange} placeholder="输入消息…"
+    <ComposerPrimitive.Input id="cw-message" ref={ref} value={value} onChange={onChange} onPaste={onPaste} onKeyDown={event=>{if(hasImages&&!value.trim()&&event.key==='Enter'&&!event.shiftKey&&!event.nativeEvent.isComposing&&event.keyCode!==229){event.preventDefault();if(!disabled)onImageSend?.();}}} placeholder="输入消息…"
       rows={1} maxRows={7} cancelOnEscape={false} addAttachmentOnPaste={false} enterKeyHint="send"/>
-    <div className="aui-composer-toolbar"><ComposerPrimitive.Send className="cw-send aui-composer-send" aria-label="发送消息" title="发送消息"><ArrowUp size={20}/></ComposerPrimitive.Send></div>
+    <div className="aui-composer-toolbar">{onAttach&&<button className="cw-attach" type="button" aria-label="添加图片" disabled={disabled} onClick={onAttach}>＋</button>}{hasImages?<button type="button" className="cw-send aui-composer-send" aria-label="发送消息" disabled={disabled} onClick={onImageSend}><ArrowUp size={20}/></button>:<ComposerPrimitive.Send className="cw-send aui-composer-send" aria-label="发送消息" title="发送消息"><ArrowUp size={20}/></ComposerPrimitive.Send>}</div>
   </ComposerPrimitive.Root>;
 });

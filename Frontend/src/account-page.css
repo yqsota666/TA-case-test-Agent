@@ -31,3 +31,13 @@
 .account-page-logout {display:flex;align-items:center;gap:9px;padding:8px 0;border:0;background:transparent;color:var(--cw-muted,#61718a);}
 @media(hover:hover){.account-page-button:hover:not(:disabled){background:var(--cw-hover,#edf2f6);}.account-page-text:hover:not(:disabled),.account-page-header button:hover,.account-page-logout:hover:not(:disabled){text-decoration:underline;}}
 @media(max-width:600px){.account-page-header{height:60px;padding:0 22px;}.account-page-content{width:calc(100% - 44px);margin:22px auto 40px;}.account-page h1{font-size:24px;margin-bottom:28px;}.account-profile{gap:18px;}.account-profile-avatar{width:68px;height:68px;font-size:25px;}.account-profile-actions h2{font-size:16px;}.account-page dl>div{grid-template-columns:64px minmax(0,1fr);gap:14px;}}
+
+.account-usage-heading {display:flex;align-items:baseline;justify-content:space-between;gap:16px;}
+.account-usage-note {font-size:12px;color:var(--cw-muted);margin:20px 0;}
+.account-quota-meter {padding:18px 20px;border:1px solid var(--cw-line,#d9e2ea);border-radius:12px;}
+.account-quota-caption {display:flex;justify-content:space-between;gap:16px;font-size:13px;margin-bottom:14px;}
+.account-quota-caption span:last-child {color:var(--cw-muted,#61718a);text-align:right;}
+.account-quota-track {height:7px;overflow:hidden;border-radius:999px;background:var(--cw-line,#d9e2ea);}
+.account-quota-fill {display:block;height:100%;background:var(--cw-ink,#263447);border-radius:inherit;}
+.account-quota-meter p {color:var(--cw-muted,#61718a);font-size:12px;margin:12px 0 0;}
+@media(max-width:600px){.account-quota-meter{padding:16px;}.account-quota-caption{font-size:12px;}}

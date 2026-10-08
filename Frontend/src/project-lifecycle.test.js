@@ -1,7 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {lifecycleView,lifecycleCommand,caseStatusLabel} from './project-lifecycle.js';
+import {lifecycleView,lifecycleCommand,caseStatusLabel,showProjectLifecycle} from './project-lifecycle.js';
 const snapshot={chat:{status:'ACTIVE'},canClose:false,cases:[{publicId:'a',status:'FAIL',finalVerdict:'FAIL'},{publicId:'b',status:'PASS',finalVerdict:'PASS'}]};
+test('project card is reserved for final cases or sealed projects',()=>{
+ for(const status of ['DISCUSSING','PLANNING','READY','RUNNING','WAITING','CONFIRM_RESULT',undefined])
+   assert.equal(showProjectLifecycle('ACTIVE',status),false);
+ for(const status of ['PASS','FAIL'])assert.equal(showProjectLifecycle('ACTIVE',status),true);
+ for(const status of ['CLOSED','FORCE_CLOSED'])assert.equal(showProjectLifecycle(status,'DISCUSSING'),true);
+ assert.equal(showProjectLifecycle(undefined,undefined),false);
+});
 test('only human-final failure without a successor can create linked retest',()=>{
  assert.equal(lifecycleView(snapshot,'a').canRetest,true);
  assert.equal(lifecycleView(snapshot,'b').canRetest,false);

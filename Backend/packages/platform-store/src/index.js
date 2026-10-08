@@ -1,3 +1,4 @@
+import {validateDiscussionImages} from '../../platform-protocol/src/discussion-images.js';
 import {dataExchangeRequirementIssues} from '../../platform-protocol/src/data-exchange-requirements.js';
 import {readPredecessorContext} from './predecessor-context.js';
 import { isDeepStrictEqual } from 'node:util';
@@ -12,7 +13,7 @@ export function storeError(code, status, message) {
   return Object.assign(new Error(message), { code, status });
 }
 
-function requiredUuid(value, name) {
+export function requiredUuid(value, name) {
   if (typeof value !== 'string' || !uuid.test(value)) {
     throw storeError('INVALID_ID', 400, `${name} 无效`);
   }
@@ -318,12 +319,15 @@ export function createCaseRepository({ transaction }) {
         WHERE workspace_id=? AND chat_id=? AND public_id=?`,
       [auth.workspace_id, chat.id, casePublicId]);
       if (!caseRow) throw storeError('CASE_NOT_FOUND', 404, 'Case 不存在');
-      const [rows] = await db.execute(`SELECT turn_number,user_text,assistant_text,status,turn_kind,created_at,finished_at
+      const [rows] = await db.execute(`SELECT turn_number,user_text,assistant_text,status,turn_kind,created_at,finished_at,
+        (SELECT images_json FROM case_discussion_images i WHERE i.workspace_id=case_discussion_turns.workspace_id AND i.chat_id=case_discussion_turns.chat_id AND i.case_id=case_discussion_turns.case_id AND i.turn_number=case_discussion_turns.turn_number) AS images_json,
+        (SELECT image_analysis FROM case_discussion_images i WHERE i.workspace_id=case_discussion_turns.workspace_id AND i.chat_id=case_discussion_turns.chat_id AND i.case_id=case_discussion_turns.case_id AND i.turn_number=case_discussion_turns.turn_number) AS image_analysis
         FROM case_discussion_turns WHERE workspace_id=? AND chat_id=? AND case_id=?
         ORDER BY turn_number`, [auth.workspace_id, chat.id, caseRow.id]);
       const turns = [];
       let pending = null;
       for (const [index, row] of rows.entries()) {
+        const imageFields=row.images_json?{images:JSON.parse(row.images_json),imageAnalysis:row.image_analysis}:{};
         if (Number(row.turn_number) !== index + 1) {
           throw storeError('CORRUPT_HISTORY', 500, 'Case 讨论记录不连续');
         }
@@ -332,14 +336,14 @@ export function createCaseRepository({ transaction }) {
           const finished = row.finished_at ? new Date(row.finished_at) : null;
           const hasStart = started && Number.isFinite(started.getTime());
           const hasFinish = finished && Number.isFinite(finished.getTime());
-          turns.push({ role: 'user', content: row.user_text,
+          turns.push({ role: 'user', content: row.user_text,...imageFields,
               ...(hasStart ? {createdAt:started.toISOString()} : {}) },
             { role: 'assistant', content: row.assistant_text,
               ...(row.turn_kind === 'PROPOSE_PLAN' ? {kind:'PROPOSE_PLAN',sourceTurnNumber:Number(row.turn_number)} : {}),
               ...(hasFinish ? {createdAt:finished.toISOString()} : {}),
               ...(hasStart && hasFinish && finished >= started ? {durationMs:finished-started} : {}) });
         } else if (row.status === 'PENDING' && index === rows.length - 1) {
-          pending = { turnNumber: Number(row.turn_number), userInput: row.user_text, kind: row.turn_kind };
+          pending = { turnNumber: Number(row.turn_number), userInput: row.user_text, kind: row.turn_kind,...imageFields };
         } else if (row.status !== 'ABANDONED') {
           throw storeError('CORRUPT_HISTORY', 500, 'Case 讨论记录状态无效');
         }
@@ -350,7 +354,9 @@ export function createCaseRepository({ transaction }) {
   }
 
   async function beginCaseDiscussionTurn(token, chatPublicId, casePublicId,
-    { expectedRevision, userInput, kind = 'DISCUSS' }) {
+    { expectedRevision, userInput, kind = 'DISCUSS', images=[], imageAnalysis='' }) {
+    const checkedImages=validateDiscussionImages(images);
+    if(checkedImages.length&&(kind!=='DISCUSS'||typeof imageAnalysis!=='string'||!imageAnalysis.trim()||imageAnalysis.length>6000))throw storeError('INVALID_DISCUSSION_IMAGES',400,'图片解析内容无效');
     chatPublicId = requiredUuid(chatPublicId, 'Chat');
     casePublicId = requiredUuid(casePublicId, 'Case');
     if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0 || expectedRevision >= 0xffffffff ||
@@ -405,6 +411,7 @@ export function createCaseRepository({ transaction }) {
         (workspace_id,chat_id,case_id,turn_number,user_text,actor_user_id,turn_kind)
         VALUES (?,?,?,?,?,?,?)`,
       [auth.workspace_id, chat.id, caseRow.id, revision, userInput.trim(), auth.user_id, kind]);
+      if(checkedImages.length)await db.execute(`INSERT INTO case_discussion_images (workspace_id,chat_id,case_id,turn_number,images_json,image_analysis) VALUES (?,?,?,?,?,?)`,[auth.workspace_id,chat.id,caseRow.id,revision,JSON.stringify(checkedImages),imageAnalysis]);
       return { revision, turnNumber: revision };
     });
   }

@@ -1,3 +1,4 @@
+import {demoEmail} from '../../platform-store/src/account-model-quotas.js';
 import crypto from 'node:crypto';
 import { promisify } from 'node:util';
 import { authenticateSession, sessionTokenHash, storeError } from '../../platform-store/src/index.js';
@@ -45,12 +46,14 @@ export function createAccountAuth({transaction,initializeWorkspace,allowDemo=fal
     return {token,user:await profile(db,user)};
   }
   return {
-    async register(input) {
+    async register(input,{demo=false}={}) {
       const {email,password,name}=credentials(input,{registration:true});
+      if(email===demoEmail&&!demo)throw fail('INVALID_INPUT',400,'此邮箱为演示账户保留，请使用其他邮箱');
       const hash=await passwordHash(password);
       try {return await transaction(async db=>{
         const id=crypto.randomUUID();
         const [saved]=await db.execute('INSERT INTO platform_users(public_id,email,password_hash,display_name) VALUES (?,?,?,?)',[id,email,hash,name]);
+        if(demo)await db.execute('INSERT INTO account_demo_users(user_id) VALUES (?)',[saved.insertId]);
         const [workspace]=await db.execute('INSERT INTO workspaces(public_id,owner_user_id) VALUES (?,?)',[crypto.randomUUID(),saved.insertId]);
         if(initializeWorkspace)await initializeWorkspace(db,workspace.insertId);
         return issue(db,{id:saved.insertId,public_id:id,display_name:name,email});
@@ -72,15 +75,15 @@ export function createAccountAuth({transaction,initializeWorkspace,allowDemo=fal
     async demo(input) {
       if(!allowDemo)throw fail('NOT_FOUND',404,'模拟账户未启用');
       if(!input||Array.isArray(input)||Object.keys(input).length)throw fail('INVALID_INPUT',400,'请求格式不正确');
-      const email='local-demo@ta-agent.example.invalid';
+      const email=demoEmail;
       let existing=await transaction(async db=>{
-        const [[user]]=await db.execute('SELECT id,public_id,email,password_hash,display_name,status FROM platform_users WHERE email=?',[email]);
+        const [[user]]=await db.execute('SELECT u.id,u.public_id,u.email,u.password_hash,u.display_name,u.status,d.user_id IS NOT NULL AS is_demo FROM platform_users u LEFT JOIN account_demo_users d ON d.user_id=u.id WHERE u.email=?',[email]);
         if(!user)return null;
-        if(user.status!=='ACTIVE'||user.display_name!=='模拟账户')throw fail('DEMO_UNAVAILABLE',409,'模拟账户暂时不可用');
+        if(user.status!=='ACTIVE'||user.display_name!=='模拟账户'||Number(user.is_demo)!==1)throw fail('DEMO_UNAVAILABLE',409,'模拟账户暂时不可用');
         return issue(db,user);
       });
       if(existing)return existing;
-      try {return await this.register({email,name:'模拟账户',password:crypto.randomBytes(32).toString('base64url')});}
+      try {return await this.register({email,name:'模拟账户',password:crypto.randomBytes(32).toString('base64url')},{demo:true});}
       catch(error){if(error.code!=='ACCOUNT_EXISTS')throw error;return this.demo(input);}
     },
     async current(token) {return transaction(async db=>{

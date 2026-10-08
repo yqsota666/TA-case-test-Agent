@@ -2,7 +2,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { compileApplicationIntents, preparationCatalog } from '../../case-agent/src/application-preparation.js';
 import { boundPreparationHistory } from '../../platform-store/src/application-preparation.js';
 
-export function createApplicationPreparationService({ repository, preparations, exchangeRepository, derive, confirmedSales }) {
+export function createApplicationPreparationService({ repository, preparations, exchangeRepository, derive, confirmedSales, admit }) {
   const error = (code, message) => Object.assign(new Error(message), { code, status: 409 });
   async function prepare({ token, chatPublicId, casePublicId, revision, userInput = '', channelId, deferBatching = false }) {
     const scope = { chatPublicId, casePublicId };
@@ -21,6 +21,7 @@ export function createApplicationPreparationService({ repository, preparations, 
     if (['PREPARING', 'WAITING_OPERATION'].includes(previous.phase) && (userInput || (channelId && channelId !== previous.channelId))) {
       throw error('APPLICATION_PREPARATION_CONFLICT', '上次生成尚未完成，请先继续生成再补充新信息');
     }
+    if(userInput && admit)await admit({token,...scope,text:userInput,purpose:'APPLICATION_PREPARATION'});
     channelId ??= previous.channelId ?? (channelResult.channels.length === 1 ? channelResult.channels[0].id : undefined);
     const channel = channelResult.channels.find(row => row.id === channelId);
     if (!channel) {

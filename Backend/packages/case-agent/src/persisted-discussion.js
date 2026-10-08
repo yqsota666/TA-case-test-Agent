@@ -1,7 +1,9 @@
+import {isDeepStrictEqual} from 'node:util';
+import {validateDiscussionImages,analyzeDiscussionImages,imageDiscussionContent,IMAGE_ONLY_INPUT} from './discussion-images.js';
 import { definePlanContract, displayPlanContract } from './plan-contract.js';
 import { createDiscussionGraph, discussTurn, proposeDiscussionPlan } from './discussion-graph.js';
 
-export function createPersistedDiscussionService({ repository, complete }) {
+export function createPersistedDiscussionService({ repository, complete, visionComplete, admit }) {
   if (!repository || typeof repository.readCaseDiscussion !== 'function' ||
       typeof repository.beginCaseDiscussionTurn !== 'function' ||
       typeof repository.finishCaseDiscussionTurn !== 'function' ||
@@ -18,21 +20,25 @@ export function createPersistedDiscussionService({ repository, complete }) {
     }});
   }
 
-  async function discuss({ token, chatPublicId, casePublicId, userInput }) {
+  async function discuss({ token, chatPublicId, casePublicId, userInput, images=[] }) {
+    images=validateDiscussionImages(images);
+    userInput=userInput?.trim() || (images.length?IMAGE_ONLY_INPUT:userInput);
     if (typeof userInput !== 'string' || !userInput.trim() || userInput.length > 4000) {
       throw new TypeError('userInput must contain 1–4000 characters');
     }
     await repository.assertCaseWritable?.(token,chatPublicId,casePublicId,{discussion:true});
     const input = userInput.trim();
     const history = await repository.readCaseDiscussion(token, chatPublicId, casePublicId);
-    if (history.pending && (history.pending.userInput !== input || history.pending.kind !== 'DISCUSS')) {
+    if (history.pending && (history.pending.userInput !== input || history.pending.kind !== 'DISCUSS' || !isDeepStrictEqual(history.pending.images||[],images))) {
       const error = new Error('上一轮讨论尚未完成，请重试原输入或取消该轮');
       error.code = 'DISCUSSION_IN_PROGRESS';
       throw error;
     }
+    const imageAnalysis=history.pending?.imageAnalysis??await analyzeDiscussionImages(visionComplete,images);
+    if(admit)await admit({token,chatPublicId,casePublicId,text:imageDiscussionContent(input,imageAnalysis)});
     const pending = history.pending ?? await repository.beginCaseDiscussionTurn(
-      token, chatPublicId, casePublicId, { expectedRevision: history.revision, userInput: input });
-    const result = await discussTurn(graphFor(history), { priorTurns: history.turns, userInput: input });
+      token, chatPublicId, casePublicId, { expectedRevision: history.revision, userInput: input, images, imageAnalysis });
+    const result = await discussTurn(graphFor(history), { priorTurns: history.turns.map(t=>({...t,content:imageDiscussionContent(t.content,t.imageAnalysis)})), userInput: imageDiscussionContent(input,imageAnalysis) });
     const saved = await repository.finishCaseDiscussionTurn(token, chatPublicId, casePublicId, {
       turnNumber: pending.turnNumber,
       assistantReply: result.reply,
@@ -61,13 +67,14 @@ export function createPersistedDiscussionService({ repository, complete }) {
           promptVersion:'plan-confirmed-contract-v1',revision:history.revision,versionNumber:latest.versionNumber,replayed:true};
       }
     }
+    if(admit)await admit({token,chatPublicId,casePublicId,text:input,purpose:'PROPOSE_PLAN'});
     if (history.turns.length < 4) throw new Error('Plan 提案前至少需要两轮完整讨论');
     const pending = history.pending ?? await repository.beginCaseDiscussionTurn(
       token, chatPublicId, casePublicId,
       { expectedRevision: history.revision, userInput: input, kind: 'PROPOSE_PLAN' });
-    const result = await proposeDiscussionPlan(graphFor(history), { priorTurns: history.turns, userInput: input });
+    const result = await proposeDiscussionPlan(graphFor(history), { priorTurns: history.turns.map(t=>({...t,content:imageDiscussionContent(t.content,t.imageAnalysis)})), userInput: input });
     try {
-      result.proposal = await definePlanContract(complete, result.proposal, [...history.turns, {role:'user',content:input}]);
+      result.proposal = await definePlanContract(complete, result.proposal, [...history.turns.map(t=>({...t,content:imageDiscussionContent(t.content,t.imageAnalysis)})), {role:'user',content:input}]);
     } catch (error) {
       if (error.code === 'DATA_SPEC_INVALID' || error.code === 'INVALID_PLAN_CONTRACT') {
         await repository.abandonCaseDiscussionTurn(token, chatPublicId, casePublicId, pending.turnNumber);
