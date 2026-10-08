@@ -1,15 +1,11 @@
 import React,{useEffect,useRef,useState} from 'react';
-import {ArrowRight,Eye,EyeOff,LogOut} from './ui-icons.jsx';
+import {ArrowRight,Eye,EyeOff} from './ui-icons.jsx';
 import {requestCase} from './live-case-api.js';
 import {setAccountStorageOwner} from './account-storage.js';
 import './account-gate.css';
 import {avatarImage} from './avatar-image.js';
+import {AccountPage} from './account-page.jsx';
 
-function PasswordDialog({children,onClose,busy}) {
-  const ref=useRef(null);
-  useEffect(()=>{const previous=document.activeElement;const overflow=document.body.style.overflow;document.body.style.overflow='hidden';ref.current.showModal();return()=>{document.body.style.overflow=overflow;previous?.focus();};},[]);
-  return <dialog ref={ref} className="account-native-dialog" aria-labelledby="password-title" onCancel={event=>{event.preventDefault();if(!busy)onClose();}}>{children}</dialog>;
-}
 function AuthForm({onAuthenticated}) {
   const [register,setRegister]=useState(false);
   const [visible,setVisible]=useState(false);
@@ -50,13 +46,29 @@ export function AccountGate({children}) {
   const [checking,setChecking]=useState(true);
   const [unavailable,setUnavailable]=useState('');
   const [busy,setBusy]=useState(false);
-  const [menu,setMenu]=useState(false);
+  const [accountOpen,setAccountOpen]=useState(()=>new URLSearchParams(location.search).get('page')==='account');
   const [notice,setNotice]=useState('');
   const [passwordOpen,setPasswordOpen]=useState(false);
   const identity=useRef(null);
   const generation=useRef(0);
   const avatarInput=useRef(null);
   const accountControl=useRef(null);
+  const openAccount=event=>{
+    accountControl.current=event.currentTarget;
+    const url=new URL(location.href);url.searchParams.set('page','account');
+    history.pushState({...history.state,accountReturn:location.href},'',url);
+    setAccountOpen(true);setPasswordOpen(false);setNotice('');
+  };
+  const closeAccount=()=>{
+    if(history.state?.accountReturn){history.back();return;}
+    const url=new URL(location.href);url.searchParams.delete('page');history.replaceState(history.state,'',url);
+    setAccountOpen(false);setPasswordOpen(false);setNotice('');
+    requestAnimationFrame(()=>accountControl.current?.focus());
+  };
+  useEffect(()=>{
+    const navigate=()=>{const open=new URLSearchParams(location.search).get('page')==='account';setAccountOpen(open);setPasswordOpen(false);setNotice('');if(!open)requestAnimationFrame(()=>accountControl.current?.focus());};
+    window.addEventListener('popstate',navigate);return()=>window.removeEventListener('popstate',navigate);
+  },[]);
   const broadcast=()=>{try{localStorage.setItem('case-account-changed',crypto.randomUUID());}catch{}};
   const authenticated=(value,fresh=false)=>{
     if(fresh)generation.current++;
@@ -82,7 +94,7 @@ export function AccountGate({children}) {
     try {const result=await requestCase('/auth/password',{currentPassword:form.get('currentPassword')||'',newPassword:form.get('newPassword')});setUser(result.user);setPasswordOpen(false);setNotice('密码已设置');broadcast();}
     catch(error){setNotice(error.message);}finally{setBusy(false);}
   };
-  const logout=async()=>{setBusy(true);setNotice('');try{await requestCase('/auth/logout',{});generation.current++;setUser(null);identity.current=null;setAccountStorageOwner(null);setMenu(false);broadcast();const url=new URL(location.href);for(const key of ['chatId','caseId','draftTable'])url.searchParams.delete(key);history.replaceState(null,'',url);}catch(error){setNotice(error.message);}finally{setBusy(false);}};
+  const logout=async()=>{setBusy(true);setNotice('');try{await requestCase('/auth/logout',{});generation.current++;setUser(null);identity.current=null;setAccountStorageOwner(null);setAccountOpen(false);setPasswordOpen(false);broadcast();const url=new URL(location.href);for(const key of ['chatId','caseId','draftTable'])url.searchParams.delete(key);if(url.searchParams.get('page')==='account')url.searchParams.delete('page');history.replaceState(null,'',url);}catch(error){setNotice(error.message);}finally{setBusy(false);}};
   const saveAvatar=async file=>{
     if(busy)return;
     const accountId=identity.current;
@@ -95,29 +107,16 @@ export function AccountGate({children}) {
     } catch(error){if(identity.current===accountId)setNotice(error.message);}
     finally{setBusy(false);if(avatarInput.current)avatarInput.current.value='';}
   };
-  useEffect(()=>{
-    if(!menu)return;
-    const close=event=>{if(event.key==='Escape'){setMenu(false);accountControl.current?.focus();}else if(event.type==='pointerdown'&&!event.target.closest('.account-control'))setMenu(false);};
-    window.addEventListener('keydown',close);window.addEventListener('pointerdown',close);
-    return()=>{window.removeEventListener('keydown',close);window.removeEventListener('pointerdown',close);};
-  },[menu]);
   const control=floating=><div className={`account-control${floating?' account-floating':''}`}>
-    <button className="account-identity" onClick={event=>{accountControl.current=event.currentTarget;setMenu(!menu);setNotice('');}} aria-expanded={menu} aria-label="账户">
+    <button className="account-identity" onClick={openAccount} aria-label="账户设置">
       <span className="account-avatar">{user?.avatar?<img src={user.avatar} alt=""/>:user?.name.slice(0,1)}</span>
       <span className="account-display-name">{user?.name}</span>
     </button>
-    {menu&&<div className="account-popover" aria-busy={busy}>
-      <strong>{user?.name}</strong><span>{user?.email}</span>
-      <button onClick={()=>avatarInput.current?.click()} disabled={busy}>{busy?'正在保存…':user?.avatar?'更换头像':'上传头像'}</button>
-      <span>PNG、JPG、WebP，最大 5 MB</span>
-      {user?.avatar&&<button onClick={()=>saveAvatar(null)} disabled={busy}>移除头像</button>}
-      <button disabled={busy} onClick={()=>{setPasswordOpen(true);setNotice('');setMenu(false);}}>{user?.needsPasswordSetup?'设置密码':'修改密码'}</button>
-      <button onClick={logout} disabled={busy}><LogOut size={16}/>退出登录</button>
-      {notice&&<p role="status">{notice}</p>}
-    </div>}
   </div>;
   if(checking)return <main className="account-entry"><div className="account-loading" role="status">正在连接…</div></main>;
   if(unavailable)return <main className="account-entry"><section className="account-sheet"><p role="alert">{unavailable}</p><button className="account-submit" onClick={check}>重新连接</button></section></main>;
   if(!user)return <><AuthForm onAuthenticated={authenticated}/>{notice&&<div className="account-notice" role="status">{notice}</div>}</>;
-  return <><React.Fragment key={user.id}>{React.cloneElement(children,{accountControl:control(false)})}</React.Fragment>{control(true)}<input ref={avatarInput} type="file" accept="image/png,image/jpeg,image/webp" hidden aria-label="选择头像图片" onChange={event=>{const file=event.target.files?.[0];if(file)saveAvatar(file);}}/>{passwordOpen&&<PasswordDialog busy={busy} onClose={()=>setPasswordOpen(false)}><section className="account-sheet account-password-dialog" role="dialog" aria-modal="true" aria-labelledby="password-title"><h1 id="password-title">{user.needsPasswordSetup?'设置密码':'修改密码'}</h1><form onSubmit={changePassword}>{!user.needsPasswordSetup&&<label>当前密码<input name="currentPassword" type="password" autoComplete="current-password" required disabled={busy}/></label>}<label>新密码<input name="newPassword" type="password" autoComplete="new-password" minLength={8} maxLength={128} required disabled={busy} autoFocus/></label><p className="account-error" role="alert">{notice}</p><button className="account-submit" disabled={busy}>{busy?'正在保存…':'保存'}</button><button className="account-switch" type="button" onClick={()=>setPasswordOpen(false)} disabled={busy}>取消</button></form></section></PasswordDialog>}</>;
+  return <><div hidden={accountOpen}><React.Fragment key={user.id}>{React.cloneElement(children,{accountControl:control(false)})}</React.Fragment>{control(true)}</div>
+    <input ref={avatarInput} type="file" accept="image/png,image/jpeg,image/webp" hidden aria-label="选择头像图片" onChange={event=>{const file=event.target.files?.[0];if(file)saveAvatar(file);}}/>
+    {accountOpen&&<AccountPage key={user.id} user={user} busy={busy} notice={notice} passwordOpen={passwordOpen} onPasswordOpen={()=>{setPasswordOpen(true);setNotice('');}} onPasswordClose={()=>{setPasswordOpen(false);setNotice('');}} onPasswordSubmit={changePassword} onUpload={()=>avatarInput.current?.click()} onRemove={()=>saveAvatar(null)} onLogout={logout} onBack={closeAccount}/>}</>;
 }
