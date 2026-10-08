@@ -1,3 +1,7 @@
+export function showProjectLifecycle(projectStatus, caseStatus) {
+  return ['CLOSED','FORCE_CLOSED'].includes(projectStatus)
+    || ['PASS','FAIL'].includes(caseStatus);
+}
 export function lifecycleView(snapshot, caseId) {
   const chat=snapshot?.chat, cases=snapshot?.cases??[];
   const active=chat?.status==='ACTIVE';
