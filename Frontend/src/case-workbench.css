@@ -339,3 +339,6 @@ html, body {overflow-x: clip;}
 }
 
 .cw-set.is-sealed .cw-case,.cw-set.is-sealed .cw-set-toggle {color:var(--cw-muted)!important;}
+
+.cw-header.is-catalog{display:none;}
+@media(max-width:768px){.cw-header.is-catalog{display:flex;flex:none;}}
