@@ -1,3 +1,4 @@
+import {MessageAttachments} from './assistant-ui/message-attachment.jsx';
 import React from 'react';
 import {X} from 'lucide-react';
 import './message-images.css';
@@ -21,7 +22,7 @@ export function MessageImages({images=[],onRemove,onOpen,disabled=false}) {
   if(!images.length)return null;
   return <div className={`cw-message-images${onRemove?' is-draft':''}`} aria-label={onRemove?'待发送图片':'消息中的图片'}>
     {images.map((image,index)=><div className="cw-image-item" key={`${index}-${image.name}`}>
-      <button type="button" className="cw-image-preview" onClick={()=>onOpen(image)} aria-label={`查看图片：${image.name}`}><img src={image.dataUrl} alt={image.name}/></button>
+      <MessageAttachments attachments={[{id:String(index),name:image.name,size:'',kind:'image',swatch:`url("${image.dataUrl}")`}]} onOpen={()=>onOpen(image)}/>
       {onRemove&&<button type="button" className="cw-image-remove" onClick={()=>onRemove(index)} aria-label={`移除图片：${image.name}`} disabled={disabled}><X size={13}/></button>}
     </div>)}
   </div>;

@@ -1,3 +1,4 @@
+import {PlanContext} from './assistant-ui/plan-context.jsx';
 import {planText,exchangeStepLabel,exchangeStepTime} from './plan-language.js';
 import React, {useState, useEffect, useRef} from 'react';
 import {ChevronRight, X} from './ui-icons.jsx';
@@ -36,6 +37,7 @@ export function PlanDocument({proposal,onSave,onSaveContent,editable=false}) {
     <div className="cw-plan-document" key={section} tabIndex={0} role="region" aria-label="方案内容">
       {plan.objective&&<p className="cw-plan-objective">{plan.objective}</p>}
       {section==='tests'&&<>
+        <PlanContext plan={plan}/>
         {plan.scenarios.length>0?<PlanComparison plan={plan} editable={editable} onSaveContent={onSaveContent}/>:<p>暂无测试项。</p>}
         {plan.openQuestions.length>0&&<section className="cw-plan-questions"><h3>还需确认</h3><ul>{plan.openQuestions.map(item=><li key={item}>{item}</li>)}</ul></section>}
       </>}
