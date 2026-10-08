@@ -61,7 +61,7 @@ export async function deriveApplicationPreparation(complete, context) {
   return parsed.data;
 }
 
-export function compileApplicationIntents({ intents, data, channel, bindings, casePublicId }) {
+export function compileApplicationIntents({ intents, data, channel, bindings, casePublicId, unassignedTaAccounts=new Set() }) {
   const records = [], questions = [], waiting = [];
   for (const intent of intents) {
     const fail = message => { throw Object.assign(new Error(message),
@@ -104,16 +104,27 @@ export function compileApplicationIntents({ intents, data, channel, bindings, ca
       record[codeField] = fund.fund_code; record[classField] = fund.share_class;
     }
     const needsBinding = intent.fileType === '03' || intent.businessCode !== '001';
+    const packagedOpening=intent.fileType==='03' && unassignedTaAccounts.has(intent.accountId);
     const binding = bindings.find(row => row.channelId === channel.id &&
       row.transactionAccountId === account.account_no);
     if (needsBinding && binding) record.TAAccountID = binding.taAccountId;
+    if (packagedOpening && !binding) {
+      const opening = intents.find(o => o.fileType === '01' && o.businessCode === '001' && o.accountId === intent.accountId);
+      if (!opening || opening.businessDate !== intent.businessDate) fail('新账户交易必须引用同包同日期的开户申请');
+      const references = { OriginalAppDate: opening.businessDate, OriginalAppSheetNo: 'AI' + crypto.createHash('sha256')
+        .update(`${casePublicId}:${channel.id}:${opening.key}`).digest('hex').slice(0,22) };
+      for (const [field,value] of Object.entries(references)) {
+        if (record[field] && record[field] !== value) fail('新账户交易的原申请引用与同包开户不一致');
+        record[field] = value;
+      }
+    }
     const missing = [...new Set([...requirements.required,
       ...(requirements.requiredByBusiness[intent.businessCode] ?? [])])]
       .filter(name => name !== 'TAAccountID' && (record[name] == null || String(record[name]).trim() === ''));
     if (!intent.businessDate) missing.push('TransactionDate');
     if (missing.length) questions.push(`${customer.name}（网点 ${account.branch_code}）还缺：${[...new Set(missing)].map(name =>
       meanings[name] ?? TRANSACTION_FIELD_INPUTS[name]?.label ?? name).join('、')}`);
-    if (needsBinding && !binding) waiting.push(intent.key);
+    if (needsBinding && !binding && !packagedOpening) waiting.push(intent.key);
     const invalid = [];
     if (intent.businessDate && (!/^\d{8}$/.test(intent.businessDate) || !Number.isFinite(Date.parse(
       `${intent.businessDate.slice(0,4)}-${intent.businessDate.slice(4,6)}-${intent.businessDate.slice(6)}T00:00:00Z`)) ||
@@ -130,7 +141,7 @@ export function compileApplicationIntents({ intents, data, channel, bindings, ca
       invalid.push(field?`${meanings[field.name]??TRANSACTION_FIELD_INPUTS[field.name]?.label??field.name}的长度或数值格式不符合协议（最多${field.length}${field.type==='N'?'位数字':'字节'}${field.type==='N'?`，小数${field.scale}位`:''}）`:'已提供的申请字段格式不符合协议，请核对长度和数值格式');
     }
     if (invalid.length) questions.push(`${customer.name}（网点 ${account.branch_code}）：${invalid.join('；')}`);
-    if (missing.length || invalid.length || (needsBinding && !binding)) continue;
+    if (missing.length || invalid.length || (needsBinding && !binding && !packagedOpening)) continue;
     records.push({ key: intent.key, fileType: intent.fileType,
       businessDate: intent.businessDate, record });
   }

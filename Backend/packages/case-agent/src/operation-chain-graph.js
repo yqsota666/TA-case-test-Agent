@@ -18,14 +18,14 @@ export function reconcileOperations({plan,applications=[],events=[],casePublicId
   const blocked=new Set();
   for(const task of tasks) {
     const impossible=(task.dependsOn??[]).some(d=>blocked.has(d.applicationKey) ||
-      ['CONFIRMED','FAILED'].includes(actual.get(d.applicationKey)?.status) && !satisfies(actual.get(d.applicationKey),d.condition));
+      d.condition!=='ORDERED' && ['CONFIRMED','FAILED'].includes(actual.get(d.applicationKey)?.status) && !satisfies(actual.get(d.applicationKey),d.condition));
     if(impossible)blocked.add(task.key);
   }
   const rows=tasks.map(task=>{
     const app=actual.get(task.key),step=plan.exchangePlan.steps.find(s=>s.stepId===task.stepId);
-    const unmet=(task.dependsOn??[]).filter(d=>!satisfies(actual.get(d.applicationKey),d.condition));
+    const unmet=(task.dependsOn??[]).filter(d=>d.condition!=='ORDERED' && !satisfies(actual.get(d.applicationKey),d.condition));
     const fileWaiting=step.dependsOn.filter(d=>!events.some(e=>e.stepId===d.stepId && e.condition===d.condition));
-    const state=app?.status ?? (!locked?'PROPOSED':!task.canApply?'UNSUPPORTED':blocked.has(task.key)?'BLOCKED':
+    const state=app?.status ?? (!locked?'PROPOSED':!task.canApply && plan.contract.version!==4?'UNSUPPORTED':blocked.has(task.key)?'BLOCKED':
       unmet.length || fileWaiting.length?'WAITING':'READY');
     return {...task,state,unmet,fileWaiting,applicationNumber:app?.applicationNumber??null};
   });

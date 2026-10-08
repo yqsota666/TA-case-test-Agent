@@ -13,7 +13,7 @@ function necessarySteps(steps) {
 // A failed receipt never satisfies CONFIRMED. This records why a required
 // dependent application cannot execute, without inventing any future TA result.
 export function deriveTerminalTaFailures({plan,order,applications,preparedAccounts=[],failures}) {
- if(plan.contract?.version===3)return operationFailureBlockers({plan,order,applications,failures,necessaryStepIds:necessarySteps(order.plan.steps)});
+ if(plan.contract?.version>=3)return operationFailureBlockers({plan,order,applications,failures,necessaryStepIds:necessarySteps(order.plan.steps)});
  const blockers=[],necessary=necessarySteps(order.plan.steps);
  const accountFor=stepId=>{
   const specified=plan.contract?.applications.filter(a=>a.stepId===stepId);
@@ -48,7 +48,7 @@ export function deriveTerminalTaFailures({plan,order,applications,preparedAccoun
 }
 
 export function unresolvedTerminalTaFailures({plan,order,applications,preparedAccounts=[],failures}) {
- if(plan.contract?.version===3)return [];
+ if(plan.contract?.version>=3)return [];
  const necessary=necessarySteps(order.plan.steps);
  return failures.filter(f=>{
   const source=order.plan.steps.find(s=>s.stepId===f.stepId);

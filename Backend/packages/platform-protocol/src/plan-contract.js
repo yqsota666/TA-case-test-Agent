@@ -18,10 +18,10 @@ export const RESULT_FIELDS = Object.freeze({
 export function validPlanContract(c, plan) {
   const keys=['version','protocolVersion','dataSpecification','assumptions','expectations','applications','missing'];
   if(c?.version>=2)keys.push('businessExpectations');
-  if (!exact(c, keys) || ![1,2,3].includes(c.version) || c.protocolVersion!=='22' || !Array.isArray(plan?.scenarios) || !plan.scenarios.length ||
+  if (!exact(c, keys) || ![1,2,3,4].includes(c.version) || c.protocolVersion!=='22' || !Array.isArray(plan?.scenarios) || !plan.scenarios.length ||
       !list(c.assumptions,50,v=>text(v)) || !list(c.missing,50,v=>text(v))) return false;
   const d=c.dataSpecification;
-  return validDataSpecification(d) && validApplications(c,d,plan) && (c.version!==3 || operationChainIssues(c,plan).length===0) && validBusinessExpectations(c,plan) && validExpectations(c,d,plan);
+  return validDataSpecification(d) && validApplications(c,d,plan) && (c.version<3 || operationChainIssues(c,plan).length===0) && validBusinessExpectations(c,plan) && validExpectations(c,d,plan);
 }
 
 export function planContractValidationIssues(c,plan) {
@@ -37,7 +37,7 @@ export function planContractValidationIssues(c,plan) {
   });
   return [...forbidden,
     !validApplications(c,c.dataSpecification,plan)&&'申请字段、发送步骤或账户基金引用无效',
-    ...(c.version===3?operationChainIssues(c,plan):[]),
+    ...(c.version>=3?operationChainIssues(c,plan):[]),
     !validExpectations(c,c.dataSpecification,plan)&&'预期原文、字段值或证据绑定无效'].filter(Boolean);
 }
 
@@ -75,7 +75,7 @@ function validDataSpecification(d) {
 
 function validApplications(c,d,plan) {
   if (!list(c.applications,80,a=>{
-    if (!exact(a,['key','stepId','businessCode','accountIndex','transactionAccountId','fundIndex','fields',...(c.version===3?['dependsOn']:[])]) ||
+    if (!exact(a,['key','stepId','businessCode','accountIndex','transactionAccountId','fundIndex','fields',...(c.version>=3?['dependsOn']:[])]) ||
         typeof a.key!=='string' || !/^[a-zA-Z0-9_-]{1,40}$/.test(a.key) || typeof a.stepId!=='string' ||
         !((index(a.accountIndex) && a.accountIndex<d.accounts.length && a.transactionAccountId===null) ||
           (a.accountIndex===null && typeof a.transactionAccountId==='string' && /^\d{1,17}$/.test(a.transactionAccountId))) ||
@@ -84,21 +84,21 @@ function validApplications(c,d,plan) {
         !Object.entries(a.fields).every(([k,v])=>/^[A-Za-z][A-Za-z0-9]{0,49}$/.test(k) && typeof v==='string' && v.length<=500)) return false;
     const step=plan.exchangePlan?.steps.find(s=>s.stepId===a.stepId);
     if(!step || step.direction!=='SEND' || step.businessTime.kind!=='DATE' ||
-       !(c.version===3 ? supportedOperation(step.fileType,a.businessCode) && (step.fileType==='01'?a.fundIndex===null:a.fundIndex!==null) :
+       !(c.version>=3 ? supportedOperation(step.fileType,a.businessCode) && (step.fileType==='01'?a.fundIndex===null:a.fundIndex!==null) :
          ((step.fileType==='01' && a.businessCode==='001' && a.fundIndex===null) || (step.fileType==='03' && a.businessCode==='022' && a.fundIndex!==null)))) return false;
-    if(step.fileType==='03' && (c.version!==3 || a.businessCode==='022') && !money(a.fields.ApplicationAmount))return false;
+    if(step.fileType==='03' && (c.version<3 || a.businessCode==='022') && !money(a.fields.ApplicationAmount))return false;
     const owned=['AppSheetSerialNo','TransactionAccountID','DistributorCode','BusinessCode','BranchCode','InvestorName','IndividualOrInstitution','TAAccountID','FundCode','ShareClass','TransactionDate'];
     const allowed=new Set(fieldsForFile(c.protocolVersion,step.fileType).map(field=>field.name));
     return !Object.keys(a.fields).some(k=>owned.includes(k)||!allowed.has(k));
   }) || new Set(c.applications.map(a=>a.key)).size!==c.applications.length) return false;
   for(const a of c.applications){
     const step=plan.exchangePlan.steps.find(s=>s.stepId===a.stepId);
-    if(step.fileType==='01' && (c.version!==3 || a.businessCode==='001') && a.transactionAccountId!==null)return false;
+    if(step.fileType==='01' && (c.version<3 || a.businessCode==='001') && a.transactionAccountId!==null)return false;
     if(step.fileType==='03' && a.accountIndex!==null){
       const opening=c.applications.find(o=>o.businessCode==='001' && o.accountIndex===a.accountIndex);
       const openStep=opening && plan.exchangePlan.steps.find(s=>s.stepId===opening.stepId);
       const receipt=openStep && plan.exchangePlan.steps.find(s=>s.fileType==='02' && s.roundId===openStep.roundId);
-      if(!receipt || !(c.version===3?waitsForReceipt(plan.exchangePlan,step,receipt.stepId):step.dependsOn.some(d=>d.stepId===receipt.stepId && d.condition==='CONFIRMED')))return false;
+      if(c.version!==4 && (!receipt || !(c.version>=3?waitsForReceipt(plan.exchangePlan,step,receipt.stepId):step.dependsOn.some(d=>d.stepId===receipt.stepId && d.condition==='CONFIRMED'))))return false;
     }
   }
   if (!c.missing.length && plan.exchangePlan?.steps.some(s=>s.direction==='SEND' && !c.applications.some(a=>a.stepId===s.stepId))) return false;
@@ -112,20 +112,20 @@ function validExpectations(c,d,plan) {
         !plan.scenarios[a.scenarioIndex].expected.includes(a.expectedQuote) ||
         !Object.hasOwn(RESULT_FIELDS,a.source) || !RESULT_FIELDS[a.source].includes(a.field) || !['eq','gte','lte'].includes(a.operator) || !text(a.expectedValue,100)) return false;
     const s=a.selector;
-    if (!exact(s,['accountIndex','transactionAccountId','channelId','fundCode','shareClass','fileType','businessDate',...(c.version===3?['applicationKey']:[])]) ||
+    if (!exact(s,['accountIndex','transactionAccountId','channelId','fundCode','shareClass','fileType','businessDate',...(c.version>=3?['applicationKey']:[])]) ||
         !((index(s.accountIndex) && s.accountIndex<d.accounts.length && s.transactionAccountId===null) ||
           (s.accountIndex===null && typeof s.transactionAccountId==='string' && /^\d{1,17}$/.test(s.transactionAccountId))) ||
         !(s.channelId===null || (typeof s.channelId==='string' && /^[1-9]\d{0,18}$/.test(s.channelId))) ||
         !(s.fundCode===null || code(s.fundCode)) || !(s.shareClass===null || (typeof s.shareClass==='string' && /^[A-Z0-9]$/.test(s.shareClass))) ||
         !(s.fileType===null || ['01','03'].includes(s.fileType)) || !(s.businessDate===null || validDate(s.businessDate))) return false;
-    if(c.version===3 && (a.source==='APPLICATION_CONFIRMATION' ? !c.applications.some(app=>app.key===s.applicationKey) : s.applicationKey!==null))return false;
+    if(c.version>=3 && (a.source==='APPLICATION_CONFIRMATION' ? !c.applications.some(app=>app.key===s.applicationKey) : s.applicationKey!==null))return false;
     if (a.source==='CURRENT_FORMAL_HOLDING' && (!s.fundCode || !s.shareClass || s.fileType!==null || s.businessDate!==null)) return false;
     if (a.source==='FORMAL_ACCOUNT' && [s.fundCode,s.shareClass,s.fileType,s.businessDate].some(v=>v!==null))return false;
     if (a.source==='APPLICATION_CONFIRMATION') {
       if (!s.fileType || !s.businessDate || !c.applications.some(application=>{
         const step=plan.exchangePlan.steps.find(step=>step.stepId===application.stepId);
         const fund=application.fundIndex===null?null:d.funds[application.fundIndex];
-        return (c.version!==3 || application.key===s.applicationKey) && step.fileType===s.fileType && step.businessTime.value===s.businessDate &&
+        return !!step && (c.version<3 || application.key===s.applicationKey) && step.fileType===s.fileType && step.businessTime.value===s.businessDate &&
           application.accountIndex===s.accountIndex && application.transactionAccountId===s.transactionAccountId &&
           (s.fundCode===null || fund?.fundCode===s.fundCode) && (s.shareClass===null || fund?.shareClass===s.shareClass);
       })) return false;

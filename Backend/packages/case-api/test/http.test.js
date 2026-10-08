@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import { request as httpRequest } from 'node:http';
 import test from 'node:test';
+import {buildApplicationPackage} from '../../platform-protocol/src/application-package.js';
+import {buildDataFile,dataFileName} from '../../platform-protocol/src/index.js';
 import { createCaseHttpServer } from '../src/http.js';
 
 const route = '/api/chats/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/cases/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/discussion';
@@ -9,7 +11,7 @@ const planRoute = route.replace('/discussion', '/plan');
 const dataRoute = route.replace('/discussion', '/data');
 const allowedOrigin = 'http://127.0.0.1:3100';
 
-async function fixture(t, {orderRejected=false}={}) {
+async function fixture(t, {orderRejected=false,packageFiles=[]}={}) {
   const calls = [];
   const server = createCaseHttpServer({
     allowedOrigin,
@@ -76,8 +78,8 @@ async function fixture(t, {orderRejected=false}={}) {
       generateOutboundFiles: async (token, input) => {
         calls.push(['generate', token, input]); return { files: [] };
       },
-      listOutboundFiles: async token => { calls.push(['files', token]); return { files: [] }; },
-      readOutboundFile: async token => { calls.push(['read-file', token]); return {
+      listOutboundFiles: async (token,chat) => { calls.push(['files', token,chat]); return { files: packageFiles }; },
+      readOutboundFile: async (token,input) => { calls.push(['read-file', token,input]); if(packageFiles.length)return packageFiles.find(f=>f.id===input.fileId);return {
         fileName: 'OFD_306_27_20261003_01_001.TXT', rawBytes: Buffer.from([0, 1, 2]), sha256: 'a'.repeat(64),
       }; },
     },
@@ -443,4 +445,18 @@ test('business output routes bind scope, reject changed account and bound JSON u
  assert.equal((await fetch(base+path,{method:'POST',headers,body:JSON.stringify({...body,workspaceId:'99'})})).status,400);
  assert.equal((await fetch(base+path,{method:'POST',headers,body:JSON.stringify({...body,content:'超'.repeat(90000)})})).status,413);
  assert.equal((await fetch(base+path,{method:'DELETE',headers})).status,404);
+});
+
+
+test('application ZIP authenticates and scopes every original file to its Chat and batch',async t=>{
+ const batch='dddddddd-dddd-dddd-dddd-dddddddddddd',chat='aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+ const options={creator:'306',receiver:'27',date:'20261008',version:'22'};
+ const packageFiles=['01','03'].map((fileType,i)=>({id:String(i+1),batchPublicId:batch,fileName:dataFileName({...options,fileType}),rawBytes:buildDataFile({...options,fileType,records:[]})}));
+ const {base,calls}=await fixture(t,{packageFiles});
+ const route=`${base}/api/chats/${chat}/files/package/${batch}`,cookie='case_session=abcdefghijklmnopqrstuvwxyz012345';
+ assert.equal((await fetch(route)).status,401);
+ const response=await fetch(route,{headers:{cookie}});assert.equal(response.status,200);assert.equal(response.headers.get('content-type'),'application/zip');
+ assert.deepEqual(Buffer.from(await response.arrayBuffer()),buildApplicationPackage(packageFiles).rawBytes);
+ for(const call of calls.filter(c=>c[0]==='read-file')){assert.equal(call[1],cookie.split('=')[1]);assert.equal(call[2].chatPublicId,chat);}
+ assert.equal((await fetch(route.replace(batch,'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'),{headers:{cookie}})).status,404);
 });

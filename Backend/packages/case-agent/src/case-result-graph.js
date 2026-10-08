@@ -49,7 +49,7 @@ function unavailableBecauseBlocked(snapshot,assertion,account) {
  const c=snapshot.plan.contract,selector=assertion.selector,steps=snapshot.plan.exchangePlan.steps;
  const accountFor=application=>application.transactionAccountId??snapshot.preparedAccounts?.[application.accountIndex]?.transactionAccountId;
  return (snapshot.blockers??[]).some(b=>{
-  if(c.version===3 && assertion.source==='APPLICATION_CONFIRMATION' && b.blockedApplicationKeys?.includes(selector.applicationKey))return true;
+  if(c.version>=3 && assertion.source==='APPLICATION_CONFIRMATION' && b.blockedApplicationKeys?.includes(selector.applicationKey))return true;
   if(b.transactionAccountId!==account || (selector.channelId!==null && selector.channelId!==String(b.channelId)))return false;
   const source=steps.find(s=>s.stepId===b.failedStepId);
   if(assertion.source==='FORMAL_ACCOUNT'){
@@ -81,7 +81,7 @@ export function compareConfirmedExpectations(snapshot,businessProposal=null) {
    (selector.shareClass===null || e.values.shareClass===selector.shareClass) &&
    (selector.fileType===null || e.source.fileType===selector.fileType) &&
    (selector.businessDate===null || e.source.businessDate===selector.businessDate) &&
-   (c.version!==3 || !selector.applicationKey || e.source.applicationNumber===operationSerial({casePublicId:snapshot.casePublicId,channelId:e.source.channelId,key:selector.applicationKey})));
+   (c.version<3 || !selector.applicationKey || e.source.applicationNumber===operationSerial({casePublicId:snapshot.casePublicId,channelId:e.source.channelId,key:selector.applicationKey})));
   if(candidates.length!==1){
    const message=`场景${a.scenarioIndex+1}的${a.field}证据${candidates.length?'不唯一':'缺失'}，不能猜选`;
    if(!candidates.length && terminal?.outcome==='FAIL' && unavailableBecauseBlocked(snapshot,a,account))unavailable.push(message);else issues.push(message);

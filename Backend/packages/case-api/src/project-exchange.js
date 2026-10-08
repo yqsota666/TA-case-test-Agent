@@ -2,7 +2,7 @@ import {createOperationChainGraph} from '../../case-agent/src/operation-chain-gr
 import crypto from 'node:crypto';
 import {isDeepStrictEqual} from 'node:util';
 const terminal = new Set(['PASS','FAIL']);
-const groupKey = intent => [String(intent.channelId),intent.businessDate.replaceAll('-',''),intent.fileType,intent.wave??''].join(':');
+const groupKey = intent => intent.indexed?[String(intent.channelId),intent.businessDate.replaceAll('-',''),'PACKAGE',intent.wave??''].join(':'): [String(intent.channelId),intent.businessDate.replaceAll('-',''),intent.fileType,intent.wave??''].join(':');
 function wave(plan,intent) {
  const application=plan?.contract?.applications?.find(a=>a.key===intent.key);
  const steps=plan?.exchangePlan?.steps??[];
@@ -39,7 +39,7 @@ export function createProjectExchangeService({repository,preparations,exchangeRe
     const files = (await exchangeRepository.listOutboundFiles(token,scope.chatPublicId)).files.filter(f=>ids.has(f.batchPublicId));
     const plan=await repository.getLatestSopProposal(token,scope.chatPublicId,scope.casePublicId);
     let tasks=[];
-    if(plan?.status==='LOCKED' && plan.proposal.contract?.version===3 && state.channelId){
+    if(plan?.status==='LOCKED' && plan.proposal.contract?.version>=3 && state.channelId){
       const facts=await exchangeRepository.readOperationFacts(token,scope);
       const result=await createOperationChainGraph().invoke({input:{plan:plan.proposal,...facts,...scope,channelId:state.channelId}});
       tasks=result.schedule.tasks;
@@ -77,13 +77,13 @@ export function createProjectExchangeService({repository,preparations,exchangeRe
       const state=states.find(s=>s.casePublicId===member.casePublicId);
       const intent=state?.intents.find(i=>serial(state,i)===app.applicationNumber);
       if(!intent)throw conflict('申请与已确认方案不一致，请重新检查对应 Case。');
-      const key=groupKey({...app,wave:wave(state.plan,intent)});
+      const key=groupKey({...app,wave:state.plan.contract?.version===4?'':wave(state.plan,intent),indexed:state.plan.contract?.version===4});
       if(!groups.has(key))groups.set(key,[]);
       groups.get(key).push(app);
     }
     const batches=new Set(relevant.flatMap(c=>c.applications.filter(a=>a.status==='BATCHED').map(a=>a.batchPublicId)));
     for(const [key,ready] of groups) {
-      const pending=states.some(s=>s.intents.some(intent=>!['BLOCKED','UNSUPPORTED'].includes(s.tasks?.find(t=>t.key===intent.key)?.state)&&groupKey({...intent,channelId:s.channelId,wave:wave(s.plan,intent)})===key&&!s.stagedKeys.includes(intent.key)));
+      const pending=states.some(s=>s.intents.some(intent=>!['BLOCKED','UNSUPPORTED'].includes(s.tasks?.find(t=>t.key===intent.key)?.state)&&groupKey({...intent,channelId:s.channelId,wave:s.plan.contract?.version===4?'':wave(s.plan,intent),indexed:s.plan.contract?.version===4})===key&&!s.stagedKeys.includes(intent.key)));
       if(pending)continue;
       if(ready.length>1000)throw conflict('同组申请超过单批容量，请调整项目范围后重试。');
       const batch=await exchangeRepository.createOutboundBatch(input.token,{chatPublicId:input.chatPublicId,

@@ -14,7 +14,7 @@ export async function revisePreparedPlanData({repository,admit,token,chatPublicI
   const proposal=structuredClone(current.proposal);
   proposal.contract.dataSpecification=parsed.data;
   if(body.applications!==undefined){
-    if(proposal.contract.version!==3 || !Array.isArray(body.applications))throw fail('DATA_EDIT_INVALID',422,'当前任务单不能修改操作');
+    if(proposal.contract.version<3 || !Array.isArray(body.applications))throw fail('DATA_EDIT_INVALID',422,'当前任务单不能修改操作');
     proposal.contract.applications=body.applications;
   }
   if(!validPlanContract(proposal.contract,proposal))throw fail('DATA_EDIT_INVALID',422,'修改后的客户、账户、基金或持仓关联不符合方案，请检查对应记录');

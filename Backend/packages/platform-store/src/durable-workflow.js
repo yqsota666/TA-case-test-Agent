@@ -58,7 +58,7 @@ export async function workflowFacts(db,{owner,keys},token,input) {
  }
  if(plan) {plan.proposal=json(plan.plan_json);delete plan.plan_json;}
  const facts={chatStatus:owner.chat_status,caseStatus:owner.case_status,plan:plan??null,dataConfirmed:Number(section.n)>0,generated:Number(draft.hasDraft)>0,draftConfirmed:Number(draft.confirmed)>0,review:latestReview,order};
- if(plan?.proposal?.contract?.version===3 && order){
+ if(plan?.proposal?.contract?.version>=3 && order){
   const [applications]=await db.execute(`SELECT CAST(channel_id AS CHAR) AS channelId,app_no AS applicationNumber,status FROM applications
     WHERE workspace_id=? AND chat_id=? AND case_id=? ORDER BY id LIMIT 501`,keys);
   if(applications.length>500)throw storeError('OPERATION_CAPACITY',409,'申请超过完整核对范围');

@@ -1,3 +1,4 @@
+import {operationTasks} from '../../platform-protocol/src/operation-chain.js';
 import {createOperationChainGraph} from '../../case-agent/src/operation-chain-graph.js';
 import { isDeepStrictEqual } from 'node:util';
 import { compileApplicationIntents, preparationCatalog } from '../../case-agent/src/application-preparation.js';
@@ -46,7 +47,7 @@ export function createApplicationPreparationService({ repository, preparations, 
     let confirmedSuggestion;
     if(plan.proposal.contract){
       if(userInput)throw error('PLAN_DATA_FROZEN','申请数据已在Plan中锁定；修改业务内容请新建Case重新确认');
-      const intents=plan.proposal.contract.applications.map(a=>{
+      const intents=operationTasks(plan.proposal).map(a=>{
         const step=plan.proposal.exchangePlan.steps.find(s=>s.stepId===a.stepId);
         const accountNo=a.transactionAccountId ?? draftData.accounts[a.accountIndex]?.account_no;
         const account=data.accounts.find(r=>r.account_no===accountNo);
@@ -76,13 +77,13 @@ export function createApplicationPreparationService({ repository, preparations, 
       }
     }
     let schedule=null;
-    if(plan.proposal.contract?.version===3){
+    if(plan.proposal.contract?.version>=3){
       const facts=await exchangeRepository.readOperationFacts(token,scope);
       ({schedule}=await createOperationChainGraph().invoke({input:{plan:plan.proposal,...facts,casePublicId,channelId}}));
     }
     const selected=schedule?suggestion.intents.filter(i=>schedule.readyKeys.includes(i.key)):suggestion.intents;
     const compiled = compileApplicationIntents({ intents: selected, data, channel,
-      bindings: bindingResult.bindings, casePublicId });
+      bindings: bindingResult.bindings, casePublicId,unassignedTaAccounts:plan.proposal.contract?.version===4?new Set(plan.proposal.contract.applications.filter(a=>a.accountIndex!==null && a.businessCode==='001').map(a=>String(draftData.accounts[a.accountIndex].id))):new Set() });
     if(schedule)compiled.waiting.push(...schedule.waitingKeys);
     const turns = [...history.turns];
     if (!recovering) {

@@ -10,6 +10,7 @@ import { DataEditSchema } from '../../case-agent/src/index.js';
 import {revisePreparedPlanContent} from './prepared-plan-content.js';
 import { revisePreparedPlanData } from './prepared-plan-data.js';
 import { parseDataFile } from '../../platform-protocol/src/index.js';
+import {buildApplicationPackage} from '../../platform-protocol/src/application-package.js';
 
 const taResetPath=/^\/api\/exchange\/channels\/([1-9]\d*)\/ta-reset(?:\/(confirm))?$/i;
 const chatCollectionPath=/^\/api\/chats(?:\/([0-9a-f-]{36})\/cases)?$/i;
@@ -19,6 +20,7 @@ const applicationPath = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\
 const bindingPath = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/ta-bindings$/i;
 const batchPath = /^\/api\/chats\/([0-9a-f-]{36})\/batches(?:\/([0-9a-f-]{36})\/generate)?$/i;
 const filesPath = /^\/api\/chats\/([0-9a-f-]{36})\/files(?:\/([1-9]\d*))?$/i;
+const packagePath = /^\/api\/chats\/([0-9a-f-]{36})\/files\/package\/([0-9a-f-]{36})$/i;
 const supplementPath = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/exchange-plan\/confirm$/i;
 const confirmationPath = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/return-confirmation(?:\/(delivery|apply|account))?$/i;
 const workflowPath = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/workflow(?:\/(resume))?$/i;
@@ -87,6 +89,7 @@ export function createCaseHttpHandler({ accountModelQuotas, modelRuntime, global
     const bindings = bindingPath.exec(pathname);
     const batch = batchPath.exec(pathname);
     const files = filesPath.exec(pathname);
+    const applicationPackage = packagePath.exec(pathname);
     const parsing = parsingPath.exec(pathname);
     const confirmation = confirmationPath.exec(pathname);
     const workflow=durableWorkflow && workflowPath.exec(pathname);
@@ -110,7 +113,7 @@ export function createCaseHttpHandler({ accountModelQuotas, modelRuntime, global
         (bindings && request.method === 'GET') ||
         (application && ['GET', 'POST'].includes(request.method)) ||
         (batch && request.method === 'POST') ||
-        (files && request.method === 'GET')));
+        ((files || applicationPackage) && request.method === 'GET')));
     if (!globalDataRoute && !globalFileRoute && !resetRoute && !workflowRoute && !receiptsRoute && !collectionRoute && !lifecycleRoute && !resultRoute && !holdingsRoute && !supplementRoute && !catalog && !salesRoute && !confirmationRoute && !exchangeRoute && !parsingRoute && (!match || !['GET', 'POST', 'PATCH'].includes(request.method) ||
         (request.method === 'PATCH' && match?.[3] !== 'data') ||
         (['discussion/cancel','plan/data','plan/content','plan/confirm', 'data/execute', 'data/confirm'].includes(match?.[3]) && request.method !== 'POST') ||
@@ -248,6 +251,15 @@ export function createCaseHttpHandler({ accountModelQuotas, modelRuntime, global
       if (exchangeRoute && bindings) {
         send(response, 200, await exchangeRepository.listCaseBindings(token,
           { chatPublicId: bindings[1], casePublicId: bindings[2] })); return;
+      }
+      if(exchangeRoute && applicationPackage){
+        const listed=await exchangeRepository.listOutboundFiles(token,applicationPackage[1]);
+        const members=listed.files.filter(f=>f.batchPublicId===applicationPackage[2]);
+        if(!members.length){send(response,404,{error:'FILE_NOT_FOUND',message:'申请包不存在或尚未生成'});return;}
+        const originals=await Promise.all(members.map(f=>exchangeRepository.readOutboundFile(token,{chatPublicId:applicationPackage[1],fileId:f.id})));
+        const result=buildApplicationPackage(originals);
+        response.writeHead(200,{'content-type':'application/zip','content-disposition':`attachment; filename="${result.fileName}"`,'content-length':result.rawBytes.length,'cache-control':'no-store','x-content-type-options':'nosniff'});
+        response.end(result.rawBytes);return;
       }
       if (exchangeRoute && files) {
         if (!files[2]) { send(response, 200, await exchangeRepository.listOutboundFiles(token, files[1])); return; }

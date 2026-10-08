@@ -19,7 +19,7 @@ export function dataExchangeRequirementIssues(plan) {
     const bound=new Set(applications.filter(a=>candidates.some(s=>s.stepId===a.stepId)).map(a=>a.accountIndex));
     if(d.accounts.some((_,i)=>!bound.has(i)))issues.push(`${type}申请尚未覆盖需要构造的模拟账户`);
   }
-  if(required.includes('03') && sends('03').length) {
+  if(plan.contract.version!==4 && required.includes('03') && sends('03').length) {
     const unbound=applications.filter(a=>sends('03').some(s=>s.stepId===a.stepId)&&Number.isInteger(a.accountIndex)).some(a=>{
       const openings=applications.filter(o=>o.accountIndex===a.accountIndex&&sends('01').some(s=>s.stepId===o.stepId));
       const returns=steps.filter(r=>r.fileType==='02'&&r.direction==='RECEIVE'&&r.required===true&&r.dependsOn.some(dep=>dep.condition==='SENT'&&openings.some(o=>o.stepId===dep.stepId)));
