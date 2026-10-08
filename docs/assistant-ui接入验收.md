@@ -95,3 +95,9 @@ Validation: backend355 passed with15 opt-in database tests skipped; frontend23 p
 合成页 http://127.0.0.1:5198/test/assistant-ui.html?theme=liquid&mode=plan ，所有/live-api请求被夹具拦截，不连接业务服务。截图 .context/assistant-ui/visual-suite.png。合成确认不代表真实业务确认。
 
 回滚点：f5bcb025官方组件适配；ed6949b9方案区/确认/列表/附件/真实流程接线；6eea5f0c引用发送；be12271b窄屏键盘隔离。按依赖逆序回滚可恢复789b31b3。均仅本地，未push/PR。
+
+### 成果卡样式修复
+
+用户指出成果卡退化为裸文字/图标。实际computed style证实.cw-shell button通用重置覆盖了边框与内边距；另study-bubble是渐变，不能作为color-mix颜色参数。修复组件按钮优先级，成果卡采用原有渐变材质/边界/16px内边距，收紧成果回复与流程状态间距。状态改为“等待你确认准备数据/预期结果”，显式“查看过程”，避免将流程展示误认为确认操作。附件与引用按钮同步避免通用重置覆盖。
+
+构建通过；用户当前合成页实际computed style验证1px边框、16px内边距和渐变背景，点击打开/关闭方案及展开/收起过程通过，过程操作不确认方案。截图.context/assistant-ui/artifact-card-fixed.png。本轮无模型调用、无业务确认、无PR/push。
