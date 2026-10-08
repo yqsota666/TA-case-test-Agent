@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import {workflowEvidence} from '../../case-agent/src/workflow-evidence.js';
 import {canConfirmCaseResult} from '../../case-agent/src/case-result-graph.js';
 import { authenticateSession,storeError } from './index.js';
 import { createCaseResultRepository } from './case-result.js';
@@ -16,11 +17,11 @@ export async function workflowScope(db,token,scope,write=false) {
  return {owner,keys:[auth.workspace_id,owner.chat_id,owner.case_id]};
 }
 export async function workflowFacts(db,{owner,keys},token,input) {
- const [[plan]]=await db.execute(`SELECT version_number AS version,status FROM case_sop_versions WHERE workspace_id=? AND chat_id=? AND case_id=? ORDER BY version_number DESC LIMIT 1`,keys);
+ const [[plan]]=await db.execute(`SELECT version_number AS version,status,plan_json FROM case_sop_versions WHERE workspace_id=? AND chat_id=? AND case_id=? ORDER BY version_number DESC LIMIT 1`,keys);
  const [[section]]=await db.execute(`SELECT COUNT(*) AS n FROM case_plan_section_confirmations WHERE workspace_id=? AND chat_id=? AND case_id=? AND version_number=? AND section='DATA'`,[...keys,plan?.version??0]);
  const [[draft]]=await db.execute(`SELECT EXISTS(SELECT 1 FROM case_data_executions WHERE workspace_id=? AND chat_id=? AND case_id=?) AS hasDraft,
  EXISTS(SELECT 1 FROM case_data_confirmations WHERE workspace_id=? AND chat_id=? AND case_id=?) AS confirmed`,[...keys,...keys]);
- const [[review]]=await db.execute(`SELECT CAST(id AS CHAR) AS id,evidence_sha256,plan_version,suggestion_json FROM case_result_reviews WHERE workspace_id=? AND chat_id=? AND case_id=? ORDER BY case_result_reviews.id DESC LIMIT 1`,keys);
+ const [[review]]=await db.execute(`SELECT CAST(id AS CHAR) AS id,evidence_sha256,plan_version,suggestion_json,final_verdict,confirmed_at FROM case_result_reviews WHERE workspace_id=? AND chat_id=? AND case_id=? ORDER BY case_result_reviews.id DESC LIMIT 1`,keys);
  let order=null;
  if(plan?.status==='LOCKED')try {order=await exchangeOrderContext(db,keys,false);} catch(e) {if(e.code!=='EXCHANGE_PLAN_REQUIRED')throw e;}
  if(order) {
@@ -45,15 +46,18 @@ export async function workflowFacts(db,{owner,keys},token,input) {
  }
  let latestReview=null;
  if(review) {
-  latestReview={id:review.id,confirmable:false};
+  latestReview={id:review.id,planVersion:Number(review.plan_version),finalVerdict:review.final_verdict,confirmedAt:review.confirmed_at,confirmable:false};
   const suggestion=json(review.suggestion_json);
-  if(['PASS','FAIL'].includes(suggestion?.outcome) && owner.chat_status==='ACTIVE' && !['PASS','FAIL'].includes(owner.case_status) && plan?.status==='LOCKED' && Number(review.plan_version)===Number(plan.version)) {
+  if(owner.chat_status==='ACTIVE' && !['PASS','FAIL'].includes(owner.case_status) && plan?.status==='LOCKED' && Number(review.plan_version)===Number(plan.version)) {
    const current=resultSnapshot??await createCaseResultRepository({transaction:action=>action(db)}).snapshot(token,input);
-   latestReview.confirmable=current.sha256===review.evidence_sha256 && canConfirmCaseResult(current,suggestion);
+   latestReview.evidenceCurrent=current.sha256===review.evidence_sha256;
+   latestReview.confirmable=latestReview.evidenceCurrent && canConfirmCaseResult(current,suggestion);
    latestReview.currentEvidenceHash=current.sha256;
   }
  }
+ if(plan) {plan.proposal=json(plan.plan_json);delete plan.plan_json;}
  const facts={chatStatus:owner.chat_status,caseStatus:owner.case_status,plan:plan??null,dataConfirmed:Number(section.n)>0,generated:Number(draft.hasDraft)>0,draftConfirmed:Number(draft.confirmed)>0,review:latestReview,order};
+ facts.proven=workflowEvidence(facts);
  facts.revision=crypto.createHash('sha256').update(JSON.stringify(facts)).digest('hex');return facts;
 }
 export function createDurableWorkflowRepository({pool,lockTimeout=5}) {
@@ -89,6 +93,7 @@ export function createDurableWorkflowRepository({pool,lockTimeout=5}) {
    if(prior.values?.revision===facts.revision) result={...prior.values.position,revision:facts.revision,checkpointId:prior.config.configurable.checkpoint_id,interrupted:prior.tasks.some(t=>t.interrupts?.length)};
    else if(facts.chatStatus!=='ACTIVE') result={...workflowPosition(facts),revision:facts.revision,checkpointId:prior.config.configurable.checkpoint_id??null,interrupted:false};
    else result=await reconcileWorkflow(graph,config);
+   result={...result,proven:facts.proven};
    if(event)await db.execute(`INSERT INTO case_workflow_events (workspace_id,chat_id,case_id,event_id,expected_stage,response_json) VALUES (?,?,?,?,?,?)`,[...scope.keys,eventId,input.expectedStage,JSON.stringify(result)]);
    await db.commit();return result;
   } catch(error) {await db.rollback();throw error;}

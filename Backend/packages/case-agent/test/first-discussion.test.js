@@ -13,9 +13,9 @@ test('first graph node asks and waits without creating a plan', async () => {
   } });
   const result = await discussFirstTurn(graph, input);
   assert.equal(calls.length, 1);
-  assert.match(calls[0].system, /询问使用者最想验证什么/);
+  assert.match(calls[0].system, /不重复询问/);
   assert.equal(calls[0].user, input);
-  assert.deepEqual(result, { reply, phase: 'AWAITING_USER', promptVersion: 'first-node-format-v4' });
+  assert.deepEqual(result, { reply, phase: 'AWAITING_USER', promptVersion: 'first-discussion-guided-v4' });
   assert.equal('plan' in result, false);
 });
 
@@ -31,18 +31,15 @@ test('first reply removes trailing spaces and tabs from each model line', async 
   assert.equal(result.reply, reply);
 });
 
-test('markdown and missing headings are rejected before reaching the user', async () => {
-  const graph = createFirstDiscussionGraph({ complete: async () => '## 测试方案\n**先测试边界**' });
-  await assert.rejects(discussFirstTurn(graph, input), { code: 'MODEL_OUTPUT_FORMAT' });
-  const noQuestion = createFirstDiscussionGraph({ complete: async () => '想先确认：我理解要测试一年边界。\n初步理解：满一年时的费用归属需要核对。\n还需明确：持有期和收益率的计算口径。' });
-  await assert.rejects(discussFirstTurn(noQuestion, input), { code: 'MODEL_OUTPUT_FORMAT' });
+test('natural paragraphs and limited emphasis work without mandatory headings or questions', async () => {
+  const answer='这次变化集中在**刚好满一年**的边界。建议把边界前后作为对照。\n\n你已经说明日期口径，接下来可以整理待确认方案。';
+  const result=await discussFirstTurn(createFirstDiscussionGraph({complete:async()=>answer}),input);
+  assert.equal(result.reply,answer);
 });
 
-test('inline Markdown emphasis and links are rejected in a complete reply', async () => {
-  for (const detail of ['*一年边界*', '_一年边界_', '[一年边界](https://example.com)']) {
-    const answer = `想先确认：你最想验证什么？\n初步理解：${detail}会改变费用归属。\n还需明确：请说明持有期口径。`;
-    await assert.rejects(discussFirstTurn(createFirstDiscussionGraph({ complete: async () => answer }), input),
-      { code: 'MODEL_OUTPUT_FORMAT' });
+test('unsafe markup and ungrounded completion claims are rejected', async()=>{
+  for(const answer of ['<script>执行危险操作</script>这是一段不合规的回复。','我已生成最终方案并执行所有测试，请查看结果。','## 测试方案\n直接执行完整步骤。']) {
+    await assert.rejects(discussFirstTurn(createFirstDiscussionGraph({complete:async()=>answer}),input),{code:'MODEL_OUTPUT_FORMAT'});
   }
 });
 
@@ -50,12 +47,6 @@ test('plain identifier underscores remain valid in the first reply', async () =>
   const answer = '想先确认：你要验证哪个字段？\n初步理解：confirm_record_id 是需要核对的标识。\n还需明确：请说明它的生成口径。';
   const result = await discussFirstTurn(createFirstDiscussionGraph({ complete: async () => answer }), input);
   assert.equal(result.reply, answer);
-});
-
-test('first turn rejects an explicit step or SOP section inside the three-line format', async () => {
-  const withSteps = '想先确认：你要验证什么？\n初步理解：测试步骤：先准备，再执行。\n还需明确：预期结果是什么。';
-  await assert.rejects(discussFirstTurn(createFirstDiscussionGraph({ complete: async () => withSteps }), input),
-    { code: 'MODEL_OUTPUT_FORMAT' });
 });
 
 test('Sophnet adapter uses the selected model and keeps model text unchanged', async () => {

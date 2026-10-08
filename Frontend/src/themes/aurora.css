@@ -1,0 +1,46 @@
+:root[data-theme=aurora] {
+  --study-scheme:light;
+  --study-font:"SF Pro Text",-apple-system,"PingFang SC",sans-serif;
+  --study-surface:#f0f6f8;
+  --study-ink:#253944;
+  --study-muted:#51616e;
+  --study-icon:#476a77;
+  --study-line:rgb(73 115 127 / 16%);
+  --study-canvas:radial-gradient(ellipse at 100% 0%,#dce8f5,transparent 58%),radial-gradient(ellipse at 10% 85%,#d9eee6,transparent 65%),#f4f7f8;
+  --study-sidebar:linear-gradient(130deg,rgb(250 255 254 / 82%),rgb(220 235 242 / 76%));
+  --study-hover:#deebee;
+  --study-selected:linear-gradient(110deg,#d4e9df,#d5e2ef);
+  --study-on-selected:#243f49;
+  --study-selected-shadow:inset 0 1px 0 #f9fffc,inset 0 -1px 0 rgb(59 103 111 / 9%),0 3px 7px rgb(42 85 98 / 9%);
+  --study-bubble:linear-gradient(125deg,#e0eeea,#e7edf7);
+  --study-bubble-shadow:inset 0 1px 0 #fafffd;
+  --study-accent:#34695b;
+  --study-accent-deep:#285747;
+  --study-focus:#426b86;
+  --study-disabled:#dce8e9;
+  --study-mark:linear-gradient(135deg,#c8e6d9,#cbd8eb);
+  --study-edge-shadow:inset 0 1px 0 #f5fff9,0 3px 8px rgb(37 78 89 / 13%);
+  --study-document:linear-gradient(135deg,#fcfffd,#edf4f8);
+  --study-document-shadow:inset 0 1px 0 #fff,0 3px 6px rgb(34 83 97 / 4%),0 10px 24px rgb(34 83 97 / 6%);
+  --study-document-hover-shadow:inset 0 1px 0 #fff,0 4px 8px rgb(34 83 97 / 5%),0 14px 28px rgb(34 83 97 / 10%);
+  --study-document-icon:linear-gradient(140deg,#ecf6ed,#dce5f0);
+  --study-composer:linear-gradient(135deg,#fcfffe,#f1f7fb) padding-box,linear-gradient(105deg,#afd3c8,#c6d4ed 50%,#e5d2c3) border-box;
+  --study-composer-edge:transparent;
+  --study-composer-shadow:inset 0 1px 0 #fff,inset 0 -1px 0 rgb(54 92 107 / 3%),0 4px 8px rgb(37 83 98 / 4%),0 20px 38px rgb(47 89 108 / 11%);
+  --study-composer-focus-shadow:inset 0 1px 0 #fff,0 4px 10px rgb(37 83 98 / 5%),0 18px 38px rgb(47 89 108 / 14%);
+  --study-project-bar:linear-gradient(110deg,#e0efea,#e9eff8);
+  --study-modal:linear-gradient(140deg,#fbfefd,#edf4f8);
+  --study-modal-shadow:inset 0 1px 0 #fff,0 26px 80px rgb(30 67 84 / 26%);
+  --study-table:#f8fcfd;
+  --study-table-head:linear-gradient(105deg,#deede8,#e5edf7);
+  --study-backdrop:rgb(39 71 82 / 30%);
+  --study-selection:#c5e0d6;
+  --study-scrollbar:#9db8c1;
+  --study-error:#a03c48;
+}
+html[data-theme=aurora] .cw-sidebar {backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);}
+html[data-theme=aurora] .cw-brand-mark {border-radius:8px;}
+html[data-theme=aurora] .cw-shell svg {stroke-width:1.5;}
+@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))) {
+  html[data-theme=aurora] .cw-sidebar {background:linear-gradient(130deg,#f7fcfa,#e2edf3);}
+}

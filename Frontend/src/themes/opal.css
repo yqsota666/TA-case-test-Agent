@@ -1,0 +1,42 @@
+:root[data-theme=opal] {
+  --study-scheme:light;
+  --study-font:"SF Pro Text",-apple-system,"PingFang SC",sans-serif;
+  --study-surface:#f7f1ef;
+  --study-ink:#493b42;
+  --study-muted:#6e5863;
+  --study-icon:#866672;
+  --study-line:rgb(132 96 108 / 15%);
+  --study-canvas:radial-gradient(ellipse at 90% 5%,#e8deec,transparent 62%),radial-gradient(ellipse at 5% 85%,#f5e3d8,transparent 62%),#faf5f0;
+  --study-sidebar:linear-gradient(145deg,#fcf7f3,#f1e4e7 60%,#ece6f0);
+  --study-hover:#efe0e3;
+  --study-selected:linear-gradient(135deg,#f7e6e2,#eee0ec 55%,#e6e9ec);
+  --study-on-selected:#573d4d;
+  --study-selected-shadow:inset 0 1px 0 #fffdf8,inset 0 -1px 0 rgb(158 119 135 / 8%),0 5px 12px rgb(125 84 102 / 9%);
+  --study-bubble:linear-gradient(135deg,#fff3eb,#efe7f0);
+  --study-bubble-shadow:inset 0 1px 0 #fafffd;
+  --study-accent:#875568;
+  --study-accent-deep:#724358;
+  --study-focus:#906676;
+  --study-disabled:#ecdee2;
+  --study-mark:linear-gradient(135deg,#f9dece,#ead6e8 55%,#dce7eb);
+  --study-edge-shadow:inset 0 1px 0 #fffaf5,0 4px 10px rgb(115 72 88 / 10%);
+  --study-document:radial-gradient(ellipse at 100% 0%,#ece6f0,transparent 62%),linear-gradient(135deg,#fffbf4,#f7edef);
+  --study-document-shadow:inset 0 1px 0 #fff,0 4px 8px rgb(120 90 84 / 3%),0 13px 28px rgb(135 103 114 / 7%);
+  --study-document-hover-shadow:inset 0 1px 0 #fff,0 5px 10px rgb(120 90 84 / 5%),0 16px 30px rgb(135 103 114 / 11%);
+  --study-document-icon:linear-gradient(140deg,#f5e6dc,#eadfec 60%,#e3ebeb);
+  --study-composer:radial-gradient(ellipse at 0% 100%,rgb(241 216 206 / 35%),transparent 60%) padding-box,linear-gradient(120deg,#fffcf5,#f4eef4 62%,#edf3f4) padding-box,linear-gradient(125deg,#fffaf4,#ddbec9 28%,#f7ecd8 48%,#cfdce1 75%,#fff9f4) border-box;
+  --study-composer-edge:transparent;
+  --study-composer-shadow:inset 0 2px 0 #fffdf8,inset 0 -1px 0 rgb(165 131 141 / 8%),0 6px 12px rgb(121 86 97 / 4%),0 22px 44px rgb(127 92 108 / 10%);
+  --study-composer-focus-shadow:inset 0 2px 0 #fffdf8,0 6px 14px rgb(121 86 97 / 6%),0 22px 44px rgb(127 92 108 / 14%);
+  --study-project-bar:linear-gradient(130deg,#f4e4df,#ebe4ef 65%,#e8eeee);
+  --study-modal:radial-gradient(ellipse at 100% 0%,#ece5ef,transparent 62%),linear-gradient(140deg,#fffbf6,#f7eeef);
+  --study-modal-shadow:inset 0 1px 0 #fff,0 28px 80px rgb(104 66 85 / 25%);
+  --study-table:#fffbf8;
+  --study-table-head:linear-gradient(110deg,#f4e8e1,#ece5ef 70%,#e7edec);
+  --study-backdrop:rgb(81 56 66 / 28%);
+  --study-selection:#ebd3dd;
+  --study-scrollbar:#c7a9b6;
+  --study-error:#9b3b48;
+}
+html[data-theme=opal] .cw-shell svg {stroke-width:1.5;}
+html[data-theme=opal] .cw-brand-mark {border-radius:8px;}

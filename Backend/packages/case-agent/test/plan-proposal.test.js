@@ -37,7 +37,7 @@ test('a plan request yields a reviewable proposal without locking it', async () 
   } });
   const result = await proposeDiscussionPlan(graph, { priorTurns, userInput: '请整理为 Plan 提案。' });
   assert.equal(result.phase, 'PROPOSAL_PENDING');
-  assert.equal(result.promptVersion, 'plan-proposal-v4');
+  assert.equal(result.promptVersion, 'plan-proposal-v8');
   assert.deepEqual(result.proposal, proposal);
   assert.match(result.reply, /^测试目标：验证重复确认不会重复入账/);
   assert.match(result.reply, /场景 1：重复上传确认/);
@@ -92,4 +92,17 @@ test('only independent unconfirmed Chinese TA outcome clauses receive explicit s
  const existing={...proposal,openQuestions:[],scenarios:[{...proposal.scenarios[0],expected:'开户成功；状态CONFIRMED'}]};
  existing.contract=planContract(existing);
  assert.deepEqual(parsePlanProposal(JSON.stringify(existing)),existing,'existing contracts are never normalized');
+});
+
+
+test('TA receive-result language normalizes business expectation without asking for enum tokens',()=>{
+ const p={...proposal,openQuestions:[],scenarios:[{...proposal.scenarios[0],expected:'02解析结果为开户成功；04解析结果为申购成功'}]};
+ const result=parsePlanProposal(JSON.stringify(p));
+ assert.deepEqual(result.openQuestions,[]);
+ assert.match(result.scenarios[0].expected,/02解析结果为开户申请状态为CONFIRMED/);
+ assert.match(result.scenarios[0].expected,/04解析结果为申购申请状态为CONFIRMED/);
+ for(const expected of ['02解析结果为开户不成功','04解析结果为申购成功吗？','02解析结果为开户成功或失败']){
+  const result=parsePlanProposal(JSON.stringify({...p,scenarios:[{...p.scenarios[0],expected}]}));
+  assert.equal(result.scenarios[0].expected,expected);
+ }
 });

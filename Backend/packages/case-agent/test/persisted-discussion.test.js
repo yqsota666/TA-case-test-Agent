@@ -61,7 +61,7 @@ test('service stores user intent before model call and reads only server-owned h
   assert.equal(second.revision, 2);
   assert.deepEqual(modelCalls[1].messages.map(message => message.content),
     ['请帮我分析一项规则', firstReply, '我想看边界']);
-  assert.equal(rounds[1].promptVersion, 'followup-discussion-v3');
+  assert.equal(rounds[1].promptVersion, 'followup-discussion-guided-v4');
 });
 
 test('oversized input is rejected before model call or database intent write', async () => {
@@ -117,7 +117,7 @@ test('proposal uses server history and saves the exact displayed reply with its 
       finishCasePlanProposal: async (_a, _b, _c, result) => {
         assert.equal(rounds.at(-1).kind, 'PROPOSE_PLAN');
         assert.equal(result.turnNumber, 3);
-        assert.deepEqual(result.proposal, {...plan,contract:planContract(plan)});
+        assert.deepEqual(result.proposal, {...plan,contract:{...planContract(plan),version:2,businessExpectations:[{scenarioIndex:0,expectedQuote:plan.scenarios[0].expected}]}});
         assert.match(result.assistantReply, /测试目标：检查规则/);
         return { revision: 3, versionNumber: 1 };
       },
@@ -148,7 +148,7 @@ test('linked retest supplies read-only failure context to model without copying 
  const repository={readCaseDiscussion:async()=>({revision:0,turns:[],pending:null,sourceContext}),beginCaseDiscussionTurn:async()=>({turnNumber:1}),finishCaseDiscussionTurn:async(...args)=>{saved=args.at(-1);return{revision:1};},finishCasePlanProposal:async()=>{},abandonCaseDiscussionTurn:async()=>{}};
  const service=createPersistedDiscussionService({repository,complete:async request=>{calls.push(request);return firstReply;}});
  await service.discuss({...scope,userInput:'先讨论修复后怎样重新测'});
- assert.equal(calls.length,1);assert.match(calls[0].system,/实际持仓不一致/);assert.match(calls[0].system,/只读证据/);assert.match(calls[0].system,/不继承原Plan确认/);assert.equal(calls[0].user,'先讨论修复后怎样重新测');assert.equal(saved.turnNumber,1);
+ assert.equal(calls.length,1);assert.ok(!calls[0].system.includes('实际持仓不一致'));assert.deepEqual(JSON.parse(calls[0].user).sourceContext,sourceContext);assert.match(calls[0].system,/只读证据/);assert.match(calls[0].system,/不继承原Plan确认/);assert.equal(JSON.parse(calls[0].user).userInput,'先讨论修复后怎样重新测');assert.equal(saved.turnNumber,1);
 });
 
 
@@ -201,4 +201,14 @@ test('temporary contract model failure retains the same proposal intent for retr
   await proposing.propose({ ...scope, userInput: '请生成Plan，03日期20261006，04日期20261007' });
   assert.equal(rounds.length, 3);
   assert.equal(rounds.at(-1).status, 'COMPLETE');
+});
+
+
+test('a completed proposal request replays its saved version without another model call',async()=>{
+ const history={revision:5,pending:null,turns:[{role:'user',content:'请整理方案'},{role:'assistant',content:'保存的提案回复'}]};
+ const repository={readCaseDiscussion:async()=>history,getLatestSopProposal:async()=>({sourceTurnNumber:5,versionNumber:1,proposal:plan}),
+ beginCaseDiscussionTurn:async()=>{throw new Error('must not create another turn');},finishCaseDiscussionTurn:async()=>{},finishCasePlanProposal:async()=>{},abandonCaseDiscussionTurn:async()=>{}};
+ const service=createPersistedDiscussionService({repository,complete:async()=>{throw new Error('must not call model');}});
+ const result=await service.propose({...scope,userInput:'请整理方案'});
+ assert.equal(result.replayed,true);assert.equal(result.versionNumber,1);assert.equal(result.revision,5);assert.equal(result.reply,'保存的提案回复');
 });

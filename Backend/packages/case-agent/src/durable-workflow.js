@@ -8,6 +8,7 @@ export function workflowPosition(facts) {
   if (facts.plan.status !== 'LOCKED') return {stage:facts.dataConfirmed ? 'CONFIRM_EXPECTATIONS':'CONFIRM_PLAN_DATA', waiting:['PLAN_CONFIRM','DISCUSS']};
   if (!facts.generated) return {stage:'PREPARE_DATA',waiting:['DATA_EXECUTE']};
   if (!facts.draftConfirmed) return {stage:'CONFIRM_DRAFT',waiting:['DATA_CONFIRM']};
+  if (!facts.order && facts.plan.proposal?.exchangePlan?.status==='NOT_REQUIRED')return {stage:'EVALUATE_RESULT',waiting:['RESULT_EVALUATE']};
   if (!facts.order) return {stage:'DEFINE_EXCHANGE_ORDER',waiting:['EXCHANGE_PLAN_CONFIRM']};
   const completed = (id,condition) => facts.order.events.some(e=>e.stepId===id && e.condition===condition);
   const blocked=new Set((facts.order.blockers??[]).flatMap(b=>b.blockedStepIds));

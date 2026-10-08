@@ -1,0 +1,45 @@
+:root[data-theme=graphite] {
+  --study-scheme:dark;
+  --study-font:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;
+  --study-surface:#101215;
+  --study-ink:#e6e8eb;
+  --study-muted:#a2a8b1;
+  --study-icon:#b8bec7;
+  --study-line:#30343b;
+  --study-canvas:linear-gradient(125deg,#15171b,#101215 58%);
+  --study-sidebar:linear-gradient(105deg,#181b20,#13151a);
+  --study-hover:#282c33;
+  --study-selected:linear-gradient(115deg,#383e47,#292e36);
+  --study-on-selected:#eef1f5;
+  --study-selected-shadow:inset 2px 0 0 #b4bdca,inset 0 1px 0 rgb(255 255 255 / 10%),0 3px 8px rgb(0 0 0 / 18%);
+  --study-bubble:linear-gradient(135deg,#24282e,#1e2228);
+  --study-bubble-shadow:inset 0 1px 0 rgb(255 255 255 / 5%);
+  --study-accent:#c6d0de;
+  --study-accent-deep:#aebdd0;
+  --study-focus:#c6d0de;
+  --study-disabled:#292d34;
+  --study-mark:linear-gradient(145deg,#434a55,#242a32);
+  --study-edge-shadow:inset 0 1px 0 rgb(255 255 255 / 15%),0 3px 8px rgb(0 0 0 / 20%);
+  --study-document:linear-gradient(135deg,#22262c,#1b1e24);
+  --study-document-shadow:inset 0 1px 0 rgb(255 255 255 / 4%),0 7px 20px rgb(0 0 0 / 14%);
+  --study-document-hover-shadow:inset 0 1px 0 rgb(255 255 255 / 8%),0 10px 25px rgb(0 0 0 / 24%);
+  --study-document-icon:linear-gradient(140deg,#363c46,#282d35);
+  --study-composer:linear-gradient(165deg,#2b3038,#20242b 55%,#1a1d23);
+  --study-composer-edge:#535b68;
+  --study-composer-shadow:inset 0 1px 0 rgb(231 240 255 / 17%),inset 0 -1px 0 rgb(0 0 0 / 40%),0 18px 40px rgb(0 0 0 / 30%);
+  --study-composer-focus-shadow:inset 0 1px 0 rgb(231 240 255 / 22%),0 0 0 3px rgb(198 208 222 / 8%),0 18px 40px rgb(0 0 0 / 30%);
+  --study-project-bar:linear-gradient(100deg,#292e36,#20242b);
+  --study-modal:linear-gradient(145deg,#252930,#191c22);
+  --study-modal-shadow:inset 0 1px 0 rgb(255 255 255 / 10%),0 26px 80px rgb(0 0 0 / 55%);
+  --study-table:#20242a;
+  --study-table-head:#2b3038;
+  --study-backdrop:rgb(3 5 8 / 75%);
+  --study-selection:#424e60;
+  --study-scrollbar:#59616d;
+  --study-error:#ffb4a9;
+}
+html[data-theme=graphite] .cw-brand-mark,
+html[data-theme=graphite] .cw-result-icon {border-radius:7px;}
+html[data-theme=graphite] .cw-composer-frame {border-radius:18px;}
+html[data-theme=graphite] .cw-shell svg {stroke-width:1.5;}
+html[data-theme=graphite] .cw-shell .cw-send:not(:disabled) {background:linear-gradient(145deg,#e0e6ee,#a8b6c9) !important;color:#141b25 !important;}

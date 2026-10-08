@@ -1,0 +1,6 @@
+/* finesse-component: generated-draft; inherits workbench palette */
+.cw-generated-data .cw-plan-comparison {overflow-x:auto;}
+.cw-generated-data .cw-plan-comparison table {table-layout:auto;min-width:560px;}
+.cw-generated-data .cw-plan-comparison th:first-child {width:auto;}
+.cw-generated-data .cw-plan-comparison th,.cw-generated-data .cw-plan-comparison td {white-space:nowrap;overflow-wrap:normal;}
+.cw-draft-page .cw-primary-button {background:var(--cw-accent);color:var(--cw-surface);padding:12px 20px;min-height:44px;border-radius:10px;white-space:nowrap;}

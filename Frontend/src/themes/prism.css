@@ -1,0 +1,43 @@
+:root[data-theme=prism] {
+  --study-scheme:light;
+  --study-font:"SF Pro Text",-apple-system,"PingFang SC",sans-serif;
+  --study-surface:#f3f2fa;
+  --study-ink:#302c48;
+  --study-muted:#5c5672;
+  --study-icon:#686086;
+  --study-line:rgb(88 76 130 / 16%);
+  --study-canvas:radial-gradient(ellipse at 90% 5%,#dcd4f5,transparent 58%),radial-gradient(ellipse at 5% 85%,#d6f0ee,transparent 58%),#f5f3fa;
+  --study-sidebar:linear-gradient(150deg,rgb(254 250 255 / 90%),rgb(231 225 247 / 87%) 50%,rgb(220 241 243 / 86%));
+  --study-hover:#e8e5f6;
+  --study-selected:linear-gradient(115deg,#e5d8f4,#d4e9f2 55%,#dfeddf);
+  --study-on-selected:#352f50;
+  --study-selected-shadow:inset 0 1px 0 #fff,inset 1px 0 0 #b9b2e5,inset -1px 0 0 #c0dedb,0 4px 10px rgb(67 56 117 / 10%);
+  --study-bubble:linear-gradient(130deg,#f0e6f8,#e1edf8 70%,#d9efea);
+  --study-bubble-shadow:inset 0 1px 0 #fafffd;
+  --study-accent:#585095;
+  --study-accent-deep:#49427e;
+  --study-focus:#7560a6;
+  --study-disabled:#e5e0f0;
+  --study-mark:linear-gradient(140deg,#e5cdeb,#c5d8f0 55%,#cee9df);
+  --study-edge-shadow:inset 0 1px 0 #fff,0 4px 10px rgb(66 54 119 / 13%);
+  --study-document:linear-gradient(130deg,#fffcff,#f1f0fa);
+  --study-document-shadow:inset 0 1px 0 #fff,0 3px 5px rgb(69 53 111 / 4%),0 12px 25px rgb(74 55 131 / 9%);
+  --study-document-hover-shadow:inset 0 1px 0 #fff,0 5px 10px rgb(69 53 111 / 7%),0 15px 28px rgb(74 55 131 / 14%);
+  --study-document-icon:linear-gradient(140deg,#edd9f3,#d9e8f8 55%,#d6e9df);
+  --study-composer:linear-gradient(145deg,#fffdff,#f1f3fc) padding-box,linear-gradient(110deg,#bd96de,#acd7ed 25%,#b9e1cd 49%,#e5c7ab 69%,#c3a2e7 90%,#abcde9) border-box;
+  --study-composer-edge:transparent;
+  --study-composer-shadow:inset 0 1px 0 #fff,inset 0 -1px 0 rgb(126 105 180 / 9%),0 5px 9px rgb(62 53 119 / 5%),0 22px 42px rgb(78 57 142 / 13%);
+  --study-composer-focus-shadow:inset 0 1px 0 #fff,0 5px 12px rgb(62 53 119 / 7%),0 22px 42px rgb(78 57 142 / 18%);
+  --study-project-bar:linear-gradient(110deg,#e6dcf1,#dcebf5 58%,#e5eee3);
+  --study-modal:linear-gradient(135deg,#fffcff,#eef1fa);
+  --study-modal-shadow:inset 0 1px 0 #fff,0 26px 80px rgb(57 43 96 / 28%);
+  --study-table:#faf9fd;
+  --study-table-head:linear-gradient(110deg,#e8e0f5,#dceaf5 60%,#e5eee4);
+  --study-backdrop:rgb(54 41 87 / 32%);
+  --study-selection:#ded1ef;
+  --study-scrollbar:#b3a6c9;
+  --study-error:#9c354f;
+}
+html[data-theme=prism] .cw-shell svg {stroke-width:1.5;}
+html[data-theme=prism] .cw-brand-mark {border-radius:8px;}
+html[data-theme=prism] .cw-sidebar {backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);}

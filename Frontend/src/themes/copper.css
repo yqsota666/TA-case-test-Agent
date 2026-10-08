@@ -1,0 +1,43 @@
+:root[data-theme=copper] {
+  --study-scheme:dark;
+  --study-font:"Optima","Avenir Next","PingFang SC",sans-serif;
+  --study-surface:#211e1a;
+  --study-ink:#eae3d8;
+  --study-muted:#c1b5a3;
+  --study-icon:#d0b797;
+  --study-line:rgb(216 189 151 / 15%);
+  --study-canvas:radial-gradient(ellipse at 95% 0%,#3f3428,transparent 58%),linear-gradient(140deg,#26211c,#1b1916);
+  --study-sidebar:linear-gradient(105deg,#2c2721,#24211c 70%,#201e19);
+  --study-hover:#3b3329;
+  --study-selected:linear-gradient(112deg,#dfc5a0,#bea17c);
+  --study-on-selected:#312a22;
+  --study-selected-shadow:inset 0 1px 0 #f2e2c9,inset 0 -1px 0 rgb(96 71 40 / 20%),0 3px 8px rgb(0 0 0 / 20%);
+  --study-bubble:linear-gradient(130deg,#40372d,#352e26);
+  --study-bubble-shadow:inset 0 1px 0 rgb(244 222 183 / 8%);
+  --study-accent:#ddbe94;
+  --study-accent-deep:#bea17c;
+  --study-focus:#e4c8a0;
+  --study-disabled:#3c342b;
+  --study-mark:linear-gradient(135deg,#ecd8b8,#b2936e);
+  --study-edge-shadow:inset 0 1px 0 rgb(255 239 208 / 32%),0 3px 9px rgb(0 0 0 / 24%);
+  --study-document:linear-gradient(135deg,#3a3229,#2b2620);
+  --study-document-shadow:inset 0 1px 0 rgb(243 223 194 / 7%),0 4px 6px rgb(0 0 0 / 10%),0 12px 22px rgb(0 0 0 / 14%);
+  --study-document-hover-shadow:inset 0 1px 0 rgb(243 223 194 / 11%),0 5px 8px rgb(0 0 0 / 12%),0 15px 28px rgb(0 0 0 / 18%);
+  --study-document-icon:linear-gradient(140deg,#544632,#3c3327);
+  --study-composer:repeating-linear-gradient(0deg,rgb(235 214 182 / 2%) 0px,rgb(235 214 182 / 2%) 1px,transparent 1px,transparent 3px) padding-box,linear-gradient(150deg,#433b32,#302b25) padding-box,linear-gradient(110deg,#6f5c48,#b99c76 45%,#675542) border-box;
+  --study-composer-edge:transparent;
+  --study-composer-shadow:inset 0 1px 0 rgb(250 232 203 / 16%),inset 0 -1px 0 rgb(0 0 0 / 20%),0 4px 7px rgb(0 0 0 / 11%),0 18px 36px rgb(0 0 0 / 29%);
+  --study-composer-focus-shadow:inset 0 1px 0 rgb(250 232 203 / 22%),0 5px 10px rgb(0 0 0 / 13%),0 18px 36px rgb(0 0 0 / 31%);
+  --study-project-bar:linear-gradient(110deg,#4a3e30,#3b332a);
+  --study-modal:linear-gradient(145deg,#3b3229,#28231e);
+  --study-modal-shadow:inset 0 1px 0 rgb(252 234 204 / 15%),0 26px 80px rgb(0 0 0 / 50%);
+  --study-table:#302b25;
+  --study-table-head:linear-gradient(100deg,#443a2e,#3b3228);
+  --study-backdrop:rgb(14 10 6 / 70%);
+  --study-selection:#705e45;
+  --study-scrollbar:#786750;
+  --study-error:#f0b29b;
+}
+html[data-theme=copper] .cw-brand-mark {border-radius:6px;}
+html[data-theme=copper] .cw-result-icon {border-radius:8px;}
+html[data-theme=copper] .cw-shell svg {stroke-width:1.5;}

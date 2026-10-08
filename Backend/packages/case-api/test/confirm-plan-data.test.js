@@ -28,3 +28,11 @@ test('locked Plan execution retry reuses identical data; legacy pending Plan can
  await assert.rejects(legacy({...input,section:'DATA'}),{code:'PLAN_CONTRACT_REQUIRED'});
  await assert.rejects(service({...input,section:'UNKNOWN'}),{code:'PLAN_SECTION_REQUIRED'});
 });
+
+test('synthetic no-file Plan cannot confirm or execute even when marked locked',async()=>{
+ for(const status of ['PENDING_CONFIRMATION','LOCKED']) {
+ const plan={versionNumber:1,status,proposal:{exchangePlan:{status:'NOT_REQUIRED',steps:[]},contract:{dataSpecification:{accounts:[{}],funds:[{}],holdings:[]},applications:[]}}};
+ let calls=0;const service=createConfirmPlanWithData({repository:{getLatestSopProposal:async()=>plan},confirm:async()=>calls++,executeData:async()=>calls++});
+ await assert.rejects(service({versionNumber:1,section:'EXPECTATIONS'}),e=>e.code==='DATA_EXCHANGE_REQUIRED');assert.equal(calls,0);
+ }
+});

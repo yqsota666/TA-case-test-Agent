@@ -1,0 +1,42 @@
+:root[data-theme=obsidian] {
+  --study-scheme:dark;
+  --study-font:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;
+  --study-surface:#17191e;
+  --study-ink:#e0e3e8;
+  --study-muted:#a0a7b4;
+  --study-icon:#b0bdce;
+  --study-line:rgb(198 208 224 / 12%);
+  --study-canvas:radial-gradient(ellipse at 78% 0%,#292e3b 0%,transparent 60%),linear-gradient(145deg,#1a1d25,#14161b);
+  --study-sidebar:linear-gradient(105deg,#1c2028,#202530 60%,#1a1e26);
+  --study-hover:#2b313e;
+  --study-selected:linear-gradient(115deg,#ccd8e8,#9eafc6);
+  --study-on-selected:#172334;
+  --study-selected-shadow:inset 0 1px 0 #e5eaf2,0 3px 9px rgb(0 0 0 / 16%);
+  --study-bubble:linear-gradient(135deg,#2c3341,#242b36);
+  --study-bubble-shadow:inset 0 1px 0 rgb(225 234 249 / 6%);
+  --study-accent:#b6cbe7;
+  --study-accent-deep:#8cacca;
+  --study-focus:#a9c7ee;
+  --study-disabled:#2d333d;
+  --study-mark:linear-gradient(140deg,#dbe2ec,#96a7c2);
+  --study-edge-shadow:inset 0 1px 0 rgb(255 255 255 / 26%),0 3px 9px rgb(0 0 0 / 18%);
+  --study-document:linear-gradient(135deg,#282e39,#212630);
+  --study-document-shadow:inset 0 1px 0 rgb(244 247 253 / 4%),0 7px 20px rgb(0 0 0 / 10%);
+  --study-document-hover-shadow:inset 0 1px 0 rgb(244 247 253 / 8%),0 10px 25px rgb(0 0 0 / 16%);
+  --study-document-icon:linear-gradient(140deg,#394253,#2b3342);
+  --study-composer:linear-gradient(160deg,#323844,#242932 60%,#20242c);
+  --study-composer-edge:rgb(220 230 248 / 22%);
+  --study-composer-shadow:inset 0 1px 0 rgb(245 249 255 / 15%),inset 0 -1px 0 rgb(0 0 0 / 24%),0 16px 36px rgb(0 0 0 / 22%);
+  --study-composer-focus-shadow:inset 0 1px 0 rgb(245 249 255 / 20%),0 14px 32px rgb(0 0 0 / 24%);
+  --study-project-bar:linear-gradient(100deg,#363d49,#29303b);
+  --study-modal:linear-gradient(140deg,#292f3a,#1d222c);
+  --study-modal-shadow:inset 0 1px 0 rgb(250 252 255 / 12%),0 26px 80px rgb(0 0 0 / 44%);
+  --study-table:#252b35;
+  --study-table-head:linear-gradient(100deg,#303845,#2a313d);
+  --study-backdrop:rgb(4 7 13 / 66%);
+  --study-selection:#415470;
+  --study-scrollbar:#515b6b;
+  --study-error:#f1a99b;
+}
+html[data-theme=obsidian] .cw-brand-mark,html[data-theme=obsidian] .cw-result-icon {border-radius:7px;}
+html[data-theme=obsidian] .cw-shell svg {stroke-width:1.5;}

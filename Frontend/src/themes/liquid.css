@@ -1,0 +1,49 @@
+:root[data-theme=liquid] {
+  --study-scheme:light;
+  --study-font:"SF Pro Text",-apple-system,"PingFang SC",sans-serif;
+  --study-surface:#f0f6f8;
+  --study-ink:#253944;
+  --study-muted:#51616e;
+  --study-icon:#476a77;
+  --study-line:rgb(73 115 127 / 16%);
+  --study-canvas:radial-gradient(ellipse at 95% 8%,#cce5f6,transparent 62%),radial-gradient(ellipse at 10% 92%,#d8e9e8,transparent 62%),#eaf0f4;
+  --study-sidebar:linear-gradient(145deg,rgb(255 255 255 / 60%),rgb(221 237 246 / 62%));
+  --study-hover:#deebee;
+  --study-selected:linear-gradient(145deg,#f4fbff,#cde5ee);
+  --study-on-selected:#243f49;
+  --study-selected-shadow:inset 0 1px 0 #fff,inset 0 -1px 0 rgb(53 109 137 / 16%),inset 1px 0 0 rgb(255 255 255 / 85%),0 4px 9px rgb(35 82 112 / 10%);
+  --study-bubble:linear-gradient(155deg,#f7fcff,#d5e9f1);
+  --study-bubble-shadow:inset 0 1px 0 #fafffd;
+  --study-accent:#34695b;
+  --study-accent-deep:#285747;
+  --study-focus:#426b86;
+  --study-disabled:#dce8e9;
+  --study-mark:linear-gradient(135deg,#c8e6d9,#cbd8eb);
+  --study-edge-shadow:inset 0 1px 0 #f5fff9,0 3px 8px rgb(37 78 89 / 13%);
+  --study-document:linear-gradient(155deg,rgb(255 255 255 / 91%),rgb(228 242 249 / 94%));
+  --study-document-shadow:inset 0 1px 0 #fff,0 3px 6px rgb(34 83 97 / 4%),0 10px 24px rgb(34 83 97 / 6%);
+  --study-document-hover-shadow:inset 0 1px 0 #fff,0 4px 8px rgb(34 83 97 / 5%),0 14px 28px rgb(34 83 97 / 10%);
+  --study-document-icon:linear-gradient(140deg,#ecf6ed,#dce5f0);
+  --study-composer:linear-gradient(170deg,rgb(255 255 255 / 84%),rgb(235 245 251 / 92%)) padding-box,linear-gradient(140deg,#ffffff,#a7cddd 28%,#f7fcff 53%,#a2c6d8 76%,#ffffff) border-box;
+  --study-composer-edge:transparent;
+  --study-composer-shadow:inset 0 2px 0 rgb(255 255 255 / 96%),inset 0 -3px 5px rgb(118 166 194 / 13%),inset 2px 0 3px rgb(255 255 255 / 92%),0 8px 12px rgb(61 98 121 / 5%),0 22px 42px rgb(46 86 115 / 14%);
+  --study-composer-focus-shadow:inset 0 1px 0 #fff,0 4px 10px rgb(37 83 98 / 5%),0 18px 38px rgb(47 89 108 / 14%);
+  --study-project-bar:linear-gradient(135deg,rgb(250 254 255 / 82%),rgb(213 231 241 / 92%));
+  --study-modal:linear-gradient(155deg,rgb(255 255 255 / 96%),rgb(232 243 249 / 97%));
+  --study-modal-shadow:inset 0 1px 0 #fff,0 26px 80px rgb(30 67 84 / 26%);
+  --study-table:#f8fcfd;
+  --study-table-head:linear-gradient(135deg,#f0f9fd,#d9eaf3);
+  --study-backdrop:rgb(39 71 82 / 30%);
+  --study-selection:#c5e0d6;
+  --study-scrollbar:#9db8c1;
+  --study-error:#a03c48;
+}
+html[data-theme=liquid] .cw-sidebar {backdrop-filter:blur(24px) saturate(125%);-webkit-backdrop-filter:blur(24px) saturate(125%);}
+html[data-theme=liquid] .cw-composer-frame {backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);}
+html[data-theme=liquid] .cw-shell svg {stroke-width:1.5;}
+html[data-theme=liquid] .cw-brand-mark {border-radius:8px;}
+html[data-theme=liquid] .cw-composer-frame:focus-within {border-color:transparent;box-shadow:inset 0 2px 0 #fff,inset 0 -2px 5px rgb(118 166 194 / 16%),0 8px 16px rgb(61 98 121 / 9%),0 22px 42px rgb(46 86 115 / 17%);}
+@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))) {
+html[data-theme=liquid] .cw-sidebar {background:linear-gradient(145deg,#f7fbfe,#dcebf3);}
+html[data-theme=liquid] .cw-composer-frame {background:linear-gradient(170deg,#fcfeff,#ebf5fb) padding-box,linear-gradient(140deg,#fff,#a7cddd,#f7fcff,#a2c6d8,#fff) border-box;}
+}

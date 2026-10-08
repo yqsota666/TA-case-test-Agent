@@ -1,0 +1,29 @@
+/* finesse component · product · existing glass tokens · plan review */
+.cw-plan-modal {width:min(880px,calc(100vw - 40px));max-height:calc(100dvh - 48px);}
+.cw-plan-modal[open] {display:flex;flex-direction:column;}
+.cw-plan-modal > header {flex:none;padding:24px 32px;}
+.cw-plan-modal > .cw-plan-document {min-height:0;max-height:none;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;padding:30px 32px 36px;}
+.cw-plan-objective {margin-bottom:32px;}
+.cw-plan-items-header {margin-bottom:18px;}
+.cw-prepared-data {margin-top:36px;margin-bottom:30px;}
+.cw-plan-fold {margin-top:16px;}
+.cw-prepared-data .cw-plan-comparison {overflow-x:auto;}
+.cw-prepared-data table {min-width:560px;table-layout:auto;}
+.cw-prepared-data .cw-plan-comparison th:first-child {width:auto;}
+.cw-prepared-data .cw-plan-comparison thead th {padding:16px 20px;font-size:13px;white-space:nowrap;}
+.cw-prepared-data .cw-plan-comparison td {padding:21px 20px;font-size:14px;vertical-align:middle;}
+.cw-prepared-data .cw-data-action {width:88px;white-space:nowrap;}
+.cw-modal .cw-row-edit {min-height:40px;padding:8px 12px;border-radius:8px;color:var(--cw-ink);background:var(--cw-hover);font-size:13px;}
+.cw-row-editor {width:min(580px,calc(100vw - 32px));padding:26px;}
+.cw-editor-fields {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px 20px;}
+.cw-editor-fields label {display:flex;flex-direction:column;gap:9px;min-width:0;}
+.cw-editor-fields label > span:first-child {display:flex;justify-content:space-between;gap:8px;font-size:13px;}
+.cw-editor-fields small {color:var(--cw-muted);font-size:11px;}
+.cw-editor-fields input,.cw-editor-fields select {width:100%;min-height:44px;box-sizing:border-box;padding:10px 12px;border:1px solid var(--cw-line);border-radius:9px;background:var(--cw-surface);color:var(--cw-ink);font:inherit;font-size:14px;}
+.cw-field-help {font-size:11px;color:var(--cw-muted);}
+.cw-row-editor footer {display:flex;align-items:center;justify-content:flex-end;gap:18px;margin-top:30px;}
+.cw-row-editor footer button {min-height:44px;white-space:nowrap;}
+.cw-editor-error {color:#a43336;font-size:13px;margin:20px 0 0;}
+.cw-row-editor button:disabled,.cw-row-editor input:disabled,.cw-row-editor select:disabled {opacity:.5;cursor:not-allowed;}
+@media(hover:hover) {.cw-row-edit:hover {filter:brightness(.97);}}
+@media(max-width:600px) {.cw-plan-modal {width:calc(100vw - 24px);}.cw-plan-modal > header {padding:20px;}.cw-plan-modal > .cw-plan-document {padding:24px 20px 30px;}.cw-editor-fields {grid-template-columns:minmax(0,1fr);}.cw-prepared-data {margin-top:30px;}.cw-plan-items-header {flex-wrap:wrap;}.cw-row-editor {max-height:calc(100dvh - 32px);}}

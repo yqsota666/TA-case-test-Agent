@@ -11,19 +11,19 @@ test('the second node uses the full conversation and can repeat after another us
   const complete = async args => { calls.push(args); return calls.length === 1 ? firstReply : followupReply; };
   const graph = createDiscussionGraph({ complete });
   const first = await discussTurn(graph, { userInput: requirement });
-  assert.equal(first.promptVersion, 'first-node-format-v4');
+  assert.equal(first.promptVersion, 'first-discussion-guided-v4');
   assert.equal(first.phase, 'AWAITING_USER');
   const answer = '我想验证不同持有时间下的归属判断，边界由你来建议。';
   const second = await discussTurn(graph, { priorTurns: first.turns, userInput: answer });
   assert.equal(second.reply, followupReply);
-  assert.equal(second.promptVersion, 'followup-discussion-v3');
+  assert.equal(second.promptVersion, 'followup-discussion-guided-v4');
   assert.deepEqual(calls[1].messages, [
     { role: 'user', content: requirement },
     { role: 'assistant', content: firstReply },
     { role: 'user', content: answer },
   ]);
   const third = await discussTurn(graph, { priorTurns: second.turns, userInput: '按确认日算，请继续。' });
-  assert.equal(third.promptVersion, 'followup-discussion-v3');
+  assert.equal(third.promptVersion, 'followup-discussion-guided-v4');
   assert.equal(calls[2].messages.length, 5);
   assert.equal(third.turns.length, 6);
   assert.equal('plan' in third, false);
@@ -73,13 +73,10 @@ test('invalid transcript or malformed model output cannot advance the discussion
   }), { code: 'MODEL_OUTPUT_FORMAT' });
 });
 
-test('follow-up rejects inline Markdown in its plain-text reply', async () => {
-  const priorTurns = [{ role: 'user', content: requirement }, { role: 'assistant', content: firstReply }];
-  for (const detail of ['*一年边界*', '_一年边界_', '[一年边界](https://example.com)']) {
-    const reply = `当前理解：${detail}可能影响费用归属。\n建议先测：比较边界前后的结果。\n请你确认：具体口径是什么？`;
-    await assert.rejects(discussTurn(createDiscussionGraph({ complete: async () => reply }),
-      { priorTurns, userInput: '请继续。' }), { code: 'MODEL_OUTPUT_FORMAT' });
-  }
+test('follow-up accepts natural paragraphs, emphasis and optional questions', async()=>{
+  const answer='已经明确按确认日计算，我们就围绕**满一年当天**核对。\n\n接下来可以把前一天、当天、后一天作为三个对照，未提供的收益率规则仍待确认。';
+  const result=await discussTurn(createDiscussionGraph({complete:async()=>answer}),{priorTurns:[{role:'user',content:requirement},{role:'assistant',content:firstReply}],userInput:'按确认日算。'});
+  assert.equal(result.reply,answer);
 });
 
 test('plain identifier underscores remain valid in follow-up replies', async () => {
