@@ -3,7 +3,7 @@ import {GlobalFileCatalog} from './global-file-catalog.jsx';
 import {ProjectLifecycleCard} from './project-lifecycle.jsx';
 import {accountStorageKey} from './account-storage.js';
 import React, {useEffect, useLayoutEffect, useRef, useState} from 'react';
-import {ArrowUp, ChevronRight, Folder, Menu, SquarePen, Workflow, Table2, File, FileText, FileArchive, UserRound, X} from './ui-icons.jsx';
+import {ArrowUp, ChevronRight, Folder, Menu, SquarePen, Workflow, Table2, File, FileText, FileArchive, UserRound, ArrowLeft, X} from './ui-icons.jsx';
 import './case-workbench.css';
 import './workflow-actions.css';
 import {FileExchangePanel} from './file-exchange.jsx';
@@ -266,7 +266,7 @@ export function CaseWorkbench() {
     <div className="cw-user"><UserRound size={18}/><span>用户名</span><ThemePicker /></div>
   </>;
 
-  return <div className="cw-shell">
+  return <div className={`cw-shell ${page!=='chat'?'cw-catalog-view':''}`}>
     <a className="cw-skip" href="#cw-main">跳到对话</a>
     <aside className="cw-sidebar">{sidebar}</aside>
     <main id="cw-main" className="cw-main" tabIndex={-1}>
@@ -329,6 +329,7 @@ export function CaseWorkbench() {
         </form>
         </div>
       </div>
+      {page!=='chat' && <div className="gc-topbar"><button aria-label="返回对话" title="返回对话" onClick={()=>{setPage('chat');const url=new URL(location.href);url.searchParams.delete('page');history.replaceState(null,'',url);}}><ArrowLeft size={18}/></button><nav aria-label="业务页面">{[['data','数据'],['files','文件']].map(([key,label])=><button key={key} aria-current={page===key?'page':undefined} onClick={()=>{setPage(key);const url=new URL(location.href);url.searchParams.set('page',key);history.replaceState(null,'',url);}}>{label}</button>)}</nav></div>}
       {page==='data' && <GlobalDataCatalog onOpenCase={openCatalogCase}/>}
       {page==='files' && <GlobalFileCatalog onOpenCase={openCatalogCase}/>}
     </main>
