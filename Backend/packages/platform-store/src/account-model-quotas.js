@@ -14,11 +14,11 @@ export function createAccountModelQuotas({transaction,defaultDaily}) {
   usage:token=>transaction(async db=>{
    const auth=await actor(db,token);
    const [[clock]]=await db.execute("SELECT DATE_FORMAT(DATE_ADD(UTC_TIMESTAMP(),INTERVAL 8 HOUR),'%Y-%m-%d') AS day");
-   const [records]=await db.execute(`SELECT model,purpose,status,reserved_tokens,charged_tokens,input_tokens,output_tokens,created_at FROM model_consumption WHERE user_id=? AND budget_day=? ORDER BY created_at DESC LIMIT 50`,[auth.user_id,clock.day]);
-   const [[totals]]=await db.execute(`SELECT COALESCE(SUM(IF(status='SETTLED',charged_tokens,0)),0) AS used,COALESCE(SUM(IF(status='RESERVED',reserved_tokens,0)),0) AS reserved,COALESCE(SUM(IF(status='UNCERTAIN',charged_tokens,0)),0) AS uncertain FROM model_consumption WHERE user_id=? AND budget_day=?`,[auth.user_id,clock.day]);
+   const [records]=await db.execute(`SELECT model,purpose,status,reserved_tokens,charged_tokens,input_tokens,output_tokens,created_at,expires_at>NOW(3) AS active FROM model_consumption WHERE user_id=? AND budget_day=? ORDER BY created_at DESC LIMIT 50`,[auth.user_id,clock.day]);
+   const [[totals]]=await db.execute(`SELECT COALESCE(SUM(IF(status='SETTLED',charged_tokens,0)),0) AS used,COALESCE(SUM(IF(status='RESERVED' AND expires_at>NOW(3),reserved_tokens,0)),0) AS reserved,COALESCE(SUM(IF(status='UNCERTAIN',charged_tokens,IF(status='RESERVED' AND expires_at<=NOW(3),reserved_tokens,0))),0) AS uncertain FROM model_consumption WHERE user_id=? AND budget_day=?`,[auth.user_id,clock.day]);
    const used=Number(totals.used),reserved=Number(totals.reserved),uncertain=Number(totals.uncertain);
    const midnight=new Date(clock.day+'T00:00:00+08:00');midnight.setTime(midnight.getTime()+86400000);
-   return {...auth.policy,day:clock.day,resetAt:midnight.toISOString(),usedTokens:used,reservedTokens:reserved,uncertainTokens:uncertain,remainingTokens:auth.policy.unlimited?null:Math.max(0,auth.policy.dailyTokens-used-reserved-uncertain),records:records.map(r=>({...r,reserved_tokens:Number(r.reserved_tokens),charged_tokens:r.charged_tokens===null?null:Number(r.charged_tokens)}))};
+   return {...auth.policy,day:clock.day,resetAt:midnight.toISOString(),usedTokens:used,reservedTokens:reserved,uncertainTokens:uncertain,remainingTokens:auth.policy.unlimited?null:Math.max(0,auth.policy.dailyTokens-used-reserved-uncertain),records:records.map(r=>({...r,status:r.status==='RESERVED'&&Number(r.active)!==1?'UNCERTAIN':r.status,reserved_tokens:Number(r.reserved_tokens),charged_tokens:r.status==='RESERVED'&&Number(r.active)!==1?Number(r.reserved_tokens):r.charged_tokens===null?null:Number(r.charged_tokens)}))};
   }),
  };
 }
