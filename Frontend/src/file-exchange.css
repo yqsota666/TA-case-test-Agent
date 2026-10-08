@@ -36,3 +36,5 @@
 @media(hover:hover){.cw-exchange-drop:not(.is-disabled):hover {background:var(--cw-hover);border-color:var(--cw-accent);}}
 
 .cw-exchange-panel>section,.cw-exchange-return {min-width:0;}
+.cw-holdings-return {min-width:0;}
+.cw-holdings-return .cw-exchange-table {max-width:100%;}
