@@ -125,9 +125,11 @@ export function createHoldingsReturnRepository({ transaction }) {
           if(holding?.snapshot_date>row.date)reject('STALE_HOLDING_SNAPSHOT','05早于已经同步的持仓基准；整包未同步');
           const sameDate=holding?.snapshot_date===row.date;
           if(sameDate && (holding.snapshot_total!==row.total || holding.snapshot_available!==row.available || holding.snapshot_frozen!==row.frozen))reject('HOLDING_SNAPSHOT_CONFLICT','同日05账户余额不同，需要单独更正；整包未同步');
-          const [[later]]=await db.execute(`SELECT COALESCE(SUM(confirmed_volume),0) AS volume,COUNT(*) AS n FROM sales_confirmed_transactions
+          const [[later]]=await db.execute(`SELECT COALESCE(SUM(CASE WHEN business_code='024' THEN -confirmed_volume ELSE confirmed_volume END),0) AS volume,COUNT(*) AS n FROM sales_confirmed_transactions
             WHERE workspace_id=? AND channel_id=? AND account_id=? AND fund_code=? AND share_class=? AND confirmation_date>STR_TO_DATE(?,'%Y%m%d') FOR UPDATE`,[...hk,row.date]);
-          const total=volumeText(volumeUnits(row.total)+volumeUnits(String(later.volume)));
+          const units=volumeUnits(row.total)+(String(later.volume).startsWith('-')?-volumeUnits(String(later.volume).slice(1)):volumeUnits(String(later.volume)));
+          if(units<0n)reject('HOLDING_VOLUME_INSUFFICIENT','05基准与后续交易合计份额为负，整包未同步');
+          const total=volumeText(units);
           if(!sameDate)await db.execute(`INSERT INTO sales_confirmed_holdings
             (workspace_id,channel_id,account_id,fund_code,share_class,total_volume,snapshot_date,snapshot_total,snapshot_available,snapshot_frozen,snapshot_parse_id,available_volume,frozen_volume)
             VALUES (?,?,?,?,?,?,STR_TO_DATE(?,'%Y%m%d'),?,?,?,?,?,?) ON DUPLICATE KEY UPDATE total_volume=VALUES(total_volume),snapshot_date=VALUES(snapshot_date),

@@ -1,3 +1,4 @@
+import {applyConfirmedHolding} from './transaction-holding.js';
 import {assertTaAccountActive} from './ta-reset.js';
 import { parseReturnFiles } from '../../platform-protocol/src/return-parsing.js';
 import { checkExchangeOrder, recordExchangeEvent } from './exchange-order.js';
@@ -228,15 +229,7 @@ export function createReturnConfirmationRepository({ transaction }) {
                 VALUES (?,?,?,?,?,?,?,?,?,?,?)`, [keys[0], parsed.channel_id, account.id, saved.insertId, app.business_code,
                 effect.transactionEffect.fundCode, effect.transactionEffect.shareClass, effect.transactionEffect.confirmedAmount, effect.transactionEffect.confirmedVolume, effect.transactionEffect.nav,
                 effect.transactionEffect.confirmationDate]);
-              await db.execute(`INSERT INTO sales_confirmed_holdings
-                (workspace_id,channel_id,account_id,fund_code,share_class,total_volume) VALUES (?,?,?,?,?,?)
-                ON DUPLICATE KEY UPDATE
-                  total_volume=total_volume+IF(snapshot_date IS NULL OR snapshot_date<STR_TO_DATE(?,'%Y%m%d'),?,0),
-                  available_volume=IF(snapshot_date IS NULL OR snapshot_date<STR_TO_DATE(?,'%Y%m%d'),NULL,available_volume),
-                  frozen_volume=IF(snapshot_date IS NULL OR snapshot_date<STR_TO_DATE(?,'%Y%m%d'),NULL,frozen_volume)`, [keys[0], parsed.channel_id, account.id,
-                effect.holdingEffect.fundCode, effect.holdingEffect.shareClass, effect.holdingEffect.volumeDelta,
-                effect.transactionEffect.confirmationDate.replaceAll('-',''), effect.holdingEffect.volumeDelta,
-                effect.transactionEffect.confirmationDate.replaceAll('-',''), effect.transactionEffect.confirmationDate.replaceAll('-','')]);
+              await applyConfirmedHolding(db,{keys,channelId:parsed.channel_id,accountId:account.id,effect});
             }
             await db.execute(`UPDATE applications SET status=? WHERE workspace_id=? AND id=?`, [effect.outcome, keys[0], app.id]);
             return { applicationPublicId: app.public_id, outcome: effect.outcome, duplicate: false };

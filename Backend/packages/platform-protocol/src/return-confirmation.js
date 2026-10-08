@@ -43,8 +43,9 @@ function decimal(record, field, scale) {
 export function planReturnConfirmation({ application, returnType, record, channel }) {
   const opening = application?.fileType === '01' && application?.businessCode === '001';
   const subscription = application?.fileType === '03' && application?.businessCode === '022';
-  if (!opening && !subscription) {
-    fail('RETURN_CONFIRMATION_UNSUPPORTED', '当前仅支持开户 001 和申购 022 的确认生效');
+  const redemption=application?.fileType==='03' && application?.businessCode==='024';
+  if (!opening && !subscription && !redemption) {
+    fail('RETURN_CONFIRMATION_UNSUPPORTED', '当前支持开户、申购和赎回的确认生效');
   }
   if (returnType !== (opening ? '02' : '04')) {
     fail('RETURN_CONFIRMATION_MISMATCH', '回传类型与申请不一致');
@@ -54,7 +55,7 @@ export function planReturnConfirmation({ application, returnType, record, channe
   }
   const source = application.record;
   if (required(source, 'BusinessCode') !== application.businessCode ||
-      required(record, 'BusinessCode') !== (opening ? '101' : '122')) {
+      required(record, 'BusinessCode') !== (opening ? '101' : subscription?'122':'124')) {
     fail('RETURN_CONFIRMATION_MISMATCH', '回传业务代码与申请不一致');
   }
   for (const field of ['AppSheetSerialNo', 'DistributorCode', 'TransactionDate', 'TransactionAccountID', 'BranchCode']) {
@@ -66,12 +67,12 @@ export function planReturnConfirmation({ application, returnType, record, channe
   const requestDate = date(source, 'TransactionDate');
   const confirmationDate = date(record, 'TransactionCfmDate');
   if (confirmationDate < requestDate) fail('RETURN_CONFIRMATION_MISMATCH', '确认日期早于申请日期');
-  if (subscription) {
-    for (const field of ['TAAccountID', 'FundCode', 'ShareClass', 'CurrencyType']) match(source, record, field);
+  if (subscription || redemption) {
+    for (const field of ['TAAccountID', 'FundCode', 'ShareClass', ...(subscription || source.CurrencyType ? ['CurrencyType']:[])]) match(source, record, field);
     if (!/^[A-Za-z0-9]{1,12}$/.test(required(record, 'TAAccountID'))) {
       fail('RETURN_CONFIRMATION_INCOMPLETE', 'TA 账号无效');
     }
-    if (record.ApplicationAmount !== null && record.ApplicationAmount !== undefined) {
+    if (subscription && record.ApplicationAmount !== null && record.ApplicationAmount !== undefined) {
       if (decimal(source, 'ApplicationAmount', 2).units !== decimal(record, 'ApplicationAmount', 2).units) {
         fail('RETURN_CONFIRMATION_MISMATCH', '回传申请金额与原申请不一致');
       }
@@ -100,18 +101,21 @@ export function planReturnConfirmation({ application, returnType, record, channe
       branchCode: required(source, 'BranchCode') };
     return plan;
   }
+  if (redemption && record.BusinessFinishFlag!=='1')fail('RETURN_CONFIRMATION_UNSUPPORTED','赎回需最终业务完成回传，不能提前扣减持仓');
   if (record.BusinessFinishFlag !== null && record.BusinessFinishFlag !== undefined && record.BusinessFinishFlag !== '' &&
       record.BusinessFinishFlag !== '1') {
     fail('RETURN_CONFIRMATION_UNSUPPORTED', '当前不支持非最终申购回传确认生效');
   }
-  const requestedAmount = decimal(source, 'ApplicationAmount', 2);
+  const requestedAmount = subscription?decimal(source, 'ApplicationAmount', 2):null;
   const confirmedAmount = decimal(record, 'ConfirmedAmount', 2);
   const confirmedVolume = decimal(record, 'ConfirmedVol', 2);
   const nav = decimal(record, 'NAV', 8);
-  if (confirmedAmount.units > requestedAmount.units) fail('RETURN_CONFIRMATION_VALUES', '确认金额超过申请金额');
-  plan.transactionEffect = { businessCode: '022', fundCode: record.FundCode, shareClass: record.ShareClass,
+  if (subscription && confirmedAmount.units > requestedAmount.units) fail('RETURN_CONFIRMATION_VALUES', '确认金额超过申请金额');
+  if(redemption && confirmedVolume.units>decimal(source,'ApplicationVol',2).units)fail('RETURN_CONFIRMATION_VALUES','确认赎回份额超过申请份额');
+  if(redemption && record.ApplicationVol && decimal(record,'ApplicationVol',2).units!==decimal(source,'ApplicationVol',2).units)fail('RETURN_CONFIRMATION_MISMATCH','回传申请份额与原申请不一致');
+  plan.transactionEffect = { businessCode: application.businessCode, fundCode: record.FundCode, shareClass: record.ShareClass,
     confirmedAmount: confirmedAmount.value, confirmedVolume: confirmedVolume.value, nav: nav.value,
     confirmationDate: `${confirmationDate.slice(0, 4)}-${confirmationDate.slice(4, 6)}-${confirmationDate.slice(6)}` };
-  plan.holdingEffect = { fundCode: record.FundCode, shareClass: record.ShareClass, volumeDelta: confirmedVolume.value };
+  plan.holdingEffect = { fundCode: record.FundCode, shareClass: record.ShareClass, volumeDelta: redemption?'-'+confirmedVolume.value:confirmedVolume.value };
   return plan;
 }
