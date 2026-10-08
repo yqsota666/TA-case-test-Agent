@@ -1,3 +1,5 @@
+import {verifyGlobalCatalogHttp} from './global-catalog-http.js';
+import {verifyHoldingsHttp} from './holdings-http.js';
 import {verifyHoldingsApplyRace} from './holdings-apply-race.js';
 import {verifyCaseResultReviews} from './case-result-reviews.js';
 import assert from 'node:assert/strict';
@@ -22,6 +24,7 @@ export async function verifyHoldingsSync({db,transaction,token,workspaceId,chann
    const file={fileName:dataFileName(options),base64:buildDataFile({...options,records}).toString('base64')};
    return {result:await holdings.parse(token,{...scope,channelId,exchangeStepId:'r05',files:[file]}),file};
  };
+ await verifyHoldingsHttp({db,holdings,confirmations,token,workspaceId,channelId,scope,chatId:chat.insertId,caseId:c.insertId,record});
  const before=await confirmations.salesData(token);
  const one=await upload([record,{...record,DetailFlag:'1'},{...record,DetailFlag:'A'}]);
  assert.deepEqual(await confirmations.salesData(token),before);
@@ -95,6 +98,7 @@ export async function verifyHoldingsSync({db,transaction,token,workspaceId,chann
  const empty=await upload([],'20261009');assert.equal((await holdings.apply(token,{...scope,parseId:empty.result.parseId})).businessApplied,false);
  assert.deepEqual(await confirmations.salesData(token),sales);
  await verifyCaseResultReviews({db,transaction,token,scope,workspaceId});
+ await verifyGlobalCatalogHttp({db,transaction,token,workspaceId});
  const [raw]=await db.execute('SELECT raw_bytes FROM case_holdings_return_files WHERE workspace_id=? AND parse_id=?',[workspaceId,zeros.result.parseId]);
  assert.ok(raw[0].raw_bytes.length>0);
  assert.equal((await holdings.read(token,scope)).steps.length,1);
