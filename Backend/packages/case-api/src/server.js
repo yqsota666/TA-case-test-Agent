@@ -1,3 +1,4 @@
+import {initializeObservability,shutdownObservability} from '../../case-agent/src/observability.js';
 import {createModelRuntime} from './model-runtime.js';
 import {createAccountModelQuotas} from '../../platform-store/src/account-model-quotas.js';
 import {modelBudgetConfig,createModelConsumptionRepository} from '../../platform-store/src/model-consumption.js';
@@ -38,6 +39,7 @@ import { createCaseResultService } from './case-result.js';
 
 const allowedOrigin = process.env.CASE_PUBLIC_ORIGIN;
 if (!allowedOrigin) throw new Error('CASE_PUBLIC_ORIGIN is required');
+initializeObservability();
 const pool = mysql.createPool({ ...migrationConfig(), connectionLimit: 8 });
 const transaction = async action => {
   const connection = await pool.getConnection();
@@ -139,3 +141,5 @@ const confirmData = ({ token, chatPublicId, casePublicId, revision }) =>
 const server = createCaseHttpServer({accountModelQuotas,modelRuntime,globalDataCatalog:createGlobalDataCatalog({transaction}),globalFileCatalog:createGlobalFileCatalog({transaction}),admit,planContentComplete:complete, repository, discussionService, confirmPlan,
   executeData, reviseData, exchangeRepository, applicationPreparation:projectPreparation, confirmData, returnParsing:projectParsing, returnConfirmation:projectConfirmation, holdingsReturn, taReceipts, caseResult, exchangePlanSupplement, chatLifecycle, durableWorkflow, taReset, accountAuth, secureCookie:process.env.NODE_ENV==='production', allowedOrigin });
 server.listen(Number(process.env.CASE_API_PORT ?? 3100), '127.0.0.1');
+
+for(const signal of ['SIGINT','SIGTERM'])process.once(signal,()=>server.close(async()=>{await shutdownObservability();await pool.end();process.exit(0);}));

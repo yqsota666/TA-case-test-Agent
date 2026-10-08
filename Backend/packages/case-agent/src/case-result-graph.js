@@ -1,3 +1,4 @@
+import {observeGraph} from './observability.js';
 import {interpretBusinessResults,mergeBusinessResults} from './business-result-review.js';
 import {legacyBindingIssues,legacyLiteralMatches} from './legacy-result-binding.js';
 import { validPlanContract } from '../../platform-protocol/src/plan-contract.js';
@@ -120,5 +121,5 @@ export function createCaseResultGraph({collect,complete}){
  graph.addNode('explain_case_result',({snapshot,proposal})=>({suggestion:snapshot.plan.contract?compareConfirmedExpectations(snapshot,proposal):compareCaseResults(snapshot,proposal)}));
  graph.addNode('wait_case_result_confirmation',()=>({phase:'AWAITING_CONFIRMATION'}));
  graph.addEdge(START,'collect_case_results').addEdge('collect_case_results','compare_case_expectations').addEdge('compare_case_expectations','explain_case_result').addEdge('explain_case_result','wait_case_result_confirmation').addEdge('wait_case_result_confirmation',END);
- return graph.compile();
+ return observeGraph(graph.compile());
 }

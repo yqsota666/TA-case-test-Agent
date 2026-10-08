@@ -1,3 +1,4 @@
+import {observeGraph} from './observability.js';
 import { StateGraph, StateSchema, START, END } from '@langchain/langgraph';
 import { z } from 'zod';
 import { PlanProposalSchema } from './plan-proposal.js';
@@ -26,7 +27,7 @@ export function createPlanConfirmationGraph({ repository, token, chatPublicId, c
   graph.addConditionalEdges(START,({decision,section})=>decision==='REVISE'?'request_revision':section==='DATA'?'confirm_plan_data':'confirm_plan_expectations',
     ['confirm_plan_data','confirm_plan_expectations','request_revision']);
   for(const node of ['confirm_plan_data','confirm_plan_expectations','request_revision'])graph.addEdge(node,END);
-  return graph.compile();
+  return observeGraph(graph.compile());
 }
 
 export async function stagePlanProposal(repository, { token, chatPublicId, casePublicId, proposal }) {

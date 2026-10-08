@@ -1,3 +1,4 @@
+import {observeGraph} from './observability.js';
 import { StateGraph, StateSchema, START, END } from '@langchain/langgraph';
 import { z } from 'zod';
 import {DISCUSSION_VOICE,checkDiscussionReply} from './discussion-reply.js';
@@ -85,7 +86,7 @@ export function createDiscussionGraph({ complete }) {
       priorTurns.length ? 'refine_test_approach' : 'ask_testing_intent',
     ['ask_testing_intent', 'refine_test_approach', 'propose_plan']);
   graph.addEdge('ask_testing_intent', END).addEdge('refine_test_approach', END);
-  return graph.compile();
+  return observeGraph(graph.compile());
 }
 
 export async function discussTurn(graph, { priorTurns = [], userInput }) {

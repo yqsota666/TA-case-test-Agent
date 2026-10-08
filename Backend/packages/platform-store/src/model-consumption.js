@@ -58,7 +58,7 @@ export function createModelConsumptionRepository({transaction,config=modelBudget
         VALUES (?,?,?,?,?,?,?,DATE_ADD(NOW(3),INTERVAL 180 SECOND))`,[id,auth.workspace_id,auth.user_id,day,model,purpose,reservedTokens]);
       if(policy.unlimited)await db.execute('INSERT INTO model_consumption_exemptions(consumption_id) VALUES (?)',[id]);
       for(const [key] of buckets)await db.execute(`UPDATE model_budget_buckets SET booked_tokens=booked_tokens+? WHERE bucket_key=? AND budget_day=?`,[reservedTokens,key,day]);
-      return {id};
+      return {id,workspaceId:String(auth.workspace_id),userId:String(auth.user_id)};
     }),
     settle:(id,usage)=>transaction(async db=>{
       // Read scope first, then lock buckets in the same order as reserve to avoid lock inversion.

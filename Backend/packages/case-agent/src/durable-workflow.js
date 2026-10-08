@@ -1,3 +1,4 @@
+import {observeGraph} from './observability.js';
 import { StateGraph, StateSchema, START, END, interrupt, MemorySaver, Command } from '@langchain/langgraph';
 import { z } from 'zod';
 
@@ -39,7 +40,7 @@ export function createDurableWorkflowGraph({checkpointer, readFacts}) {
     interrupt({stage:state.position.stage,waiting:state.position.waiting,revision:state.revision});return {};
   }).addEdge(stage.toLowerCase(),'reconcile_committed_business');
   graph.addConditionalEdges('reconcile_committed_business',state=>stages.includes(state.position.stage)?state.position.stage.toLowerCase():END);
-  return graph.compile({checkpointer});
+  return observeGraph(graph.compile({checkpointer}));
 }
 
 export class SqlWorkflowSaver extends MemorySaver {

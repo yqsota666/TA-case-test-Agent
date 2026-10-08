@@ -1,3 +1,4 @@
+import {observeGraph} from './observability.js';
 import { StateGraph, StateSchema, START, END } from '@langchain/langgraph';
 import { z } from 'zod';
 import {DISCUSSION_VOICE,checkDiscussionReply} from './discussion-reply.js';
@@ -24,7 +25,7 @@ export function createFirstDiscussionGraph({ complete }) {
     phase: 'AWAITING_USER',
   }));
   graph.addEdge(START, 'ask_testing_intent').addEdge('ask_testing_intent', END);
-  return graph.compile();
+  return observeGraph(graph.compile());
 }
 
 export async function discussFirstTurn(graph, userInput) {

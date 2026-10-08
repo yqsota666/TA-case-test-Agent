@@ -1,3 +1,4 @@
+import {observeGraph} from './observability.js';
 import crypto from 'node:crypto';
 import { StateGraph, StateSchema, START, END } from '@langchain/langgraph';
 import { z } from 'zod';
@@ -231,5 +232,5 @@ export function createDataGenerationGraph({ db, scope, specification }) {
     .addEdge('account_define', 'fund_define').addEdge('fund_define', 'holding_define')
     .addEdge('holding_define', 'data_validate')
     .addEdge('data_validate', END);
-  return graph.compile();
+  return observeGraph(graph.compile());
 }

@@ -1,3 +1,4 @@
+import {observeGraph} from './observability.js';
 import {dataExchangeRequirementIssues} from '../../platform-protocol/src/data-exchange-requirements.js';
 import { compileApplicationIntents, editablePreparationFields } from './application-preparation.js';
 import { StateGraph, StateSchema, START, END } from '@langchain/langgraph';
@@ -39,7 +40,7 @@ export function createPlanContractGraph({ complete, discussionContext=[], prepar
     return {contract:validatePlanApplications(plan,contract)};
   });
   graph.addEdge(START,'define_plan_data').addEdge('define_plan_data','define_plan_expectations').addEdge('define_plan_expectations','validate_plan_applications').addEdge('validate_plan_applications',END);
-  return graph.compile();
+  return observeGraph(graph.compile());
 }
 export async function definePlanContract(complete,plan,discussionContext=[],preparedData=null) {
   const state=await createPlanContractGraph({complete,discussionContext,preparedData}).invoke({plan});

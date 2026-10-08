@@ -1,3 +1,4 @@
+import {observeRequest,safeErrorCode} from '../../case-agent/src/observability.js';
 import {createAccountModelHttpHandler} from './account-model-http.js';
 import {validateDiscussionImages} from '../../platform-protocol/src/discussion-images.js';
 import {handleGlobalDataCatalog} from './global-data-http.js';
@@ -26,6 +27,7 @@ const holdingsPath = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/ho
 const parsingPath = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/return-parsing(?:\/(02|04))?$/i;
 
 function send(response, status, value) {
+  if(value?.error)response.observationError=safeErrorCode({code:value.error});
   response.writeHead(status, { 'content-type': 'application/json; charset=utf-8',
     'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
   response.end(JSON.stringify(value));
@@ -408,7 +410,7 @@ export function createCaseHttpHandler({ accountModelQuotas, modelRuntime, global
           ...(error.status ? { message: error.message } : {}) });
     }
   };
-  return (request,response)=>modelRuntime?modelRuntime.run({token:cookieToken(request.headers.cookie),purpose:new URL(request.url,'http://localhost').pathname.split('/').at(-1).slice(0,40)},()=>handle(request,response)):handle(request,response);
+  return (request,response)=>observeRequest(request,response,()=>modelRuntime?modelRuntime.run({token:cookieToken(request.headers.cookie),purpose:new URL(request.url,'http://localhost').pathname.split('/').at(-1).slice(0,40)},()=>handle(request,response)):handle(request,response));
 }
 
 export function createCaseHttpServer(dependencies) {

@@ -1,3 +1,4 @@
+import {observeGraph} from './observability.js';
 import { StateGraph, StateSchema, START, END } from '@langchain/langgraph';
 import { z } from 'zod';
 import { parseReturnFiles } from '../../platform-protocol/src/return-parsing.js';
@@ -24,5 +25,5 @@ export function createReturnParsingGraph({ channel }) {
   graph.addConditionalEdges('wait_transaction_return', state => state.files === null ? END : 'parse_transaction_return',
     [END, 'parse_transaction_return']);
   graph.addEdge('parse_account_return', END).addEdge('parse_transaction_return', END);
-  return graph.compile();
+  return observeGraph(graph.compile());
 }
