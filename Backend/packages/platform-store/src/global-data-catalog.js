@@ -12,13 +12,26 @@ export function catalogOptions(input={}){
  if(!Object.hasOwn(draft,table)||!['draft','formal'].includes(source)||q.length>200||!Number.isSafeInteger(offset)||offset<0||offset>1000000||!Number.isSafeInteger(limit)||limit<1||limit>200)throw storeError('INVALID_CATALOG_QUERY',400,'查询条件无效');
  return {table,source,q,offset,limit};
 }
+export function catalogProjectionColumns(query){
+ const parts=[];let depth=0,quote=null,start=query.toUpperCase().indexOf('SELECT')+6;
+ for(let i=start;i<query.length;i++){
+  const char=query[i];
+  if(quote){if(char==='\\'){i++;continue;}if(char===quote){if(query[i+1]===quote)i++;else quote=null;}continue;}
+  if(char==="'"||char==='"'||char==='`'){quote=char;continue;}
+  if(char==='(')depth++;else if(char===')')depth--;
+  else if(depth===0&&char===','){parts.push(query.slice(start,i));start=i+1;}
+  else if(depth===0&&/^\sFROM\s/i.test(query.slice(i))){parts.push(query.slice(start,i));break;}
+ }
+ return new Set(parts.map(part=>/\sAS\s+([a-z_]+)\s*$/i.exec(part)?.[1]??/^\s*\w+\.([a-z_]+)\s*$/i.exec(part)?.[1]).filter(Boolean));
+}
 export function createGlobalDataCatalog({transaction}){
  return {async listTable(token,input){const {table,source,q,offset,limit}=catalogOptions(input);return transaction(async db=>{
   const auth=await authenticateSession(db,token);
   // The fixed projection is searched as text, retaining field-specific decimals and NULLs in the result.
   const base=`${(source==='formal'?formal:draft)[table]} WHERE t.workspace_id=?`;
   const pattern='%'+q.replace(/[\\%_]/g,'\\$&')+'%';
-  const searchable=Object.keys(fields).filter(k=>base.includes(`t.${k}`)||base.includes(` AS ${k}`));
+  const projected=catalogProjectionColumns(base);
+  const searchable=Object.keys(fields).filter(k=>projected.has(k));
   const filter=q?` AND (${searchable.map(k=>`CAST(v.\`${k}\` AS CHAR) LIKE ?`).join(' OR ')}${base.includes('caseTitle')?' OR v.project LIKE ? OR v.caseTitle LIKE ?':''}${base.includes('record_json')?' OR CAST(v.record_json AS CHAR) LIKE ?':''})`:'';
   const searchValues=q?[...searchable.map(()=>pattern),...(base.includes('caseTitle')?[pattern,pattern]:[]),...(base.includes('record_json')?[pattern]:[])]:[];
   const query=`SELECT * FROM (${base}) v WHERE 1=1${filter}`;
