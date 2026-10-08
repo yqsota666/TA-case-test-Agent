@@ -1,6 +1,7 @@
 import {initializeObservability,shutdownObservability} from '../../case-agent/src/observability.js';
 import {initializeBackendMetrics,shutdownBackendMetrics,createMeasuredTransaction} from './backend-metrics.js';
 import {createModelRuntime} from './model-runtime.js';
+import {loadFundMarketDefaults,withFundMarketDefaults} from '../../case-agent/src/fund-market-defaults.js';
 import {createAccountModelQuotas} from '../../platform-store/src/account-model-quotas.js';
 import {modelBudgetConfig,createModelConsumptionRepository} from '../../platform-store/src/model-consumption.js';
 import {createBusinessAdmission} from '../../case-agent/src/business-admission.js';
@@ -59,15 +60,16 @@ const holdingsReturn = createHoldingsReturnRepository({transaction});
 const exchangeRepository = createExchangeRepository({ transaction });
 const preparations = createApplicationPreparationRepository({ transaction });
 const admit=createBusinessAdmission({repository:createAdmissionRepository({transaction}),complete:modelRuntime.completion({model:process.env.SOPHNET_ADMISSION_MODEL||'DeepSeek-V4-Flash-0731'})});
-const discussionService = createPersistedDiscussionService({ repository,
-  complete: modelRuntime.completion(),visionComplete:modelRuntime.completion({model:process.env.SOPHNET_VISION_MODEL||'qwen3-vl-plus'}),admit });
 const complete = modelRuntime.completion();
+const completePlanning=withFundMarketDefaults(complete,loadFundMarketDefaults());
+const discussionService = createPersistedDiscussionService({ repository,
+  complete: completePlanning,visionComplete:modelRuntime.completion({model:process.env.SOPHNET_VISION_MODEL||'qwen3-vl-plus'}),admit });
 const caseResult = createCaseResultService({repository:createCaseResultRepository({transaction}),complete});
 const completeData = async input => {
-  try { return await complete(input); }
+  try { return await completePlanning(input); }
   catch (error) {
     if (error.code !== 'MODEL_EMPTY_OUTPUT') throw error;
-    return complete(input);
+    return completePlanning(input);
   }
 };
 const executeData = async ({ token, chatPublicId, casePublicId, versionNumber, specification }) => {
@@ -126,7 +128,7 @@ const projectParsing={...returnParsing,parse:projectExchange.parse};
 const projectConfirmation={...returnConfirmation,read:projectExchange.readConfirmation,apply:projectExchange.apply};
 const confirmData = ({ token, chatPublicId, casePublicId, revision }) =>
   repository.confirmGeneratedData(token, chatPublicId, casePublicId, revision);
-const server = createCaseHttpServer({accountModelQuotas,modelRuntime,globalDataCatalog:createGlobalDataCatalog({transaction}),globalFileCatalog:createGlobalFileCatalog({transaction}),admit,planContentComplete:complete, repository, discussionService, confirmPlan,
+const server = createCaseHttpServer({accountModelQuotas,modelRuntime,globalDataCatalog:createGlobalDataCatalog({transaction}),globalFileCatalog:createGlobalFileCatalog({transaction}),admit,planContentComplete:completePlanning, repository, discussionService, confirmPlan,
   executeData, reviseData, exchangeRepository, applicationPreparation:projectPreparation, confirmData, returnParsing:projectParsing, returnConfirmation:projectConfirmation, holdingsReturn, taReceipts, caseResult, exchangePlanSupplement, chatLifecycle, durableWorkflow, taReset, accountAuth, secureCookie:process.env.NODE_ENV==='production', allowedOrigin });
 server.listen(Number(process.env.CASE_API_PORT ?? 3100), '127.0.0.1');
 
