@@ -452,7 +452,7 @@ export function createCaseHttpHandler({ accountModelQuotas, modelRuntime, global
         event('status',{message:action==='plan'?'正在整理方案…':'正在准备回复…'});
         const heartbeat=setInterval(()=>{if(!response.destroyed)response.write(': heartbeat\n\n');},15000);
         try{
-          const result=await discussionService[method]({...input,signal:controller.signal,...(action==='discussion'?{onDelta:text=>event('delta',{text})}:{})});
+          const result=await discussionService[method]({...input,signal:controller.signal,...(action==='discussion'?{onDelta:text=>event('delta',{text}),onReset:()=>event('reset',{})}:{})});
           event('result',result);
           if(!response.destroyed)response.end();
         }finally{clearInterval(heartbeat);response.off('close',disconnect);}

@@ -15,7 +15,7 @@ import {
   guardExchangeTimeEvidence,
 } from './plan-proposal.js';
 
-export const FOLLOWUP_DISCUSSION_PROMPT_VERSION = 'followup-discussion-draft-v6';
+export const FOLLOWUP_DISCUSSION_PROMPT_VERSION = 'followup-discussion-draft-adaptive-v7';
 export const FOLLOWUP_DISCUSSION_PROMPT = DISCUSSION_VOICE + '\n阅读完整对话，以用户最新纠正为准。承接上轮问题的答案，推动下一步，不循环索要已经提供的信息。';
 
 const Turn = z.object({ role: z.enum(['user', 'assistant']), content: z.string() });
@@ -43,18 +43,18 @@ function validatePriorTurns(priorTurns) {
   }
 }
 
-export function createDiscussionGraph({ complete, onDelta, signal, discussionContext={} }) {
+export function createDiscussionGraph({ complete, onDelta, onReset, signal, discussionContext={} }) {
   if (typeof complete !== 'function') throw new TypeError('complete must be a function');
   const graph = new StateGraph(DiscussionState);
   graph.addNode('ask_testing_intent', async ({ userInput }) => ({
-    reply: await completeDiscussionReply(complete,{ system: FIRST_DISCUSSION_PROMPT, user: userInput, ...(onDelta?{onDelta,signal}:{}) },discussionContext),
+    reply: await completeDiscussionReply(complete,{ system: FIRST_DISCUSSION_PROMPT, user: userInput, ...(onDelta?{onDelta,onReset,signal}:{}) },discussionContext),
     phase: 'AWAITING_USER',
     promptVersion: FIRST_DISCUSSION_PROMPT_VERSION,
   }));
   graph.addNode('refine_test_approach', async ({ userInput, priorTurns }) => ({
     reply: await completeDiscussionReply(complete,{
       system: FOLLOWUP_DISCUSSION_PROMPT,
-      ...(onDelta?{onDelta,signal}:{}),
+      ...(onDelta?{onDelta,onReset,signal}:{}),
       messages: [...priorTurns, { role: 'user', content: userInput }],
     },discussionContext),
     phase: 'AWAITING_USER',

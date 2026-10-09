@@ -15,7 +15,7 @@ test('first graph node asks and waits without creating a plan', async () => {
   assert.equal(calls.length, 1);
   assert.match(calls[0].system, /不重复询问/);
   assert.equal(calls[0].user, input);
-  assert.deepEqual(result, { reply, phase: 'AWAITING_USER', promptVersion: 'first-discussion-draft-v6' });
+  assert.deepEqual(result, { reply, phase: 'AWAITING_USER', promptVersion: 'first-discussion-draft-adaptive-v7' });
   assert.equal('plan' in result, false);
 });
 
@@ -58,7 +58,9 @@ test('Sophnet adapter uses the selected model and keeps model text unchanged', a
   assert.equal(result.reply, reply);
   assert.equal(calls[0].model, 'DeepSeek-V4-Pro-0813');
   assert.deepEqual(calls[0].messages.map(message => message.role), ['system', 'user']);
-  assert.deepEqual(calls[0].messages.map(message => message.content), [FIRST_DISCUSSION_PROMPT, input]);
+  assert.ok(calls[0].messages[0].content.startsWith(FIRST_DISCUSSION_PROMPT));
+  assert.match(calls[0].messages[0].content,/最后核对/);
+  assert.equal(calls[0].messages[1].content,input);
 });
 
 

@@ -219,7 +219,7 @@ export function CaseWorkbench({accountControl}) {
       const before=await requestCase(path+'/workflow');
       if(!before.waiting?.includes(action))throw new Error('当前流程不支持此操作，请刷新后查看当前步骤。');
       if(action==='PROPOSE_PLAN' && messages.filter(m=>m.role==='assistant').length<1)throw new Error('请先说明测试需求，再整理方案。');
-      await requestCaseStream(path+(action==='PROPOSE_PLAN'?'/plan':'/discussion'),{userInput:text,...(sentImages.length?{images:sentImages}:{})},{signal:controller.signal,onDelta:delta=>{
+      await requestCaseStream(path+(action==='PROPOSE_PLAN'?'/plan':'/discussion'),{userInput:text,...(sentImages.length?{images:sentImages}:{})},{signal:controller.signal,onReset:()=>{if(request===viewRequest.current)setStreamReply(null);},onDelta:delta=>{
         if(request===viewRequest.current)setStreamReply(value=>({caseId,text:(value?.caseId===caseId?value.text:'')+delta}));
       }});
       if(request===viewRequest.current)setStreamReply(null);

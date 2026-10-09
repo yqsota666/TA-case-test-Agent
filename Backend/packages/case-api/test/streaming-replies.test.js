@@ -41,3 +41,13 @@ test('SSE delivers a delta before persistence completes, and terminal failures a
   assert.match(tail,/event: result/);assert.match(tail,/"revision":1/);
   fail=true;const failure=await (await send()).text();assert.match(failure,/event: error/);assert.match(failure,/MODEL_UNAVAILABLE/);assert.doesNotMatch(failure,/event: result/);
 });
+
+test('a repaired reply resets rejected deltas before the accepted answer and result',async t=>{
+ const server=createCaseHttpServer({allowedOrigin:'http://localhost:3100',accountAuth:{current:async()=>({user:{id:'u'}})},repository:{},confirmPlan:async()=>{},executeData:async()=>{},reviseData:async()=>{},discussionService:{discuss:async({onDelta,onReset})=>{
+  onDelta('待拒绝的回答');onReset();onDelta('重新整理方案');return {reply:'重新整理方案',revision:1};
+ }}});
+ server.listen(0,'127.0.0.1');await once(server,'listening');t.after(()=>server.close());
+ const response=await fetch(`http://127.0.0.1:${server.address().port}${path}`,{method:'POST',headers:{Origin:'http://localhost:3100',Cookie:'case_session=s',Accept:'text/event-stream','Content-Type':'application/json'},body:JSON.stringify({userInput:'下一步？'})});
+ const text=await response.text();
+ assert.match(text,/event: delta[\s\S]*待拒绝的回答[\s\S]*event: reset[\s\S]*event: delta[\s\S]*重新整理方案[\s\S]*event: result/);
+});

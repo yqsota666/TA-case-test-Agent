@@ -4,7 +4,7 @@ import {validateDiscussionImages,analyzeDiscussionImages,imageDiscussionContent,
 import { definePlanContract, displayPlanContract } from './plan-contract.js';
 import { createDiscussionGraph, discussTurn, proposeDiscussionPlan } from './discussion-graph.js';
 
-export function createPersistedDiscussionService({ repository, complete, visionComplete, admit, readChannels }) {
+export function createPersistedDiscussionService({ repository, complete, visionComplete, admit, readChannels, readContext }) {
   if (!repository || typeof repository.readCaseDiscussion !== 'function' ||
       typeof repository.beginCaseDiscussionTurn !== 'function' ||
       typeof repository.finishCaseDiscussionTurn !== 'function' ||
@@ -23,7 +23,7 @@ export function createPersistedDiscussionService({ repository, complete, visionC
     },...options});
   }
 
-  async function discuss({ token, chatPublicId, casePublicId, userInput, images=[], onDelta, signal }) {
+  async function discuss({ token, chatPublicId, casePublicId, userInput, images=[], onDelta, onReset, signal }) {
     signal?.throwIfAborted();
     images=validateDiscussionImages(images);
     userInput=userInput?.trim() || (images.length?IMAGE_ONLY_INPUT:userInput);
@@ -45,7 +45,8 @@ export function createPersistedDiscussionService({ repository, complete, visionC
       token, chatPublicId, casePublicId, { expectedRevision: history.revision, userInput: input, images, imageAnalysis });
     const channels=readChannels ? (await readChannels(token)).channels : undefined;
     const existingPlan=await repository.getLatestSopProposal?.(token,chatPublicId,casePublicId);
-    const result = await discussTurn(graphFor(history,{onDelta,signal,channels,discussionContext:{planAvailable:Boolean(existingPlan)}}), { priorTurns: history.turns.map(t=>({...t,content:imageDiscussionContent(t.content,t.imageAnalysis)})), userInput: imageDiscussionContent(input,imageAnalysis) });
+    const snapshot=await readContext?.(token,{chatPublicId,casePublicId});
+    const result = await discussTurn(graphFor(history,{onDelta,onReset,signal,channels,discussionContext:{planAvailable:Boolean(existingPlan),snapshot}}), { priorTurns: history.turns.map(t=>({...t,content:imageDiscussionContent(t.content,t.imageAnalysis)})), userInput: imageDiscussionContent(input,imageAnalysis) });
     signal?.throwIfAborted();
     const saved = await repository.finishCaseDiscussionTurn(token, chatPublicId, casePublicId, {
       turnNumber: pending.turnNumber,

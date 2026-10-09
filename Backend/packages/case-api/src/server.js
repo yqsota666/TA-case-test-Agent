@@ -15,6 +15,7 @@ import {dataExchangeRequirementIssues} from '../../platform-protocol/src/data-ex
 import {createTaResetRepository} from '../../platform-store/src/ta-reset.js';
 import {createChatLifecycleRepository} from '../../platform-store/src/chat-lifecycle.js';
 import { createDurableWorkflowRepository } from '../../platform-store/src/durable-workflow.js';
+import {createDiscussionContextReader} from '../../platform-store/src/discussion-context.js';
 import mysql from 'mysql2/promise';
 import { createCaseRepository } from '../../platform-store/src/index.js';
 import { createExchangeRepository } from '../../platform-store/src/exchange.js';
@@ -63,6 +64,7 @@ const admit=createBusinessAdmission({repository:createAdmissionRepository({trans
 const complete = modelRuntime.completion();
 const completePlanning=withFundMarketDefaults(complete,loadFundMarketDefaults());
 const discussionService = createPersistedDiscussionService({ repository,
+  readContext:createDiscussionContextReader({transaction}),
   complete: completePlanning,readChannels:exchangeRepository.listChannels,visionComplete:modelRuntime.completion({model:process.env.SOPHNET_VISION_MODEL||'qwen3-vl-plus'}),admit });
 const caseResult = createCaseResultService({repository:createCaseResultRepository({transaction}),complete});
 const completeData = async input => {

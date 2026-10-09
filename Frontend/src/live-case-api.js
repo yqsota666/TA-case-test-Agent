@@ -1,6 +1,6 @@
 import {accountStorageOwner} from './account-storage.js';
 import {readCaseEventStream} from './case-event-stream.js';
-export async function requestCaseStream(path,body,{onDelta,signal}={}) {
+export async function requestCaseStream(path,body,{onDelta,onReset,signal}={}) {
   const owner=accountStorageOwner();
   const response=await fetch('/live-api'+path,{method:'POST',credentials:'same-origin',cache:'no-store',signal,
     headers:{'Content-Type':'application/json',Accept:'text/event-stream',...(owner?{'X-Case-Account':owner}:{})},body:JSON.stringify(body)});
@@ -12,7 +12,7 @@ export async function requestCaseStream(path,body,{onDelta,signal}={}) {
     throw Object.assign(new Error(value.message||value.error||'请求失败'),{status:response.status,code:value.error});
   }
   if(!response.headers.get('content-type')?.includes('text/event-stream'))throw new Error('服务器没有返回流式回复');
-  return readCaseEventStream(response.body,(event,value)=>{checkOwner();if(event==='delta')onDelta?.(value.text);});
+  return readCaseEventStream(response.body,(event,value)=>{checkOwner();if(event==='delta')onDelta?.(value.text);if(event==='reset')onReset?.();});
 }
 export async function requestCase(path, body) {
   const owner=accountStorageOwner();

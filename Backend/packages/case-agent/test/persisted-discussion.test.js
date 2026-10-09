@@ -61,7 +61,7 @@ test('service stores user intent before model call and reads only server-owned h
   assert.equal(second.revision, 2);
   assert.deepEqual(modelCalls[1].messages.map(message => message.content),
     ['请帮我分析一项规则', firstReply, '我想看边界']);
-  assert.equal(rounds[1].promptVersion, 'followup-discussion-draft-v6');
+  assert.equal(rounds[1].promptVersion, 'followup-discussion-draft-adaptive-v7');
 });
 
 test('oversized input is rejected before model call or database intent write', async () => {
