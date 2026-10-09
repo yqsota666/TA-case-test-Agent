@@ -37,7 +37,7 @@ test('a plan request yields a reviewable proposal without locking it', async () 
   } });
   const result = await proposeDiscussionPlan(graph, { priorTurns, userInput: '请整理为 Plan 提案。' });
   assert.equal(result.phase, 'PROPOSAL_PENDING');
-  assert.equal(result.promptVersion, 'plan-proposal-indexed-v11');
+  assert.equal(result.promptVersion, 'plan-proposal-draft-v12');
   assert.deepEqual(result.proposal, proposal);
   assert.match(result.reply, /^测试目标：验证重复确认不会重复入账/);
   assert.match(result.reply, /场景 1：重复上传确认/);
@@ -58,7 +58,7 @@ test('a plan request yields a reviewable proposal without locking it', async () 
 test('proposal guard and structural format reject premature or unsafe output', async () => {
   let called = false;
   const graph = createDiscussionGraph({ complete: async () => { called = true; return JSON.stringify(proposal); } });
-  await assert.rejects(proposeDiscussionPlan(graph, { priorTurns: priorTurns.slice(0, 2), userInput: '生成 Plan' }));
+  await assert.rejects(proposeDiscussionPlan(graph, { priorTurns: [], userInput: '生成 Plan' }));
   assert.equal(called, false);
   assert.deepEqual(parsePlanProposal(JSON.stringify(proposal)), proposal);
   assert.throws(() => parsePlanProposal('```json\n' + JSON.stringify(proposal) + '\n```'), { code: 'MODEL_OUTPUT_FORMAT' });

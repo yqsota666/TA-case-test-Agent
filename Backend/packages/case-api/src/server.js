@@ -63,7 +63,7 @@ const admit=createBusinessAdmission({repository:createAdmissionRepository({trans
 const complete = modelRuntime.completion();
 const completePlanning=withFundMarketDefaults(complete,loadFundMarketDefaults());
 const discussionService = createPersistedDiscussionService({ repository,
-  complete: completePlanning,visionComplete:modelRuntime.completion({model:process.env.SOPHNET_VISION_MODEL||'qwen3-vl-plus'}),admit });
+  complete: completePlanning,readChannels:exchangeRepository.listChannels,visionComplete:modelRuntime.completion({model:process.env.SOPHNET_VISION_MODEL||'qwen3-vl-plus'}),admit });
 const caseResult = createCaseResultService({repository:createCaseResultRepository({transaction}),complete});
 const completeData = async input => {
   try { return await completePlanning(input); }

@@ -519,8 +519,8 @@ export function createCaseRepository({ transaction }) {
       const [[history]] = await db.execute(`SELECT COUNT(*) AS count FROM case_discussion_turns
         WHERE workspace_id=? AND chat_id=? AND case_id=? AND turn_number<? AND status='COMPLETE'`,
       [auth.workspace_id, chat.id, caseRow.id, turnNumber]);
-      if (Number(history.count) < 2) {
-        throw storeError('INSUFFICIENT_DISCUSSION', 409, 'Plan 提案前至少需要两轮完整讨论');
+      if (Number(history.count) < 1) {
+        throw storeError('INSUFFICIENT_DISCUSSION', 409, 'Plan 提案前至少需要一轮完整讨论');
       }
       const [[latest]] = await db.execute(`SELECT id,version_number,status FROM case_sop_versions
         WHERE workspace_id=? AND chat_id=? AND case_id=?

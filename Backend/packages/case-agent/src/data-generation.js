@@ -1,3 +1,4 @@
+import { DRAFT_PREPARATION_POLICY } from './draft-preparation-policy.js';
 import {observeGraph} from './observability.js';
 import crypto from 'node:crypto';
 import { StateGraph, StateSchema, START, END } from '@langchain/langgraph';
@@ -77,7 +78,7 @@ export const DataSpecificationSchema = z.object({
   }
 });
 
-const DATA_GENERATION_RULES = `你负责把当前 Case 已由用户确认的 Plan 转成模拟数据定义。你只处理本次 Case；不要把其他 Case 的客户、账户、基金或持有记录混进来。Plan 是本次数据的业务来源；下面的字段说明是所有 Case 共用的数据结构，不是某个 Case 的示例值。
+const DATA_GENERATION_RULES = DRAFT_PREPARATION_POLICY + '\n' + `你负责把当前 Case 已由用户确认的 Plan 转成模拟数据定义。你只处理本次 Case；不要把其他 Case 的客户、账户、基金或持有记录混进来。Plan 是本次数据的业务来源；下面的字段说明是所有 Case 共用的数据结构，不是某个 Case 的示例值。
 
 这些数组只定义本次需要准备的初始模拟草稿，不是最终正式数据。Plan写出的最终开户、成交金额、总份额、可用份额、冻结份额是02/04/05解析并显式同步后的预期结果，不得倒填为初始模拟客户、账户或持仓。尤其不能把预期最终份额提前准备成初始模拟持仓。
 沿用已有正式账户、独立接收05的Case，不为凑齐四张表而新建模拟客户或交易账户；若Plan未明确要求初始模拟持仓，holdings也为空。Plan明确客户、账户、持仓草稿为空时，customers、accounts、holdings三个数组必须保持为空，只保留Plan确实需要的基金元数据。已有正式交易账号、TA账号与通道由后续申请/结果预期的引用选择正式数据，不复制为新模拟账号；不能因accounts为空就列“缺少账户”或生成新账号。真正缺少已确认账户引用时才澄清。

@@ -137,18 +137,30 @@ test('a valid Plan display longer than 4000 characters can be saved', async () =
 });
 
 test('proposal completion rejects too little discussion before writing a SOP', async () => {
-  const { repository, calls } = fixture({ initialTurns: [
-    { turn_number: 1, user_text: '问题', assistant_text: '回答', status: 'COMPLETE', turn_kind: 'DISCUSS' },
-  ], sop: null });
+  const { repository, calls } = fixture({ initialTurns: [], sop: null });
+  await repository.beginCaseDiscussionTurn(...scope,
+    { expectedRevision: 0, userInput: '请生成方案', kind: 'PROPOSE_PLAN' });
+  const plan = { objective: '检查规则', preconditions: [], scenarios: [
+    { title: '边界', setup: '准备数据', action: '执行', expected: '可观察结果', evidence: '记录' },
+  ], openQuestions: [] };
+  await assert.rejects(repository.finishCasePlanProposal(...scope,
+    { turnNumber: 1, assistantReply: '测试目标：检查规则',
+      promptVersion: 'plan-proposal-v1', proposal: plan }), { code: 'INSUFFICIENT_DISCUSSION' });
+  assert.equal(calls.some(call => call.sql.includes('INSERT INTO case_sop_versions')), false);
+});
+
+test('proposal completion saves a reviewable SOP after one complete discussion', async () => {
+  const { repository, calls } = fixture({ initialTurns: [{turn_number:1,user_text:'问题',assistant_text:'草稿建议',status:'COMPLETE',turn_kind:'DISCUSS'}], sop: null });
   await repository.beginCaseDiscussionTurn(...scope,
     { expectedRevision: 1, userInput: '请生成方案', kind: 'PROPOSE_PLAN' });
   const plan = { objective: '检查规则', preconditions: [], scenarios: [
     { title: '边界', setup: '准备数据', action: '执行', expected: '可观察结果', evidence: '记录' },
   ], openQuestions: [] };
-  await assert.rejects(repository.finishCasePlanProposal(...scope,
+  const saved=await repository.finishCasePlanProposal(...scope,
     { turnNumber: 2, assistantReply: '测试目标：检查规则',
-      promptVersion: 'plan-proposal-v1', proposal: plan }), { code: 'INSUFFICIENT_DISCUSSION' });
-  assert.equal(calls.some(call => call.sql.includes('INSERT INTO case_sop_versions')), false);
+      promptVersion: 'plan-proposal-v1', proposal: plan });
+  assert.equal(saved.versionNumber,1);
+  assert.equal(calls.some(call => call.sql.includes('INSERT INTO case_sop_versions')), true);
 });
 
  test('locked Case and closed Chat retain scoped read-only discussion history',async()=>{
