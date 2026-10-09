@@ -1,23 +1,20 @@
-import {PlanContext} from './assistant-ui/plan-context.jsx';
+import {FileSchedule} from './file-schedule.jsx';
 import {OperationTasks} from './operation-tasks.jsx';
-import {planText,exchangeStepLabel,exchangeStepTime} from './plan-language.js';
+import {planText} from './plan-language.js';
 import React, {useState, useEffect, useRef} from 'react';
 import {ChevronRight, X} from './ui-icons.jsx';
 import './plan-editor.css';
 import {PlanComparison} from './plan-comparison.jsx';
 const text=value=>typeof value==='string'?planText(value.trim()):'';
+const issueText=value=>text(value).replaceAll('exchangePlan.steps','文件安排').replaceAll('openQuestions','待确认问题').replaceAll('accountIndex','账户引用').replaceAll('stepId','业务动作引用');
 const strings=value=>Array.isArray(value)?[...new Set(value.map(text).filter(Boolean))]:[];
 export function normalizePlan(proposal={}) {
-  return {objective:text(proposal.objective),preconditions:strings(proposal.preconditions),openQuestions:strings(proposal.openQuestions),constructionIssues:strings([...(proposal.contract?.missing||[]),...(proposal.contract?.dataSpecification?.missing||[])]),dataSpecification:proposal.contract?.dataSpecification,
+  return {objective:text(proposal.objective),preconditions:strings(proposal.preconditions),openQuestions:strings(proposal.openQuestions),constructionIssues:[...new Set([...(proposal.contract?.missing||[]),...(proposal.contract?.dataSpecification?.missing||[])].map(issueText).filter(Boolean))],dataSpecification:proposal.contract?.dataSpecification,
     scenarios:Array.isArray(proposal.scenarios)?proposal.scenarios.filter(item=>item&&typeof item==='object').map(item=>Object.fromEntries(['title','setup','action','expected','evidence'].map(key=>[key,text(item[key])]))):[],
     exchangePlan:proposal.exchangePlan&&typeof proposal.exchangePlan==='object'?{status:text(proposal.exchangePlan.status),steps:Array.isArray(proposal.exchangePlan.steps)?proposal.exchangePlan.steps:[],openQuestions:strings(proposal.exchangePlan.openQuestions)}:null};
 }
 export function planSummary(proposal) {
   return '方案已整理。可以打开查看、修改，确认后再继续。';
-}
-function ScenarioDetail({item}) {
-  const fields=[['条件',item.setup],['操作',item.action],['核对依据',item.evidence]].filter(([,value])=>value);
-  return fields.length>0&&<dl className="cw-plan-item-fields">{fields.map(([label,value])=><div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>;
 }
 const dataTables={customers:{title:'客户',columns:[['name','名称'],['investorType','客户类型'],['simulatedBalance','模拟余额']]},accounts:{title:'账户',columns:[['customerIndex','所属客户'],['branchCode','开户网点']]},funds:{title:'基金',columns:[['fundCode','基金代码'],['fundName','名称'],['shareClass','份额类别'],['nav','单位净值']]},holdings:{title:'持仓',columns:[['accountIndex','所属账户'],['fundIndex','基金'],['totalVolume','初始份额']]}};
 function PreparedPlanData({data,onSave,editable}) {
@@ -31,23 +28,18 @@ function PreparedPlanData({data,onSave,editable}) {
 }
 export function PlanDocument({proposal,onSave,onSaveContent,onSaveOperations,onSectionChange,taskProgress=[],locked=false,editable=false,initialSection='tests'}) {
   const plan=normalizePlan(proposal);
-  const [section,setSection]=useState(initialSection);
-  const sections=[['tests','测试项'],['tasks','任务单'],['data','准备数据'],['exchange','文件安排']];
+  const [section,setSection]=useState(initialSection==='tasks'||initialSection==='exchange'?'tasks':'tests');
+  const sections=[['tests','测试方案'],['tasks','任务单']];
   return <div className="cw-plan-shell">
     <nav className="cw-spectral-nav" aria-label="方案内容区">{sections.map(([key,label])=><button type="button" key={key} aria-pressed={section===key} onClick={()=>{setSection(key);onSectionChange?.(key);}}>{label}</button>)}</nav>
     <div className="cw-plan-document" key={section} tabIndex={0} role="region" aria-label="方案内容">
       {plan.objective&&<p className="cw-plan-objective">{plan.objective}</p>}
       {section==='tests'&&<>
-        <PlanContext plan={plan}/>
         {plan.scenarios.length>0?<PlanComparison plan={plan} editable={editable} onSaveContent={onSaveContent}/>:<p>暂无测试项。</p>}
-        {plan.openQuestions.length>0&&<section className="cw-plan-questions"><h3>还需确认</h3><ul>{plan.openQuestions.map(item=><li key={item}>{item}</li>)}</ul></section>}
+        {plan.dataSpecification&&<details className="cw-review-common cw-plan-data-details"><summary>完整准备数据与修改<ChevronRight size={15}/></summary><PreparedPlanData data={plan.dataSpecification} onSave={onSave} editable={editable}/></details>}
+        {[...new Set([...plan.openQuestions,...plan.constructionIssues])].length>0&&<section className="cw-plan-questions"><h3>还需确认</h3><ul>{[...new Set([...plan.openQuestions,...plan.constructionIssues])].map(item=><li key={item}>{item}</li>)}</ul></section>}
       </>}
-      {section==='data'&&(plan.dataSpecification?<PreparedPlanData data={plan.dataSpecification} onSave={onSave} editable={editable}/>:<p>尚未准备数据。</p>)}
-      {section==='tasks'&&<><OperationTasks proposal={proposal} progress={taskProgress} locked={locked} editable={editable} onSave={onSaveOperations}/>{plan.constructionIssues.length>0&&<section className="cw-plan-questions"><h3>尚待补齐</h3><ul>{plan.constructionIssues.map((issue,i)=><li key={i}>{issue}</li>)}</ul></section>}</>}
-      {section==='exchange'&&<div className="cw-spectral-exchange-plan">
-        {plan.exchangePlan?.steps.length>0?<ol>{plan.exchangePlan.steps.map((step,index)=><li key={step.stepId||index}><strong>{exchangeStepLabel(step)}</strong>{exchangeStepTime(step)&&<p>{exchangeStepTime(step)}</p>}{step.required===false&&<span>可选</span>}</li>)}</ol>:<p>暂无文件安排。</p>}
-        {plan.exchangePlan?.openQuestions.length>0&&<section><h3>还需确认</h3><ul>{plan.exchangePlan.openQuestions.map(item=><li key={item}>{item}</li>)}</ul></section>}
-      </div>}
+      {section==='tasks'&&<><OperationTasks proposal={proposal} progress={taskProgress} locked={locked} editable={editable} onSave={onSaveOperations}/><FileSchedule exchangePlan={proposal.exchangePlan} ordered={proposal.contract?.version===4}/>{[...new Set([...plan.constructionIssues,...(plan.exchangePlan?.openQuestions||[])])].length>0&&<section className="cw-plan-questions"><h3>尚待补齐</h3><ul>{[...new Set([...plan.constructionIssues,...(plan.exchangePlan?.openQuestions||[])])].map(issue=><li key={issue}>{issue}</li>)}</ul></section>}</>}
     </div>
   </div>;
 

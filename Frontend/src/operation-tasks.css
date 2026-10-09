@@ -28,3 +28,9 @@
 .cw-shell:has(.cw-operation-tasks) {overflow:hidden;}
 .aui-detail:has(.cw-operation-tasks) [data-slot="canvas-split-body"] {display:flex;flex-direction:column;overflow:hidden;}
 .aui-detail .cw-plan-shell:has(.cw-operation-tasks) > .cw-plan-document {overflow:auto;}
+
+.cw-task-file-schedule {margin-top:28px;padding-top:20px;border-top:1px solid var(--cw-line);font-size:13px;line-height:1.8;}
+.cw-task-file-schedule h3 {font-size:14px;margin:0 0 14px;}
+.cw-task-file-schedule ol {padding-left:20px;}
+.cw-task-file-schedule li + li {margin-top:16px;}
+.cw-task-file-schedule p {margin:6px 0;color:var(--cw-muted);overflow-wrap:anywhere;}

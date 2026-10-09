@@ -19,7 +19,7 @@ export function taskRows(proposal,progress=[]) {
 }
 export function OperationTasks({proposal,progress=[],locked=false,editable=false,onSave}) {
   const rows=taskRows(proposal,progress),[editing,setEditing]=useState(null),[busy,setBusy]=useState(false),[error,setError]=useState('');
-  if(!rows.length)return <p>{proposal.exchangePlan?.status==='NOT_REQUIRED'?'此方案无需账户申请操作，按测试项核对结果。':'尚未整理账户操作，请继续讨论并生成方案。'}</p>;
+  if(!rows.length)return <p>{proposal.exchangePlan?.status==='NOT_REQUIRED'?'此方案无需账户申请操作，按测试方案核对结果。':'尚未整理账户操作，请继续讨论并生成方案。'}</p>;
   const label=key=>{const index=rows.findIndex(t=>t.key===key),task=rows[index];return task?`第${index+1}项，${taskAccount(proposal,task)}的${task.name}`:'前序操作';};
   const save=async event=>{
     event.preventDefault();setBusy(true);setError('');
@@ -38,7 +38,7 @@ export function OperationTasks({proposal,progress=[],locked=false,editable=false
         step.dependsOn.length?`前置条件：${step.dependsOn.map(d=>{const parent=proposal.exchangePlan.steps.find(s=>s.stepId===d.stepId);return `${exchangeStepLabel(parent)}${conditionText[d.condition]??'解析完成'}`;}).join('；')}`:'前置条件：完成准备数据与预期确认'}</p>
       {!task.canApply&&<p className="cw-task-limitation">此业务可以按协议规划，当前尚不能同步正式业务结果。</p>}
       <details><summary>输入与预期</summary><dl>{Object.entries(task.fields).map(([key,value])=><div key={key}><dt>{fieldNames[key]??key}</dt><dd>{fieldText(key,value)||'尚未明确'}</dd></div>)}</dl>
-        {expected.length?<ul>{[...new Set(expected)].map((e,i)=><li key={i}>{e}</li>)}</ul>:<p>逐笔预期请结合“测试项”审阅。</p>}
+        {expected.length?<ul>{[...new Set(expected)].map((e,i)=><li key={i}>{e}</li>)}</ul>:<p>逐笔预期请结合“测试方案”审阅。</p>}
       </details>
       {editable&&proposal.contract.version>=3&&<button type="button" className="cw-row-edit" onClick={()=>{setEditing({key:task.key,fields:editableOperationFields(task),dependsOn:structuredClone(deps)});setError('');}}>修改{task.name}</button>}
       {editing?.key===task.key&&<form className="cw-task-editor" onSubmit={save}>
