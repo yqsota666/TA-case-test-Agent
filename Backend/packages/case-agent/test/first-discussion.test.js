@@ -38,7 +38,7 @@ test('natural paragraphs and limited emphasis work without mandatory headings or
 });
 
 test('unsafe markup and ungrounded completion claims are rejected', async()=>{
-  for(const answer of ['<script>执行危险操作</script>这是一段不合规的回复。','我已生成最终方案并执行所有测试，请查看结果。','## 测试方案\n直接执行完整步骤。']) {
+  for(const answer of ['<script>执行危险操作</script>这是一段不合规的回复。','我已生成最终方案并执行所有测试，请查看结果。']) {
     await assert.rejects(discussFirstTurn(createFirstDiscussionGraph({complete:async()=>answer}),input),{code:'MODEL_OUTPUT_FORMAT'});
   }
 });

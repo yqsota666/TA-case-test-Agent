@@ -1,7 +1,7 @@
 import {observeGraph} from './observability.js';
 import { StateGraph, StateSchema, START, END } from '@langchain/langgraph';
 import { z } from 'zod';
-import {DISCUSSION_VOICE,checkDiscussionReply} from './discussion-reply.js';
+import {DISCUSSION_VOICE,checkDiscussionReply,completeDiscussionReply} from './discussion-reply.js';
 
 export const FIRST_DISCUSSION_PROMPT_VERSION = 'first-discussion-guided-v5';
 export const FIRST_DISCUSSION_PROMPT = DISCUSSION_VOICE + '\n这是首轮。需求已说明重点时不要再问用户最想验证什么；优先把关键风险与下一步说清楚。';
@@ -18,10 +18,10 @@ export function createFirstDiscussionGraph({ complete }) {
   if (typeof complete !== 'function') throw new TypeError('complete must be a function');
   const graph = new StateGraph(FirstDiscussionState);
   graph.addNode('ask_testing_intent', async ({ userInput }) => ({
-    reply: checkFirstDiscussionReply(await complete({
+    reply: await completeDiscussionReply(complete,{
       system: FIRST_DISCUSSION_PROMPT,
       user: userInput,
-    })),
+    }),
     phase: 'AWAITING_USER',
   }));
   graph.addEdge(START, 'ask_testing_intent').addEdge('ask_testing_intent', END);
