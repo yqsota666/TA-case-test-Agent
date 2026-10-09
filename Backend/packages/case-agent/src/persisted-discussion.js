@@ -41,7 +41,8 @@ export function createPersistedDiscussionService({ repository, complete, visionC
     signal?.throwIfAborted();
     const pending = history.pending ?? await repository.beginCaseDiscussionTurn(
       token, chatPublicId, casePublicId, { expectedRevision: history.revision, userInput: input, images, imageAnalysis });
-    const result = await discussTurn(graphFor(history,{onDelta,signal}), { priorTurns: history.turns.map(t=>({...t,content:imageDiscussionContent(t.content,t.imageAnalysis)})), userInput: imageDiscussionContent(input,imageAnalysis) });
+    const existingPlan=await repository.getLatestSopProposal?.(token,chatPublicId,casePublicId);
+    const result = await discussTurn(graphFor(history,{onDelta,signal,discussionContext:{planAvailable:Boolean(existingPlan)}}), { priorTurns: history.turns.map(t=>({...t,content:imageDiscussionContent(t.content,t.imageAnalysis)})), userInput: imageDiscussionContent(input,imageAnalysis) });
     signal?.throwIfAborted();
     const saved = await repository.finishCaseDiscussionTurn(token, chatPublicId, casePublicId, {
       turnNumber: pending.turnNumber,

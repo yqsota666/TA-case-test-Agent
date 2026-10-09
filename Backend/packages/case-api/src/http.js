@@ -435,7 +435,8 @@ export function createCaseHttpHandler({ accountModelQuotas, modelRuntime, global
         return;
       }
       if(['MODEL_OUTPUT_FORMAT','MODEL_EMPTY_OUTPUT','INVALID_PLAN_CONTRACT'].includes(error.code)&&!error.status){
-        send(response,502,{error:error.code,message:'模型回复格式未通过校验，当前回合未完成，请重试原输入'});return;
+        const messages={MODEL_OUTPUT_FORMAT:'AI回复未通过校验，自动重试仍未成功，请重试原输入',MODEL_EMPTY_OUTPUT:'模型未返回内容，请重试原输入',INVALID_PLAN_CONTRACT:'方案结构不完整，当前方案未保存，请重新整理方案'};
+        send(response,502,{error:error.code,message:messages[error.code]});return;
       }
       send(response, Number.isInteger(error.status) && error.status >= 400 && error.status < 600 ?
         error.status : 500, { error: error.status ? error.code : 'INTERNAL_ERROR',

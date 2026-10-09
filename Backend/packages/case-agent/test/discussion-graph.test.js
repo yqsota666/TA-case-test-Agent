@@ -63,7 +63,7 @@ test('invalid transcript or malformed model output cannot advance the discussion
   let called = false;
   const graph = createDiscussionGraph({ complete: async () => {
     called = true;
-    return '## 测试计划\n- 直接执行';
+    return '<script>执行</script>';
   } });
   await assert.rejects(discussTurn(graph, { priorTurns: [{ role: 'assistant', content: firstReply }], userInput: '继续' }), TypeError);
   assert.equal(called, false);
