@@ -1,0 +1,15 @@
+{
+  "22:227:27": {
+    "dataSequence": false,
+    "includeEmptyR1": true,
+    "summaryNo": 999,
+    "sender": "",
+    "recipient": "",
+    "fieldNamesCase": "canonical",
+    "trailingCrlf": true
+  },
+  "22:005:27": {
+    "dataSequence": false,
+    "indexSuffixes": { "OFI": "-DLJ", "OFX": "" }
+  }
+}

@@ -52,6 +52,16 @@ test('MySQL: all 01/03 records share one batch and ZIP before any receipt; retry
     await assert.rejects(()=>exchange.stageApplication(token,{...scope,sopVersionId:data.planVersionId,channelId,businessDate:'20261008',fileType:'03',record:{...firstTrade,...wrong}}),{code:'APPLICATION_DATA_MISMATCH'});
    }
    const zip=buildApplicationPackage(originals);assert.equal(zip.fileNames.length,3);
+   const delivery=await exchange.readDeliveryPackage(token,{chatPublicId:chat.publicId,batchPublicId:apps[0].batchPublicId});
+   assert.equal(delivery.fileName,'20261008.zip');
+   assert.ok(delivery.manifest.some(f=>f.fileType==='OFX'));
+   assert.equal(delivery.manifest.find(f=>f.fileType==='X1').recordCount,accounts);
+   assert.equal(delivery.manifest.find(f=>f.fileType==='X3').recordCount,0);
+   await exchange.setDeliveryProfile(token,{channelId,profile:{includeEmptyR1:true,indexSuffixes:{OFI:'-TEST'}}});
+   const unchanged=await exchange.readDeliveryPackage(token,{chatPublicId:chat.publicId,batchPublicId:apps[0].batchPublicId});
+   assert.deepEqual(unchanged.rawBytes,delivery.rawBytes);
+   assert.equal(await exchange.readDeliveryPackage(foreignToken,{chatPublicId:chat.publicId,batchPublicId:apps[0].batchPublicId}),null);
+   await assert.rejects(()=>exchange.setDeliveryProfile(foreignToken,{channelId,profile:{aml:false}}),{code:'CHANNEL_NOT_FOUND'});
    const replay=await project.prepare({token,...scope,channelId});assert.deepEqual(replay.files.map(f=>f.id),result.files.map(f=>f.id));
    assert.deepEqual((await exchange.listOutboundFiles(foreignToken,chat.publicId)).files,[]);
    await assert.rejects(()=>exchange.readOutboundFile(foreignToken,{chatPublicId:chat.publicId,fileId:result.files[0].id}),{code:'FILE_NOT_FOUND'});

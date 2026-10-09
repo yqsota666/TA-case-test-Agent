@@ -11,7 +11,7 @@ const planRoute = route.replace('/discussion', '/plan');
 const dataRoute = route.replace('/discussion', '/data');
 const allowedOrigin = 'http://127.0.0.1:3100';
 
-async function fixture(t, {orderRejected=false,packageFiles=[]}={}) {
+async function fixture(t, {orderRejected=false,packageFiles=[],savedPackage=null}={}) {
   const calls = [];
   const server = createCaseHttpServer({
     allowedOrigin,
@@ -65,6 +65,9 @@ async function fixture(t, {orderRejected=false,packageFiles=[]}={}) {
       prepare: async args => { calls.push(['prepare', args]); return { phase: 'WAITING_TA', revision: 2 }; },
     },
     exchangeRepository: {
+      readDeliveryProfile:async(token,input)=>{calls.push(['get-profile',token,input]);return {channelId:input.channelId,profile:{aml:true}};},
+      readDeliveryPackage:async(token,input)=>{calls.push(['read-package',token,input]);return savedPackage;},
+      setDeliveryProfile:async(token,input)=>{calls.push(['set-profile',token,input]);return input;},
       listChannels: async token => { calls.push(['channels', token]); return { channels: [] }; },
       listCaseApplications: async (token, ids) => {
         calls.push(['applications', token, ids]); return { applications: [] };
@@ -459,4 +462,26 @@ test('application ZIP authenticates and scopes every original file to its Chat a
  assert.deepEqual(Buffer.from(await response.arrayBuffer()),buildApplicationPackage(packageFiles).rawBytes);
  for(const call of calls.filter(c=>c[0]==='read-file')){assert.equal(call[1],cookie.split('=')[1]);assert.equal(call[2].chatPublicId,chat);}
  assert.equal((await fetch(route.replace(batch,'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'),{headers:{cookie}})).status,404);
+});
+
+
+test('saved delivery ZIP downloads exact persisted bytes and date-only name',async t=>{
+ const savedPackage={fileName:'20260817.zip',rawBytes:Buffer.from('persisted-complete-zip')};
+ const {base,calls}=await fixture(t,{savedPackage});
+ const path='/api/chats/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/files/package/dddddddd-dddd-dddd-dddd-dddddddddddd';
+ const response=await fetch(base+path,{headers:{cookie:'case_session=abcdefghijklmnopqrstuvwxyz012345'}});
+ assert.equal(response.status,200);assert.equal(response.headers.get('content-disposition'),'attachment; filename="20260817.zip"');
+ assert.deepEqual(Buffer.from(await response.arrayBuffer()),savedPackage.rawBytes);
+ assert.equal(calls.some(c=>c[0]==='read-file'),false);
+});
+test('delivery configuration requires session, same origin and strict JSON input',async t=>{
+ const {base,calls}=await fixture(t);const path=base+'/api/exchange/channels/7/delivery-profile';
+ const headers={cookie:'case_session=abcdefghijklmnopqrstuvwxyz012345',origin:allowedOrigin,'content-type':'application/json'};
+ const body={profile:{indexSuffixes:{OFI:'-DLJ'},includeEmptyR1:true}};
+ assert.equal((await fetch(path,{headers})).status,200);
+ assert.equal((await fetch(path,{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify(body)})).status,401);
+ assert.equal((await fetch(path,{method:'PUT',headers:{...headers,origin:'https://foreign.example'},body:JSON.stringify(body)})).status,403);
+ assert.equal((await fetch(path,{method:'PUT',headers,body:JSON.stringify({...body,workspaceId:'99'})})).status,400);
+ const result=await fetch(path,{method:'PUT',headers,body:JSON.stringify(body)});assert.equal(result.status,200);
+ assert.deepEqual(calls.find(c=>c[0]==='set-profile')[2],{channelId:'7',profile:body.profile});
 });

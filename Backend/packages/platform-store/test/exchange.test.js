@@ -325,3 +325,24 @@ test('application data must match confirmed Case tables', async () => {
   }), { code: 'APPLICATION_DATA_MISMATCH' });
   assert.equal(calls.some(call => call.sql.includes('INSERT INTO applications')), false);
 });
+
+test('a no-sequence channel refuses a duplicate day file instead of silently renaming it',async()=>{
+ const channel={id:111,chat_id:41,status:'DRAFT',channel_id:71,business_date:'20261003',
+  ta_code:'27',distributor_code:'227',protocol_version:'22'};
+ const fixtureData=fixture({generatedBatch:channel,
+  generatedApps:[{id:101,file_type:'01',status:'BATCHED',record_json:{...record,DistributorCode:'227',BranchCode:'227'}}],
+  generatedFiles:[{file_name:'OFD_227_27_20261003_01.TXT'}]});
+ await assert.rejects(()=>fixtureData.repository.generateOutboundFiles(token,{chatPublicId,batchPublicId:applicationPublicId}),
+  {code:'FILE_SEQUENCE_EXHAUSTED'});
+ assert.equal(fixtureData.calls.some(c=>c.sql.includes('INSERT INTO exchange_files')),false);
+});
+test('a complete ZIP is saved before the batch and applications become generated',async()=>{
+ const data=fixture({generatedApps:[{id:101,file_type:'01',status:'BATCHED',record_json:record}]});
+ await data.repository.generateOutboundFiles(token,{chatPublicId,batchPublicId:applicationPublicId});
+ const saved=data.calls.find(c=>c.sql.includes('INSERT INTO exchange_delivery_packages'));
+ assert.equal(saved.values[3],'20261003.zip');
+ const manifest=JSON.parse(saved.values[5]);assert.ok(manifest.some(f=>f.fileType==='OFX'));
+ assert.ok(Buffer.isBuffer(saved.values[7]));
+ assert.ok(data.calls.indexOf(saved)<data.calls.findIndex(c=>c.sql.includes('UPDATE applications a JOIN')));
+ assert.ok(data.calls.indexOf(saved)<data.calls.findIndex(c=>c.sql.includes("UPDATE exchange_batches SET status='GENERATED'")));
+});

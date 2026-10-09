@@ -11,7 +11,7 @@ export function zipProtocolFiles(files) {
   if(!files.length || files.length>1000)throw new Error('申请包文件数量无效');
   const names=new Set(),locals=[],central=[];let offset=0;
   for(const file of files){
-    if(!/^[A-Za-z0-9_.-]{1,120}$/.test(file.fileName)||names.has(file.fileName)||!Buffer.isBuffer(file.rawBytes))throw new Error('申请包文件名或原件无效');
+    if(!/^(?:[A-Za-z0-9_-]+\/){0,2}[A-Za-z0-9_-][A-Za-z0-9_.-]{0,119}$/.test(file.fileName)||names.has(file.fileName)||!Buffer.isBuffer(file.rawBytes))throw new Error('申请包文件名或原件无效');
     names.add(file.fileName);
     const name=Buffer.from(file.fileName),data=file.rawBytes,crc=crc32(data);
     if(offset+data.length>64*1024*1024)throw new Error('申请包超过大小限制');
@@ -39,5 +39,5 @@ export function buildApplicationPackage(files) {
   const index={fileName:indexFileName({...first,indexKind:'OFI'}),rawBytes:buildIndexFile({...first,fileNames:ordered.map(f=>f.fileName)})};
   const checked=parseIndexFile(index.rawBytes);
   if(checked.fileNames.join(',')!==ordered.map(f=>f.fileName).join(','))throw new Error('申请索引清单不一致');
-  return {fileName:`${first.creator}_${first.receiver}_${first.date}_applications.zip`,rawBytes:zipProtocolFiles([index,...ordered]),fileNames:[index.fileName,...ordered.map(f=>f.fileName)]};
+  return {fileName:`${first.date}.zip`,rawBytes:zipProtocolFiles([index,...ordered]),fileNames:[index.fileName,...ordered.map(f=>f.fileName)]};
 }

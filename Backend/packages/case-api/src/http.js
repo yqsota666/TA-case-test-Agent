@@ -112,8 +112,10 @@ export function createCaseHttpHandler({ accountModelQuotas, modelRuntime, global
     const parsingRoute = Boolean(returnParsing && parsing &&
       ((!parsing[3] && request.method === 'GET') || (parsing[3] && request.method === 'POST')));
     const channels = pathname === '/api/exchange/channels';
+    const deliveryProfile = /^\/api\/exchange\/channels\/([1-9][0-9]{0,18})\/delivery-profile$/.exec(pathname);
     const exchangeRoute = Boolean(exchangeRepository &&
       ((channels && request.method === 'GET') ||
+        (deliveryProfile && ['GET','PUT'].includes(request.method)) ||
         (bindings && request.method === 'GET') ||
         (application && ['GET', 'POST'].includes(request.method)) ||
         (batch && request.method === 'POST') ||
@@ -245,6 +247,20 @@ export function createCaseHttpHandler({ accountModelQuotas, modelRuntime, global
           files:body.files,exchangeStepId:body.exchangeStepId,expectedType:parsing[3] });
         send(response,result.orderError?409:200,result.orderError?{...result,error:result.orderError.error,message:result.orderError.message}:result); return;
       }
+      if (exchangeRoute && deliveryProfile) {
+        if (request.method === 'GET') {
+          send(response,200,await exchangeRepository.readDeliveryProfile(token,{channelId:deliveryProfile[1]}));return;
+        }
+        if (request.headers.origin !== allowedOrigin) { send(response,403,{error:'INVALID_ORIGIN'});return; }
+        if (!/^application\/json(?:\s*;|$)/i.test(request.headers['content-type'] ?? '')) {
+          send(response,415,{error:'UNSUPPORTED_MEDIA_TYPE'});return;
+        }
+        const body = await jsonBody(request);
+        if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).length !== 1 || !body.profile) {
+          send(response,400,{error:'INVALID_INPUT'});return;
+        }
+        send(response,200,await exchangeRepository.setDeliveryProfile(token,{channelId:deliveryProfile[1],profile:body.profile}));return;
+      }
       if (exchangeRoute && channels) {
         send(response, 200, await exchangeRepository.listChannels(token)); return;
       }
@@ -257,6 +273,12 @@ export function createCaseHttpHandler({ accountModelQuotas, modelRuntime, global
           { chatPublicId: bindings[1], casePublicId: bindings[2] })); return;
       }
       if(exchangeRoute && applicationPackage){
+        const saved = await exchangeRepository.readDeliveryPackage?.(token,
+          {chatPublicId:applicationPackage[1],batchPublicId:applicationPackage[2]});
+        if (saved) {
+          response.writeHead(200,{'content-type':'application/zip','content-disposition':`attachment; filename="${saved.fileName}"`,'content-length':saved.rawBytes.length,'cache-control':'no-store','x-content-type-options':'nosniff'});
+          response.end(saved.rawBytes);return;
+        }
         const listed=await exchangeRepository.listOutboundFiles(token,applicationPackage[1]);
         const members=listed.files.filter(f=>f.batchPublicId===applicationPackage[2]);
         if(!members.length){send(response,404,{error:'FILE_NOT_FOUND',message:'申请包不存在或尚未生成'});return;}

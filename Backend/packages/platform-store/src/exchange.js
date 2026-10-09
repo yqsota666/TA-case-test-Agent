@@ -1,8 +1,10 @@
+import {channelDeliveryProfile} from './delivery-profile.js';
+import {buildDeliveryPackage, deliveryDataFileName, normalizeDeliveryProfile} from '../../platform-protocol/src/delivery-package.js';
 import {readOperationFacts} from './operation-facts.js';
 import {reconcileOperations} from '../../case-agent/src/operation-chain-graph.js';
 import {assertTaAccountActive} from './ta-reset.js';
 import crypto from 'node:crypto';
-import { buildDataFile, dataFileName, encodeRecord, FIELD_REQUIREMENTS, parseDataFile } from '../../platform-protocol/src/index.js';
+import { buildDataFile, encodeRecord, FIELD_REQUIREMENTS, parseDataFile } from '../../platform-protocol/src/index.js';
 import { authenticateSession, storeError } from './index.js';
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -376,12 +378,13 @@ export function createExchangeRepository({ transaction }) {
     validUuid(chatPublicId); validUuid(batchPublicId);
     return transaction(async db => {
       const auth = await authenticateSession(db, token);
-      const [[batch]] = await db.execute(`SELECT b.id,b.status,b.channel_id,
+      const [[batch]] = await db.execute(`SELECT b.id,b.status,b.channel_id,b.chat_id,
         DATE_FORMAT(b.business_date,'%Y%m%d') AS business_date,
-        h.ta_code,h.distributor_code,h.protocol_version
+        h.ta_code,h.distributor_code,h.protocol_version,p.profile_json AS delivery_profile
         FROM exchange_batches b
         JOIN case_chats c ON c.workspace_id=b.workspace_id AND c.id=b.chat_id
         JOIN exchange_channels h ON h.workspace_id=b.workspace_id AND h.id=b.channel_id
+        LEFT JOIN exchange_delivery_profiles p ON p.workspace_id=h.workspace_id AND p.channel_id=h.id
         WHERE b.workspace_id=? AND c.public_id=? AND b.public_id=?
           AND c.status='ACTIVE' FOR UPDATE`, [auth.workspace_id, chatPublicId, batchPublicId]);
       if (!batch) throw storeError('BATCH_NOT_FOUND', 404, '批次不存在');
@@ -404,6 +407,10 @@ export function createExchangeRepository({ transaction }) {
       if (!apps.length || apps.some(app => app.status !== 'BATCHED')) {
         throw storeError('BATCH_INCOMPLETE', 409, '批次申请不完整');
       }
+      let deliveryProfile;
+      try { deliveryProfile = channelDeliveryProfile(batch, batch.delivery_profile); }
+      catch (error) { throw storeError('INVALID_DELIVERY_PROFILE', 422, error.message); }
+      const originals = [];
       const files = [];
       for (const fileType of ['01', '03']) {
         const selected = apps.filter(app => app.file_type === fileType);
@@ -419,14 +426,16 @@ export function createExchangeRepository({ transaction }) {
         let sequence = 1;
         let fileName;
         do {
-          fileName = dataFileName({ creator: batch.distributor_code,
-            receiver: batch.ta_code, date: batch.business_date, fileType, sequence });
+          fileName = deliveryDataFileName({ creator: batch.distributor_code,
+            receiver: batch.ta_code, date: batch.business_date, fileType }, deliveryProfile, sequence);
           sequence += 1;
-        } while (used.has(fileName) && sequence <= (batch.protocol_version === '21' ? 999 : 1000));
-        if (used.has(fileName)) throw storeError('FILE_SEQUENCE_EXHAUSTED', 409, '当日文件序号已用尽');
+        } while (deliveryProfile.dataSequence && used.has(fileName) && sequence <= (batch.protocol_version === '21' ? 999 : 1000));
+        if (used.has(fileName)) throw storeError('FILE_SEQUENCE_EXHAUSTED', 409, deliveryProfile.dataSequence ? '当日文件序号已用尽' : '通道要求当日同类申请合并为一个文件；已有同名文件，请合批或使用其他业务日期');
         const raw = buildDataFile({ creator: batch.distributor_code, receiver: batch.ta_code,
-          date: batch.business_date, summaryNo: sequence - 1, fileType, records,
-          version: batch.protocol_version });
+          date: batch.business_date, summaryNo: deliveryProfile.summaryNo ?? sequence - 1, fileType, records,
+          version: batch.protocol_version, sender: deliveryProfile.sender, recipient: deliveryProfile.recipient,
+          fieldNamesCase: deliveryProfile.fieldNamesCase, trailingCrlf: deliveryProfile.trailingCrlf });
+        originals.push({fileName, rawBytes: raw});
         const digest = crypto.createHash('sha256').update(raw).digest('hex');
         const [saved] = await db.execute(`INSERT INTO exchange_files
           (workspace_id,channel_id,chat_id,batch_id,direction,file_type,file_name,
@@ -438,6 +447,14 @@ export function createExchangeRepository({ transaction }) {
         files.push(fileSummary({ id: saved.insertId, file_name: fileName,
           file_type: fileType, content_sha256: digest, record_count: selected.length }));
       }
+      let delivery;
+      try { delivery = buildDeliveryPackage(originals, deliveryProfile); }
+      catch (error) { throw storeError('DELIVERY_PACKAGE_INCOMPLETE', 422, error.message); }
+      await db.execute(`INSERT INTO exchange_delivery_packages
+        (workspace_id,chat_id,batch_id,file_name,profile_json,manifest_json,content_sha256,raw_bytes)
+        VALUES (?,?,?,?,?,?,?,?)`, [auth.workspace_id,batch.chat_id,batch.id,delivery.fileName,
+        JSON.stringify(delivery.profile),JSON.stringify(delivery.manifest),
+        crypto.createHash('sha256').update(delivery.rawBytes).digest('hex'),delivery.rawBytes]);
       await db.execute(`UPDATE applications a JOIN batch_applications ba
         ON ba.workspace_id=a.workspace_id AND ba.chat_id=a.chat_id AND ba.application_id=a.id
         SET a.status='GENERATED' WHERE ba.workspace_id=? AND ba.batch_id=? AND a.status='BATCHED'`,
@@ -445,6 +462,55 @@ export function createExchangeRepository({ transaction }) {
       await db.execute(`UPDATE exchange_batches SET status='GENERATED'
         WHERE workspace_id=? AND id=? AND status='DRAFT'`, [auth.workspace_id, batch.id]);
       return { batchPublicId, files, replayed: false };
+    });
+  }
+
+  async function readDeliveryProfile(token, {channelId}) {
+    validId(channelId);
+    return transaction(async db => {
+      const auth = await authenticateSession(db, token);
+      const [[channel]] = await db.execute(`SELECT h.ta_code,h.distributor_code,h.protocol_version,p.profile_json
+        FROM exchange_channels h LEFT JOIN exchange_delivery_profiles p
+          ON p.workspace_id=h.workspace_id AND p.channel_id=h.id
+        WHERE h.workspace_id=? AND h.id=?`, [auth.workspace_id,channelId]);
+      if (!channel) throw storeError('CHANNEL_NOT_FOUND',404,'通道不存在');
+      return {channelId:String(channelId),profile:channelDeliveryProfile(channel,channel.profile_json)};
+    });
+  }
+
+  async function setDeliveryProfile(token, {channelId, profile}) {
+    validId(channelId);
+    return transaction(async db => {
+      const auth = await authenticateSession(db, token);
+      const [[channel]] = await db.execute(`SELECT ta_code,distributor_code,protocol_version
+        FROM exchange_channels WHERE workspace_id=? AND id=? FOR UPDATE`, [auth.workspace_id,channelId]);
+      if (!channel) throw storeError('CHANNEL_NOT_FOUND',404,'通道不存在');
+      let normalized;
+      try { normalized = normalizeDeliveryProfile(profile, channel.protocol_version); }
+      catch (error) { throw storeError('INVALID_DELIVERY_PROFILE',422,error.message); }
+      await db.execute(`INSERT INTO exchange_delivery_profiles (workspace_id,channel_id,profile_json)
+        VALUES (?,?,?) ON DUPLICATE KEY UPDATE profile_json=VALUES(profile_json)`,
+        [auth.workspace_id,channelId,JSON.stringify(normalized)]);
+      return {channelId:String(channelId),profile:normalized};
+    });
+  }
+
+  async function readDeliveryPackage(token, {chatPublicId, batchPublicId}) {
+    validUuid(chatPublicId); validUuid(batchPublicId);
+    return transaction(async db => {
+      const auth = await authenticateSession(db, token);
+      const [[saved]] = await db.execute(`SELECT p.file_name,p.content_sha256,p.raw_bytes,p.manifest_json
+        FROM exchange_delivery_packages p
+        JOIN exchange_batches b ON b.workspace_id=p.workspace_id AND b.chat_id=p.chat_id AND b.id=p.batch_id
+        JOIN case_chats c ON c.workspace_id=b.workspace_id AND c.id=b.chat_id
+        WHERE p.workspace_id=? AND c.public_id=? AND b.public_id=?`,
+        [auth.workspace_id,chatPublicId,batchPublicId]);
+      if (!saved) return null;
+      if (!Buffer.isBuffer(saved.raw_bytes) || crypto.createHash('sha256').update(saved.raw_bytes).digest('hex') !== saved.content_sha256) {
+        throw storeError('FILE_INTEGRITY_ERROR',409,'申请包原件校验失败');
+      }
+      return {fileName:saved.file_name,rawBytes:saved.raw_bytes,
+        manifest:typeof saved.manifest_json==='string'?JSON.parse(saved.manifest_json):saved.manifest_json};
     });
   }
 
@@ -486,7 +552,7 @@ export function createExchangeRepository({ transaction }) {
     });
   }
 
-  return Object.freeze({ readOperationFacts:(token,input)=>transaction(db=>readOperationFacts(db,token,input)), listChannels, listCaseApplications, listCaseBindings, stageApplication,
+  return Object.freeze({ readOperationFacts:(token,input)=>transaction(db=>readOperationFacts(db,token,input)), listChannels, readDeliveryProfile, setDeliveryProfile, readDeliveryPackage, listCaseApplications, listCaseBindings, stageApplication,
     createOutboundBatch, generateOutboundFiles,
     listOutboundFiles, readOutboundFile, saveInboundFile, matchReturnRecord });
 }
