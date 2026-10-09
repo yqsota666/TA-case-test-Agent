@@ -1,0 +1,48 @@
+{
+  "reference": "input/227/20241119",
+  "sanitization": "Data records removed; data record counts set to zero. Indexes, headers, field names/order, filename spelling and CRLF preserved.",
+  "files": [
+    {
+      "fileName": "OFD_227_27_20241119_01.TXT",
+      "sourceSha256": "cae1e3d438369dea138c265e05f092cdd02567d5e18d7d6ac820a3303d425ba2",
+      "fixtureSha256": "142a48036b94d7da4b3b3eeeb017ee907e6dad804c0f81df13d9902b2059c976",
+      "sourceRecordCount": 5
+    },
+    {
+      "fileName": "OFD_227_27_20241119_03.TXT",
+      "sourceSha256": "1ee0317581ae26275b529550f4a285aea1fab8445e8305a066530a8139cebbc8",
+      "fixtureSha256": "0b19f0a3c2a9ff5f58d3d4b7a913706cf51f300b86f63c3aae9ae4e7bcc521c5",
+      "sourceRecordCount": 5
+    },
+    {
+      "fileName": "OFD_227_27_20241119_R1.TXT",
+      "sourceSha256": "db28f57bfbfda0db60d93c439aaf39506d48eda8925839a40a82d715d65cf9fc",
+      "fixtureSha256": "db28f57bfbfda0db60d93c439aaf39506d48eda8925839a40a82d715d65cf9fc",
+      "sourceRecordCount": 0
+    },
+    {
+      "fileName": "OFD_227_27_20241119_X1.TXT",
+      "sourceSha256": "1392c6a0e78a72e0fc027b4d4166b5d6dd158e1223df76708f0cf090547c4941",
+      "fixtureSha256": "54a7fa26a612bc5fd25beb418a9ca7427adfcb567bcf98750fcbcbe0322a41be",
+      "sourceRecordCount": 1
+    },
+    {
+      "fileName": "OFD_227_27_20241119_X3.TXT",
+      "sourceSha256": "20bca5c84dc87e75fa930a3475552145fad25b880f070aec8a5281326c608ba3",
+      "fixtureSha256": "27c226e146ea0d42d1f48070ac47d96453b04be1f73b0cd7dabcfd63a5ebb5d4",
+      "sourceRecordCount": 1
+    },
+    {
+      "fileName": "OFI_227_27_20241119.TXT",
+      "sourceSha256": "b78a6bf27239d2d18094a797c7dbfc71b37ba46870a0c8664f5230b5167b4699",
+      "fixtureSha256": "b78a6bf27239d2d18094a797c7dbfc71b37ba46870a0c8664f5230b5167b4699",
+      "sourceRecordCount": null
+    },
+    {
+      "fileName": "OFX_227_27_20241119.TXT",
+      "sourceSha256": "08d41c3c81c4a38e2cef93edc2ae67143bb3abb773640810b88fe68e42283e76",
+      "fixtureSha256": "08d41c3c81c4a38e2cef93edc2ae67143bb3abb773640810b88fe68e42283e76",
+      "sourceRecordCount": null
+    }
+  ]
+}
