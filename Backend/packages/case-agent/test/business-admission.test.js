@@ -70,3 +70,14 @@ test('assistant context changes invalidate cached decisions, and the revised pol
  await admit(input);await admit(input);answer='这里有两种业务方案，你想采用哪一个？';await admit(input);
  assert.equal(hashes[0],hashes[1]);assert.notEqual(hashes[1],hashes[2]);assert.equal(ADMISSION_PROMPT_VERSION,'business-admission-context-v2');
 });
+
+
+test('unclassified provider failures become a retryable admission error and release the lease before any discussion write',async()=>{
+ const {createSophnetCompletion}=await import('../src/sophnet.js');
+ let releases=0,writes=0;
+ const complete=createSophnetCompletion({client:{chat:{completions:{create:async()=>{throw new SyntaxError('private upstream payload');}}}}});
+ const admit=createBusinessAdmission({repository:{context:async()=>({}),claim:async()=>({lease:'mine'}),finish:async()=>assert.fail('must not cache failure'),release:async()=>{releases++;}},complete});
+ const service=createPersistedDiscussionService({repository:{readCaseDiscussion:async()=>({turns:[],revision:0}),beginCaseDiscussionTurn:async()=>{writes++;},finishCaseDiscussionTurn:async()=>{},finishCasePlanProposal:async()=>{},abandonCaseDiscussionTurn:async()=>{}},complete:async()=>assert.fail('main model must not run'),admit});
+ await assert.rejects(service.discuss({token:'t',chatPublicId:'c',casePublicId:'k',userInput:'帮我整理方案'}),error=>error.code==='ADMISSION_UNAVAILABLE'&&error.status===503&&!error.message.includes('private'));
+ assert.equal(releases,1);assert.equal(writes,0);
+});

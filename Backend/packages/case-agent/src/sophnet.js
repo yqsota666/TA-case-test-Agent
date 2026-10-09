@@ -35,7 +35,9 @@ export function createSophnetCompletion({
         code='MODEL_UNAVAILABLE';status=503;message='模型服务暂时不可用，请稍后重试同一待完成回合';
       }else if(Number.isInteger(error.status)&&error.status>=400&&error.status<500){
         code='MODEL_PROVIDER_REJECTED';status=502;message='模型服务拒绝请求，请检查服务配置后重试';
-      }else throw error;
+      }else{
+        code='MODEL_UNAVAILABLE';status=503;message='模型服务响应异常，请重试同一待完成回合';
+      }
       throw Object.assign(new Error(message),{code,status});
     }
     return response;

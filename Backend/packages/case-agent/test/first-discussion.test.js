@@ -82,7 +82,10 @@ test('Sophnet transport failures expose safe retryable codes without provider de
   [Object.assign(new Error('sensitive provider detail'),{name:'APIConnectionError'}),'MODEL_UNAVAILABLE',503],
   [Object.assign(new Error('sensitive provider detail'),{status:429}),'MODEL_UNAVAILABLE',503],
   [Object.assign(new Error('sensitive provider detail'),{status:503}),'MODEL_UNAVAILABLE',503],
-  [Object.assign(new Error('sensitive provider detail'),{status:401}),'MODEL_PROVIDER_REJECTED',502]
+  [Object.assign(new Error('sensitive provider detail'),{status:401}),'MODEL_PROVIDER_REJECTED',502],
+  [new SyntaxError('sensitive provider detail'),'MODEL_UNAVAILABLE',503],
+  [new TypeError('sensitive provider detail'),'MODEL_UNAVAILABLE',503],
+  [new Error('sensitive provider detail'),'MODEL_UNAVAILABLE',503]
  ]){
   const complete=createSophnetCompletion({client:{chat:{completions:{create:async()=>{throw error;}}}}});
   await assert.rejects(complete({system:'test',user:'test'}),e=>e.code===code&&e.status===status&&!e.message.includes('sensitive'));
