@@ -1,8 +1,10 @@
 import {authenticateSession,storeError} from './index.js';
+import {channelDeliveryProfile} from './delivery-profile.js';
+import {normalizeDeliveryProfile} from '../../platform-protocol/src/delivery-package.js';
 
 const keys=['channel_name','distributor_code','ta_code','protocol_version','ta_environment'];
 export function distributorInput(input){
-  if(!input||typeof input!=='object'||Array.isArray(input)||Object.keys(input).length!==keys.length||keys.some(key=>typeof input[key]!=='string'))
+  if(!input||typeof input!=='object'||Array.isArray(input)||Object.keys(input).some(key=>![...keys,'delivery_profile'].includes(key))||keys.some(key=>typeof input[key]!=='string'))
     throw storeError('INVALID_DISTRIBUTOR',400,'请填写完整的销售商配置');
   const value=Object.fromEntries(keys.map(key=>[key,input[key].trim()]));
   if(!value.channel_name||value.channel_name.length>120||!value.ta_environment||value.ta_environment.length>80||
@@ -13,8 +15,16 @@ export function distributorInput(input){
 }
 
 export function createDistributorConfig({transaction}){
-  return {async saveDistributor(token,{id,input}){
+  return {async deliveryDefaults(token,input){
+    const value=distributorInput({channel_name:'默认格式',ta_environment:'LOCAL',distributor_code:input.distributorCode,ta_code:input.taCode,protocol_version:input.protocolVersion});
+    return transaction(async db=>{await authenticateSession(db,token);return {profile:channelDeliveryProfile(value)};});
+  },async saveDistributor(token,{id,input}){
     const value=distributorInput(input);
+    let profile;
+    if(Object.hasOwn(input,'delivery_profile')){
+      try{profile=normalizeDeliveryProfile(input.delivery_profile,value.protocol_version);}
+      catch(error){throw storeError('INVALID_DELIVERY_PROFILE',422,error.message);}
+    }
     if(id!==undefined&&!/^[1-9]\d{0,18}$/.test(String(id)))throw storeError('INVALID_ID',400,'销售商标识无效');
     return transaction(async db=>{
       const auth=await authenticateSession(db,token);
@@ -29,12 +39,15 @@ export function createDistributorConfig({transaction}){
         }else{
           const [result]=await db.execute('INSERT INTO exchange_channels(workspace_id,channel_name,distributor_code,ta_code,protocol_version,ta_environment) VALUES (?,?,?,?,?,?)',[auth.workspace_id,...keys.map(key=>value[key])]);
           channelId=String(result.insertId);
+          profile??=channelDeliveryProfile(value);
         }
+        if(profile)await db.execute(`INSERT INTO exchange_delivery_profiles(workspace_id,channel_id,profile_json)
+          VALUES (?,?,?) ON DUPLICATE KEY UPDATE profile_json=VALUES(profile_json)`,[auth.workspace_id,channelId,JSON.stringify(profile)]);
       }catch(error){
         if(error.code==='ER_DUP_ENTRY')throw storeError('DISTRIBUTOR_EXISTS',409,'该环境下的销售商与 TA 组合已存在');
         throw error;
       }
-      return {id:String(channelId),...value};
+      return {id:String(channelId),...value,...(profile?{delivery_profile:profile}:{})};
     });
   }};
 }

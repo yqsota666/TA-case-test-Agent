@@ -4,10 +4,11 @@ import {requestCase} from './live-case-api.js';
 import {CatalogGrid} from './catalog-grid.jsx';
 import {recordColumns} from './catalog-model.js';
 import {DistributorEditor} from './distributor-editor.jsx';
+import {deliveryFormatSummary} from './distributor-format.js';
 import './global-catalog.css';
 const tables=[['customers','客户'],['accounts','账户'],['funds','基金'],['holdings','持仓'],['applications','申请记录'],['distributors','销售商']];
 const labels={READY:'待生成',BATCHED:'已合批',GENERATED:'已生成',DELIVERED:'已发送',WAITING_RETURN:'等待回传',CONFIRMED:'已确认',FAILED:'失败',CANCELED:'已取消'};
-export function catalogCell(key,value){if(value===null||value===undefined||value==='')return '—';if(key==='status')return labels[value]??'待处理';if(['investor_type','IndividualOrInstitution'].includes(key))return String(value)==='1'?'个人':String(value)==='0'?'机构':String(value);if(key==='created_at'&&Number.isFinite(Date.parse(value)))return new Date(value).toLocaleString('zh-CN',{hour12:false});if(typeof value==='object')return JSON.stringify(value);return String(value);}
+export function catalogCell(key,value){if(key==='delivery_profile')return deliveryFormatSummary(value);if(value===null||value===undefined||value==='')return '—';if(key==='status')return labels[value]??'待处理';if(['investor_type','IndividualOrInstitution'].includes(key))return String(value)==='1'?'个人':String(value)==='0'?'机构':String(value);if(key==='created_at'&&Number.isFinite(Date.parse(value)))return new Date(value).toLocaleString('zh-CN',{hour12:false});if(typeof value==='object')return JSON.stringify(value);return String(value);}
 export function GlobalDataCatalog({onOpenCase}) {
  const [editor,setEditor]=useState(null);
  const [table,setTable]=useState(tables.some(([key])=>key===new URLSearchParams(location.search).get('dataTable'))?new URLSearchParams(location.search).get('dataTable'):'customers'),[search,setSearch]=useState(''),[q,setQ]=useState(''),[offset,setOffset]=useState(0),[tick,setTick]=useState(0),[state,setState]=useState({loading:true,data:null,error:''});
