@@ -26,8 +26,10 @@ function AuthForm({onAuthenticated}) {
   };
   return <main className="account-entry">
     <section className="account-sheet" aria-labelledby="account-title">
-      <img className="account-brand" src="/brand/ta-agent-bot-white.png" alt="" onError={event=>{event.currentTarget.hidden=true;}} />
-      <div className="account-name">TA Test Agent</div>
+      <div className="account-brand-row">
+        <img className="account-brand" src="/brand/ta-agent-bot-white.png" alt="" onError={event=>{event.currentTarget.hidden=true;}} />
+        <div className="account-name">TA Test Agent</div>
+      </div>
       <h1 id="account-title">{register?'创建账户':'登录'}</h1>
       <form onSubmit={submit} aria-busy={busy}>
         {register&&<label>姓名<input name="name" autoComplete="name" required maxLength={80} disabled={busy}/></label>}
