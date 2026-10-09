@@ -1,5 +1,6 @@
 import {authenticateSession,storeError} from './index.js';
 import {createDistributorConfig} from './distributor-config.js';
+import {channelDeliveryProfile} from './delivery-profile.js';
 const fields={name:'客户名称',investor_type:'客户类型',simulated_balance:'模拟余额',account_no:'交易账号',branch_code:'网点代码',customer_name:'客户名称',fund_code:'基金代码',fund_name:'基金名称',share_class:'份额类别',nav:'单位净值',total_volume:'总份额',available_volume:'可用份额',frozen_volume:'冻结份额',snapshot_date:'余额日期',ta_account_id:'TA账号',certificate_type:'证件类型',certificate_no:'证件号码',channel_name:'交换通道',business_date:'业务日期',file_type:'文件类型',business_code:'业务代码',app_no:'申请编号',status:'申请状态',created_at:'生成时间'};
 export {protocolColumnLabels as protocolLabels} from './protocol-column-labels.js';
 import {protocolColumnLabels as protocolLabels} from './protocol-column-labels.js';
@@ -31,11 +32,14 @@ export function createGlobalDataCatalog({transaction}){
   if(table==='distributors'){
     const columns=[['distributor_code','销售商代码'],['channel_name','销售商名称'],['ta_code','TA 代码'],['protocol_version','协议版本'],['ta_environment','环境']].map(([key,label])=>({key,label}));
     const pattern='%'+q.replace(/[\\%_]/g,'\\$&')+'%';
-    const filter=q?' AND ('+columns.map(({key})=>`\`${key}\` LIKE ?`).join(' OR ')+')':'';
+    const filter=q?' AND ('+columns.map(({key})=>`t.\`${key}\` LIKE ?`).join(' OR ')+')':'';
     const values=[auth.workspace_id,...(q?columns.map(()=>pattern):[])];
-    const [[count]]=await db.execute(`SELECT COUNT(*) AS total FROM exchange_channels WHERE workspace_id=?${filter}`,values);
-    const [rows]=await db.execute(`SELECT id,distributor_code,channel_name,ta_code,protocol_version,ta_environment FROM exchange_channels WHERE workspace_id=?${filter} ORDER BY distributor_code,ta_code,id LIMIT ${limit} OFFSET ${offset}`,values);
-    return {table,source,columns,rows:rows.map(row=>({...row,id:String(row.id)})),total:Number(count.total),offset,limit};
+    const [[count]]=await db.execute(`SELECT COUNT(*) AS total FROM exchange_channels t WHERE t.workspace_id=?${filter}`,values);
+    const [rows]=await db.execute(`SELECT t.id,t.distributor_code,t.channel_name,t.ta_code,t.protocol_version,t.ta_environment,p.profile_json
+      FROM exchange_channels t LEFT JOIN exchange_delivery_profiles p ON p.workspace_id=t.workspace_id AND p.channel_id=t.id
+      WHERE t.workspace_id=?${filter} ORDER BY t.distributor_code,t.ta_code,t.id LIMIT ${limit} OFFSET ${offset}`,values);
+    columns.push({key:'delivery_profile',label:'文件格式'});
+    return {table,source,columns,rows:rows.map(({profile_json,...row})=>({...row,id:String(row.id),delivery_profile:channelDeliveryProfile(row,profile_json)})),total:Number(count.total),offset,limit};
   }
   // The fixed projection is searched as text, retaining field-specific decimals and NULLs in the result.
   const base=`${(source==='formal'?formal:draft)[table]} WHERE t.workspace_id=?`;

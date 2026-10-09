@@ -80,15 +80,30 @@ for (const code of ['005','227','926']) test(`MySQL: ${code} persists full chann
    assert.ok(delivery.manifest.some(f=>f.fileType==='OFX'));
    assert.equal(delivery.manifest.find(f=>f.fileType==='X1').recordCount,accounts);
    assert.equal(delivery.manifest.find(f=>f.fileType==='X3').recordCount,0);
-   await exchange.setDeliveryProfile(token,{channelId,profile:{includeEmptyR1:true,indexSuffixes:{OFI:'-TEST'}}});
+   const changedProfile={...(await exchange.readDeliveryProfile(token,{channelId})).profile,
+     aml:false,includeEmptyR1:false,indexSuffixes:{OFI:'-PROFILE',OFX:''},directoryLayout:'date'};
+   await catalog.saveDistributor(token,{id:channelId,input:{...input,channel_name:'格式更新合成',delivery_profile:changedProfile}});
+   assert.equal((await catalog.listTable(token,{table:'distributors'})).rows[0].delivery_profile.indexSuffixes.OFI,'-PROFILE');
    const unchanged=await exchange.readDeliveryPackage(token,{chatPublicId:chat.publicId,batchPublicId:apps[0].batchPublicId});
    assert.deepEqual(unchanged.rawBytes,delivery.rawBytes);
    assert.equal(await exchange.readDeliveryPackage(foreignToken,{chatPublicId:chat.publicId,batchPublicId:apps[0].batchPublicId}),null);
    await assert.rejects(()=>exchange.setDeliveryProfile(foreignToken,{channelId,profile:{aml:false}}),{code:'CHANNEL_NOT_FOUND'});
+   await assert.rejects(()=>catalog.saveDistributor(foreignToken,{id:channelId,input:{...input,delivery_profile:changedProfile}}),{code:'CHANNEL_NOT_FOUND'});
    const replay=await project.prepare({token,...scope,channelId});assert.deepEqual(replay.files.map(f=>f.id),result.files.map(f=>f.id));
    assert.deepEqual((await exchange.listOutboundFiles(foreignToken,chat.publicId)).files,[]);
    await assert.rejects(()=>exchange.readOutboundFile(foreignToken,{chatPublicId:chat.publicId,fileId:result.files[0].id}),{code:'FILE_NOT_FOUND'});
    assert.equal((await exchange.listOutboundFiles('invalid-session',chat.publicId).catch(e=>({code:e.code}))).code,'UNAUTHENTICATED');
+   const nextChat=await repository.createChat(token,'后续批次格式合成'),nextItem=await repository.createCase(token,nextChat.publicId,'格式更新合成');
+   const nextScope={chatPublicId:nextChat.publicId,casePublicId:nextItem.publicId};
+   const nextArgs=[token,nextScope.chatPublicId,nextScope.casePublicId],nextPlan=JSON.parse(JSON.stringify(plan).replaceAll('20260817','20260818'));
+   await repository.saveSopProposal(...nextArgs,nextPlan);await repository.confirmSopProposal(...nextArgs,1,'DATA');await repository.confirmSopProposal(...nextArgs,1,'EXPECTATIONS');
+   await repository.executeGeneratedData(...nextArgs,1,nextPlan.contract.dataSpecification,(conn,keys,specification)=>createDataGenerationGraph({db:conn,scope:keys,specification}).invoke({}));await repository.confirmGeneratedData(...nextArgs,0);
+   await project.prepare({token,...nextScope,channelId});
+   const nextApps=(await exchange.listCaseApplications(token,nextScope)).applications;
+   const nextPackage=await exchange.readDeliveryPackage(token,{chatPublicId:nextChat.publicId,batchPublicId:nextApps[0].batchPublicId});
+   assert.equal(nextPackage.manifest.length,3);assert.ok(nextPackage.manifest.some(f=>f.fileName===`20260818/OFI_${code}_27_20260818-PROFILE.TXT`));
+   assert.ok(nextPackage.manifest.every(f=>!['OFX','X1','X3','R1'].includes(f.fileType)));
+   assert.deepEqual((await exchange.readDeliveryPackage(token,{chatPublicId:chat.publicId,batchPublicId:apps[0].batchPublicId})).rawBytes,delivery.rawBytes);
   }
   const [[counts]]=await db.execute('SELECT (SELECT COUNT(*) FROM sales_confirmed_accounts WHERE workspace_id=?) AS accounts,(SELECT COUNT(*) FROM sales_confirmed_holdings WHERE workspace_id=?) AS holdings',[workspace.insertId,workspace.insertId]);assert.equal(Number(counts.accounts),0);assert.equal(Number(counts.holdings),0);
  }finally{await db.rollback();await db.end();}

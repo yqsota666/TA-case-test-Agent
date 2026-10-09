@@ -88,6 +88,7 @@ export function createCaseHttpHandler({ accountModelQuotas, modelRuntime, global
     const globalDataRoute=Boolean(globalDataCatalog && /^\/api\/data\/tables\/[a-z]+$/.test(pathname) && request.method==='GET');
     const distributor=/^\/api\/data\/distributors(?:\/([1-9][0-9]{0,18}))?$/.exec(pathname);
     const distributorRoute=Boolean(globalDataCatalog && distributor && request.method==='POST');
+    const distributorDefaultsRoute=Boolean(globalDataCatalog && pathname==='/api/data/distributors/default-profile' && request.method==='GET');
     const globalFileRoute=Boolean(globalFileCatalog && ['/api/files/catalog','/api/files/catalog/download'].includes(pathname) && request.method==='GET');
     const catalog = pathname === '/api/data/catalog' && request.method === 'GET';
     const match = pathPattern.exec(pathname);
@@ -122,7 +123,7 @@ export function createCaseHttpHandler({ accountModelQuotas, modelRuntime, global
         (application && ['GET', 'POST'].includes(request.method)) ||
         (batch && request.method === 'POST') ||
         ((files || applicationPackage) && request.method === 'GET')));
-    if (!distributorRoute && !globalDataRoute && !globalFileRoute && !resetRoute && !workflowRoute && !receiptsRoute && !collectionRoute && !lifecycleRoute && !resultRoute && !holdingsRoute && !supplementRoute && !catalog && !salesRoute && !confirmationRoute && !exchangeRoute && !parsingRoute && (!match || !['GET', 'POST', 'PATCH'].includes(request.method) ||
+    if (!distributorDefaultsRoute && !distributorRoute && !globalDataRoute && !globalFileRoute && !resetRoute && !workflowRoute && !receiptsRoute && !collectionRoute && !lifecycleRoute && !resultRoute && !holdingsRoute && !supplementRoute && !catalog && !salesRoute && !confirmationRoute && !exchangeRoute && !parsingRoute && (!match || !['GET', 'POST', 'PATCH'].includes(request.method) ||
         (request.method === 'PATCH' && match?.[3] !== 'data') ||
         (['discussion/cancel','plan/data','plan/content','plan/confirm', 'data/execute', 'data/confirm'].includes(match?.[3]) && request.method !== 'POST') ||
         (match?.[3] === 'data/review' && !['GET', 'POST'].includes(request.method)) ||
@@ -137,6 +138,10 @@ export function createCaseHttpHandler({ accountModelQuotas, modelRuntime, global
         if(current.user.id!==request.headers['x-case-account']){send(response,409,{error:'ACCOUNT_CHANGED',message:'账户已切换，请重新连接'});return;}
       }
       if(globalDataRoute && await handleGlobalDataCatalog(request,response,token,globalDataCatalog))return;
+      if(distributorDefaultsRoute){
+        const params=new URL(request.url,'http://localhost').searchParams;
+        send(response,200,await globalDataCatalog.deliveryDefaults(token,{distributorCode:params.get('distributorCode'),taCode:params.get('taCode'),protocolVersion:params.get('protocolVersion')}));return;
+      }
       if(distributorRoute){
         if(request.headers.origin!==allowedOrigin){send(response,403,{error:'INVALID_ORIGIN'});return;}
         if(!/^application\/json(?:\s*;|$)/i.test(request.headers['content-type']??'')){send(response,415,{error:'UNSUPPORTED_MEDIA_TYPE'});return;}
