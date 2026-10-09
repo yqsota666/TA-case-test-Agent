@@ -153,7 +153,7 @@ function expandHumanTimingClauses(message) {
   });
 }
 
-// Only human timing statements count; later rejection replaces earlier affirmative evidence.
+// Explicitly labelled draft dates are allowed; later human timing revisions always win.
 export function guardExchangeTimeEvidence(proposal, userMessages) {
   if (proposal.exchangePlan.status !== 'READY') return proposal;
   const messages = userMessages.map(expandHumanTimingClauses);
@@ -169,9 +169,13 @@ export function guardExchangeTimeEvidence(proposal, userMessages) {
     };
     const latestMessage=messages.findLast(clauses=>clauses.some(relevant));
     const draftTime = (proposal.preconditions??[]).some(condition=>{
-      if(!condition.startsWith('【模拟假设】'))return false;
-      const clause=condition.slice(6);
-      return !rejectsTime(clause) && timingScope(clause,step).addressed && mentionsTime(clause,step.businessTime) && affirmsTime(clause);
+      if(!condition.includes('【模拟假设】'))return false;
+      const clauses=condition.replaceAll('【模拟假设】','').split(/[，；;]/);
+      return clauses.some(clause=>{
+        const roleDate=step.direction==='SEND' ? /^(?:申请|业务)日期[：:]/ : /^(?:确认|回传)日期[：:]/;
+        const scoped=timingScope(clause,step).addressed || (roleDate.test(clause.trim()) && !/(?:01|02|03|04|05)(?:文件|申请|回传)/.test(clause));
+        return !rejectsTime(clause) && scoped && mentionsTime(clause,step.businessTime) && affirmsTime(clause);
+      });
     });
     if(!latestMessage) return !draftTime;
     const clauses=latestMessage.filter(relevant);

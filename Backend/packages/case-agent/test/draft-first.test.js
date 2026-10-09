@@ -52,3 +52,10 @@ test('persisted discussion reloads authenticated channel configuration after a u
  assert.equal(latest.input,'金额改为200元');
  assert.equal(calls[1].messages[0].content,'模拟申购100元');
 });
+
+ test('marked grouped business and confirmation dates retain their directional scope',()=>{
+ const grouped={...proposal,preconditions:['业务日期：20261006，确认日期：20261007【模拟假设】']};
+ assert.equal(guardExchangeTimeEvidence(grouped,['03同日同通道整包']).exchangePlan.status,'READY');
+ assert.equal(guardExchangeTimeEvidence(grouped,['03日期改为20261008']).exchangePlan.status,'UNPLANNED');
+ assert.equal(guardExchangeTimeEvidence({...grouped,preconditions:['业务日期：20261007，确认日期：20261006【模拟假设】']},[]).exchangePlan.status,'UNPLANNED');
+ });
