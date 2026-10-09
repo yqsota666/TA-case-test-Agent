@@ -23,7 +23,7 @@ export function CaseAssistant({messages, draft, disabled, running, loading, onSe
       if (text && !disabled) await onSend(text);
     },
   });
-  // The backend clears a draft only after success; keep failed input available.
+  // Keep the runtime composer in sync with cleared or restored application drafts.
   useLayoutEffect(() => {
     if (runtime.thread.composer.getState().text !== draft) runtime.thread.composer.setText(draft);
   });

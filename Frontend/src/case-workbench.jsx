@@ -5,7 +5,6 @@ import {DetailPanel} from './assistant-ui/detail-panel.jsx';
 import {ArtifactCard} from './assistant-ui/artifact-card.jsx';
 import {ApprovalCard} from './assistant-ui/approval-card.jsx';
 import {ThreadList} from './assistant-ui/thread-list.jsx';
-import {WorkflowProgress} from './assistant-ui/workflow-progress.jsx';
 import './assistant-ui/elements.css';
 import {MessageImages,readMessageImages} from './message-images.jsx';
 import {GlobalDataCatalog} from './global-data-catalog.jsx';
@@ -203,6 +202,9 @@ export function CaseWorkbench({accountControl}) {
     if (running || loading || ((completed || projectReadOnly) && !newConversation)) return;
     if(newConversation){openNewConversation(newProjectId);return;}
     const request=viewRequest.current;
+    const sentQuote=quote;
+    setState(value=>({...value,drafts:{...value.drafts,[draftKey]:''},quotes:{...value.quotes,[draftKey]:''}}));
+    setImageDrafts(value=>({...value,[draftKey]:[]}));
     const controller=new AbortController();streamController.current=controller;setStreamReply(null);
     setRetryOriginalInput(originalInput);setRunning(true); setNodeError('');setNodeErrorCode(''); setRetryInput(text);setRetryImages(sentImages); setRetryAction(action); setActiveAction(action);
     pendingScroll.current = true;
@@ -211,7 +213,7 @@ export function CaseWorkbench({accountControl}) {
       const beforeSnapshot=await liveSnapshot(chatId,caseId);
       if(request===viewRequest.current) {
         applySnapshot(beforeSnapshot);
-        setState(value=>({...value,drafts:{...value.drafts,[caseId]:value.drafts[draftKey] || originalInput},quotes:{...value.quotes,[caseId]:value.quotes?.[draftKey]||''},messages:{...value.messages,[caseId]:[...(value.messages[caseId]||[]),{id:'sending-user',role:'user',text,images:sentImages}]}}));
+        setState(value=>({...value,drafts:{...value.drafts,[caseId]:''},quotes:{...value.quotes,[caseId]:''},messages:{...value.messages,[caseId]:[...(value.messages[caseId]||[]),{id:'sending-user',role:'user',text,images:sentImages}]}}));
       }
       const path=casePath(chatId,caseId);
       const before=await requestCase(path+'/workflow');
@@ -233,6 +235,8 @@ export function CaseWorkbench({accountControl}) {
         setNodeError(error.message);setNodeErrorCode(error.code||'');
         try {const snapshot=await firstNodeRequest('state');if(request===viewRequest.current)applySnapshot(snapshot);} catch { /* Keep the original input available for retry. */ }
         if(request===viewRequest.current) {
+          setState(value=>({...value,drafts:{...value.drafts,[draftKey]:originalInput},quotes:{...value.quotes,[draftKey]:sentQuote}}));
+          setImageDrafts(value=>({...value,[draftKey]:sentImages}));
           if(['BUSINESS_UNRELATED','BUSINESS_PURPOSE_REQUIRED'].includes(error.code)) {
             const id=new URL(window.location.href).searchParams.get('caseId')||draftKey;
             setRetryInput('');setRetryImages([]);
@@ -356,9 +360,7 @@ export function CaseWorkbench({accountControl}) {
             <MessageImages images={message.images} onOpen={image=>setModal({type:'image',image})}/>
             {message.kind==='PROPOSE_PLAN' && !message.result && <ArtifactCard title="历史测试方案" meta="查看原回复" onClick={()=>setModal({type:'historical-plan',message})}/>}
             {message.result && <ArtifactCard title="测试方案" meta={state.plan?.status==='LOCKED'?'已确认':'查看与修改'} onClick={()=>{setPlanError('');setModal({type:state.workflow?.stage==='CONFIRM_EXPECTATIONS'?'expectations':'result'});}}/>}
-            {message.id===messages.at(-1)?.id && message.role==='assistant' && !message.result && state.workflow?.waiting?.includes('PROPOSE_PLAN') && messages.filter(m=>m.role==='assistant').length>=2 && <div className="cw-workflow-actions">
-              <button type="button" disabled={running || loading || !!retryInput || (!!draft.trim()||images.length>0||readingImages)} title={draft.trim()?'请先发送或清空输入框中的补充内容':undefined} onClick={()=>submitFirstNode('请根据刚才的讨论整理测试方案，供我审阅。','PROPOSE_PLAN')}><FileText size={15}/>整理方案</button>
-            </div>}
+
           </ChatMessage>;}}</ThreadMessages>
           {state.workflow?.stage==='CONFIRM_EXPECTATIONS' && state.plan && <div className="cw-expect-handoff"><p>准备数据已确认。接下来核对各测试项的预期结果。</p><button type="button" className="cw-result" onClick={()=>{setPlanError('');setModal({type:'expectations'});}}><span className="cw-result-icon"><FileText size={18}/></span><span><span className="cw-result-title">预期结果</span><span className="cw-result-summary">查看与修改</span></span><span className="cw-result-action">查看详情<ChevronRight size={14}/></span></button></div>}
           {!newConversation && state.generatedData?.status==='VALIDATED' && <button type="button" className="cw-result" onClick={openGeneratedData}>
@@ -369,7 +371,7 @@ export function CaseWorkbench({accountControl}) {
             <span className="cw-result-icon" aria-hidden="true"><FileArchive size={18}/></span><span className="cw-result-copy"><span className="cw-result-title">文件交换</span><span className="cw-result-summary">申请文件与 TA 回传</span></span><span className="cw-result-action">查看详情<ChevronRight size={14}/></span>
           </button>}
           {!loading && !newConversation && currentSet.id && showProjectLifecycle(currentSet.status,currentCase.status) && <ProjectLifecycleCard chatId={currentSet.id} caseId={state.selected} onChanged={async()=>applySnapshot(await liveSnapshot(currentSet.id,state.selected))} onNavigate={async target=>{if(target.casePublicId)await openCatalogCase(target.chatPublicId,target.casePublicId);else {applySnapshot(await liveSnapshot(target.chatPublicId,null));openNewConversation(target.chatPublicId);}}}/>}
-          {!newConversation && (loading||running||!!state.pending) && <WorkflowProgress workflow={state.workflow} caseStatus={currentCase.status} plan={state.plan} data={state.generatedData} loading={loading} running={running||!!state.pending} error={nodeError} activeAction={state.pending?.kind||activeAction}/>}
+          {!newConversation && (loading||running||!!state.pending) && !nodeError && <p className="cw-reply-status" role="status">{loading?'连接讨论服务…':(state.pending?.kind||activeAction)==='PROPOSE_PLAN'?'正在整理方案…':'正在回复…'}</p>}
           {newConversation && (loading||running) && <p role="status">{loading?'连接讨论服务…':'正在回复…'}</p>}
           
           {nodeError && <div className="cw-node-error cw-node-feedback" role="alert"><MessageSquare size={16} className="cw-feedback-icon"/><div className="cw-feedback-content"><p>{nodeError}</p>{retryInput && !completed && nodeErrorCode!=='MODEL_BUDGET_EXHAUSTED' && <button type="button" disabled={running} aria-busy={running} onClick={()=>submitFirstNode(retryInput,retryAction,retryImages,retryOriginalInput||retryInput)}><RotateCcw size={15}/><span>{running?'重试中…':'重试原输入'}</span></button>}</div></div>}
@@ -388,8 +390,7 @@ export function CaseWorkbench({accountControl}) {
         <MessageImages images={images} onRemove={index=>setImageDrafts(v=>({...v,[draftKey]:(v[draftKey]||[]).filter((_,i)=>i!==index)}))} onOpen={image=>setModal({type:'image',image})} disabled={inputDisabled||readingImages}/>
         {newConversation && <div className="cw-project-bar"><button type="button" className="cw-project-picker" onClick={()=>openNewConversation(newProjectId)}>{state.sets.some(project=>project.status==='ACTIVE')?'创建Case':'创建项目'}</button></div>}
         <input ref={imageInput} type="file" hidden accept="image/png,image/jpeg,image/webp,image/gif" multiple onChange={event=>{addImages(event.target.files);event.target.value='';}}/>
-        <Composer ref={composer} value={draft} hasImages={images.length>0} disabled={inputDisabled||readingImages}
-          onAttach={()=>imageInput.current.click()}
+        <Composer ref={composer} value={draft} hasImages={images.length>0} disabled={inputDisabled||readingImages} replying={running||!!state.pending}
           onImageSend={()=>sendComposer(draft.trim()||(quote?'':'请解析图片内容。'))}
           onPaste={event=>{const files=Array.from(event.clipboardData.items).filter(i=>i.kind==='file'&&i.type.startsWith('image/')).map(i=>i.getAsFile()).filter(Boolean);if(files.length){event.preventDefault();addImages(files);}}}
           onChange={event=>setState(value=>({...value,drafts:{...value.drafts,[draftKey]:event.target.value}}))}/>
