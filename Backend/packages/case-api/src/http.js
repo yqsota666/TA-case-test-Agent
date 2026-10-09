@@ -31,6 +31,10 @@ const parsingPath = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/ret
 
 function send(response, status, value) {
   if(value?.error)response.observationError=safeErrorCode({code:value.error});
+  if(response.headersSent){
+    if(!response.destroyed&&!response.writableEnded){response.write(`event: error\ndata: ${JSON.stringify({...value,status})}\n\n`);response.end();}
+    return;
+  }
   response.writeHead(status, { 'content-type': 'application/json; charset=utf-8',
     'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
   response.end(JSON.stringify(value));
@@ -405,8 +409,23 @@ export function createCaseHttpHandler({ accountModelQuotas, modelRuntime, global
           revision: body.revision, userInput: body.userInput.trim() }));
       } else {
         const method = action === 'plan' ? 'propose' : 'discuss';
-        send(response, 200, await discussionService[method]({ token, chatPublicId, casePublicId,
-          userInput: body.userInput,...(action==='discussion'?{images:body.images}: {}) }));
+        const input={token,chatPublicId,casePublicId,userInput:body.userInput,...(action==='discussion'?{images:body.images}:{})};
+        if(!String(request.headers.accept).split(',').some(type=>type.trim().split(';')[0]==='text/event-stream')){
+          send(response,200,await discussionService[method](input));return;
+        }
+        const controller=new AbortController();
+        const disconnect=()=>{if(!response.writableFinished)controller.abort();};
+        response.on('close',disconnect);
+        response.writeHead(200,{'content-type':'text/event-stream; charset=utf-8','cache-control':'no-cache, no-transform','x-accel-buffering':'no','x-content-type-options':'nosniff'});
+        response.flushHeaders();
+        const event=(name,value)=>{if(!response.destroyed&&!response.writableEnded)response.write(`event: ${name}\ndata: ${JSON.stringify(value)}\n\n`);};
+        event('status',{message:action==='plan'?'正在整理方案…':'正在准备回复…'});
+        const heartbeat=setInterval(()=>{if(!response.destroyed)response.write(': heartbeat\n\n');},15000);
+        try{
+          const result=await discussionService[method]({...input,signal:controller.signal,...(action==='discussion'?{onDelta:text=>event('delta',{text})}:{})});
+          event('result',result);
+          if(!response.destroyed)response.end();
+        }finally{clearInterval(heartbeat);response.off('close',disconnect);}
       }
     } catch (error) {
       if (['ER_DUP_ENTRY', 'ER_NO_REFERENCED_ROW_2', 'ER_ROW_IS_REFERENCED_2',

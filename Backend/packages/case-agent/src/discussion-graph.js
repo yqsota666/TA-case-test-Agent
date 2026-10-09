@@ -43,17 +43,18 @@ function validatePriorTurns(priorTurns) {
   }
 }
 
-export function createDiscussionGraph({ complete }) {
+export function createDiscussionGraph({ complete, onDelta, signal }) {
   if (typeof complete !== 'function') throw new TypeError('complete must be a function');
   const graph = new StateGraph(DiscussionState);
   graph.addNode('ask_testing_intent', async ({ userInput }) => ({
-    reply: checkFirstDiscussionReply(await complete({ system: FIRST_DISCUSSION_PROMPT, user: userInput })),
+    reply: checkFirstDiscussionReply(await complete({ system: FIRST_DISCUSSION_PROMPT, user: userInput, ...(onDelta?{onDelta,signal}:{}) })),
     phase: 'AWAITING_USER',
     promptVersion: FIRST_DISCUSSION_PROMPT_VERSION,
   }));
   graph.addNode('refine_test_approach', async ({ userInput, priorTurns }) => ({
     reply: checkFollowupDiscussionReply(await complete({
       system: FOLLOWUP_DISCUSSION_PROMPT,
+      ...(onDelta?{onDelta,signal}:{}),
       messages: [...priorTurns, { role: 'user', content: userInput }],
     })),
     phase: 'AWAITING_USER',

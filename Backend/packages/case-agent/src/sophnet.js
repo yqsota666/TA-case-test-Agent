@@ -8,7 +8,7 @@ export function createSophnetCompletion({
 } = {}) {
   if (!client && !apiKey) throw new Error('SOPHNET_API_KEY is required');
   const sdk = client ?? new OpenAI({ apiKey, baseURL, maxRetries: 0, timeout: 90000 });
-  return async ({ system, user, messages, reasoningEffort, thinkingMode, maxTokens }) => {
+  return async ({ system, user, messages, reasoningEffort, thinkingMode, maxTokens, onDelta, signal }) => {
     if ((user === undefined) === (messages === undefined)) {
       throw new TypeError('provide either user or messages');
     }
@@ -26,8 +26,20 @@ export function createSophnetCompletion({
       model,
       ...(limitedTokens===undefined?{}:{max_tokens:limitedTokens}),
       messages:providerMessages,
-    });
+      ...(onDelta?{stream:true,stream_options:{include_usage:true}}:{}),
+    },signal?{signal}:undefined);
+    if(onDelta){
+      let content='',usage;
+      for await(const chunk of response){
+        signal?.throwIfAborted();
+        if(chunk.usage)usage=chunk.usage;
+        const delta=chunk.choices?.[0]?.delta?.content;
+        if(typeof delta==='string' && delta){content+=delta;await onDelta(delta);}
+      }
+      response={choices:[{message:{content}}],usage};
+    }
     } catch (error) {
+      if(signal?.aborted)throw Object.assign(new Error('回复已中断，请重试原输入'),{code:'MODEL_CANCELLED',status:499});
       let code,status,message;
       if(error.name==='APIConnectionTimeoutError'||error.code==='ETIMEDOUT'||[408,504].includes(error.status)){
         code='MODEL_TIMEOUT';status=504;message='模型响应超时，请重试同一待完成回合';
