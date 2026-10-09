@@ -305,11 +305,10 @@ export function CaseWorkbench({accountControl}) {
   const sidebar = <>
     <div className="cw-brand"><img className="cw-brand-logo" src="/brand/ta-agent-bot-white.png" alt="" width="44" height="44"/><span>TA Test Agent</span></div>
     <nav className="cw-primary" aria-label="业务页面">
-      <button aria-current={page==='chat' && newConversation ? 'page' : undefined} onClick={() => openNewConversation(newProjectId||currentSet.id)}><SquarePen size={18}/><span>Chat</span></button>
+      <button type="button" disabled={running||loading||creatingCase} onClick={()=>setModal({type:'new-project'})}><SquarePen size={18}/><span>项目</span></button>
       <button onClick={() => {setPage('data');setModal(null);setNotice('');const url=new URL(location.href);url.searchParams.set('page','data');history.replaceState(null,'',url);}}><Table2 size={18}/><span>数据</span></button>
       <button onClick={() => {setPage('files');setModal(null);setNotice('');const url=new URL(location.href);url.searchParams.set('page','files');history.replaceState(null,'',url);}}><FileText size={18}/><span>文件</span></button>
     </nav>
-    <div className="cw-list-label" style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>项目<button type="button" className="cw-icon" aria-label="创建项目" title="创建项目" disabled={running||loading||creatingCase} onClick={()=>setModal({type:'new-project'})}><SquarePen size={16}/></button></div>
     <nav className="cw-sets" aria-label="项目与 Case">
       {state.sets.map(set => <div className={`cw-set ${set.status!=='ACTIVE'?'is-sealed':''}`} key={set.id}>
         <div className="cw-set-heading">
