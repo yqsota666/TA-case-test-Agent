@@ -59,3 +59,12 @@ test('persisted discussion reloads authenticated channel configuration after a u
  assert.equal(guardExchangeTimeEvidence(grouped,['03日期改为20261008']).exchangePlan.status,'UNPLANNED');
  assert.equal(guardExchangeTimeEvidence({...grouped,preconditions:['业务日期：20261007，确认日期：20261006【模拟假设】']},[]).exchangePlan.status,'UNPLANNED');
  });
+
+test('proposal repairs an omitted synthetic date label once without asking the user for technical fields',async()=>{
+ const calls=[];
+ const graph=createDiscussionGraph({complete:async request=>{calls.push(request);return JSON.stringify(calls.length===1?{...proposal,preconditions:[]}:proposal);}});
+ const result=await proposeDiscussionPlan(graph,{priorTurns:[{role:'user',content:'准备合成重复回传，日期你先模拟'},{role:'assistant',content:'先给可修改草稿'}],userInput:'整理方案'});
+ assert.equal(calls.length,2);
+ assert.match(calls[1].messages.at(-1).content,/模拟日期必须明确标/);
+ assert.equal(result.proposal.exchangePlan.status,'READY');
+});

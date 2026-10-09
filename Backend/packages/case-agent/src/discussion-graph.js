@@ -62,14 +62,19 @@ export function createDiscussionGraph({ complete, onDelta, signal, discussionCon
   }));
   graph.addNode('propose_plan', async ({ userInput, priorTurns }) => {
     if (priorTurns.length < 2) throw new Error('Plan 提案前至少需要一轮完整讨论');
-    let parsed,previous;
+    let parsed,previous,proposal;
     for(let attempt=0;attempt<2;attempt++){
       const reply=await complete({reasoningEffort:'low',
-        system:PLAN_PROPOSAL_PROMPT+(attempt?' 上次格式校验未通过。只修正JSON结构、日期格式和纯文本字段，保留用户范围与业务值；必须直接以{开头、以}结尾，不能含代码围栏、解释或额外字段。':''),
-        messages:[...priorTurns,{role:'user',content:userInput},...(attempt?[{role:'assistant',content:previous},{role:'user',content:'请修正上述方案输出格式，业务条件仍以原对话为准。'}]:[])]});
-      try{parsed=parsePlanProposal(reply);break;}catch(e){if(e.code!=='MODEL_OUTPUT_FORMAT'||attempt===1)throw e;previous=reply;}
+        system:PLAN_PROPOSAL_PROMPT+(attempt?' 上次格式或日期证据校验未通过。只修正JSON结构、日期格式、模拟日期标识和纯文本字段，保留用户范围与业务值；用户允许模拟日期时，preconditions逐文件写为【模拟假设】01业务日期YYYYMMDD等；不可改写用户指定日期、取消或待定指令。必须直接以{开头、以}结尾，不能含代码围栏、解释或额外字段。':''),
+        messages:[...priorTurns,{role:'user',content:userInput},...(attempt?[{role:'assistant',content:previous},{role:'user',content:'请修正上述方案输出格式及日期证据：模拟日期必须明确标为【模拟假设】并逐文件列出日期。用户指定、改期或待定仍优先，不能为了READY捏造真实时间。业务条件仍以原对话为准。'}]:[])]});
+      try{
+        parsed=parsePlanProposal(reply);
+        proposal=guardExchangeTimeEvidence(parsed,[...priorTurns.filter(turn=>turn.role==='user').map(turn=>turn.content),userInput]);
+        const draftDates=parsed.preconditions.some(value=>/模拟.*(?:日期|日)|(?:日期|日).*模拟/.test(value)) || [...priorTurns.filter(turn=>turn.role==='user').map(turn=>turn.content),userInput].some(value=>/日期.{0,12}模拟|模拟.{0,12}日期/.test(value));
+        if(attempt===0 && draftDates && parsed.exchangePlan.status==='READY' && proposal.exchangePlan.status==='UNPLANNED'){previous=reply;continue;}
+        break;
+      }catch(e){if(e.code!=='MODEL_OUTPUT_FORMAT'||attempt===1)throw e;previous=reply;}
     }
-    const proposal=guardExchangeTimeEvidence(parsed,[...priorTurns.filter(turn=>turn.role==='user').map(turn=>turn.content),userInput]);
     return {
       proposal,
       reply: displayPlanProposal(proposal),
