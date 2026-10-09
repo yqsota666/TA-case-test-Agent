@@ -76,8 +76,6 @@ export function CaseWorkbench({accountControl}) {
   const sidebarResize = useSidebarResize();
   const [state, setState] = useState(readState);
   const [modal, setModal] = useState(null);
-  const [planSection,setPlanSection]=useState('tests');
-  useEffect(()=>setPlanSection('tests'),[state.selected]);
   const [page,setPage]=useState(()=>['data','files'].includes(new URLSearchParams(location.search).get('page'))?new URLSearchParams(location.search).get('page'):'chat');
   const resultDirty=useRef(false);
   const [newConversation, setNewConversation] = useState(true);
@@ -399,7 +397,7 @@ export function CaseWorkbench({accountControl}) {
     {modal?.type === 'historical-plan' && <DetailPanel title="历史测试方案" onClose={()=>setModal(null)}><div className="cw-plan-document"><MessageBody message={modal.message} text={modal.message.text}/></div></DetailPanel>}
     {modal?.type === 'expectations' && state.plan && <DetailPanel title="确认预期结果" onClose={()=>setModal(null)}><ExpectationReview key={state.selected+state.plan.versionNumber} plan={state.plan} busy={planBusy||running} error={planError} onConfirm={()=>confirmPlan('EXPECTATIONS')} onSaveContent={savePlanContent}/></DetailPanel>}
     {modal?.type === 'result' && <DetailPanel title="测试方案" onClose={() => setModal(null)}>
-      {state.plan && <PlanDocument key={state.selected+state.plan.versionNumber} initialSection={planSection} onSectionChange={setPlanSection} proposal={state.plan.proposal} taskProgress={state.workflow?.tasks} locked={state.plan.status==='LOCKED'} onSaveOperations={async applications=>{
+      {state.plan && <PlanDocument key={state.selected+state.plan.versionNumber} proposal={state.plan.proposal} taskProgress={state.workflow?.tasks} locked={state.plan.status==='LOCKED'} onSaveOperations={async applications=>{
         const request=viewRequest.current;
         await requestCase(casePath(currentSet.id,state.selected)+'/plan/data',{versionNumber:state.plan.versionNumber,dataSpecification:state.plan.proposal.contract.dataSpecification,applications});
         const snapshot=await liveSnapshot(currentSet.id,state.selected);if(request===viewRequest.current)applySnapshot(snapshot);
@@ -407,8 +405,7 @@ export function CaseWorkbench({accountControl}) {
         const request=viewRequest.current;
         await requestCase(casePath(currentSet.id,state.selected)+'/plan/data',{versionNumber:state.plan.versionNumber,dataSpecification});
         const snapshot=await liveSnapshot(currentSet.id,state.selected);if(request===viewRequest.current)applySnapshot(snapshot);
-      }}/>}
-      {state.workflow?.stage==='CONFIRM_PLAN_DATA' && <footer className="cw-plan-confirm-footer">{planError&&<p role="alert">{planError}</p>}<ApprovalCard state={planBusy?'running':'request'} title="准备数据" subtitle="核对方案中的准备内容后确认" statusLabel="确认中…" allowOnceLabel="确认准备数据" disabled={planBusy||running} onAllowOnce={()=>confirmPlan('DATA')}/></footer>}
+      }} dataApproval={state.workflow?.stage==='CONFIRM_PLAN_DATA'&&<footer className="cw-plan-confirm-footer">{planError&&<p role="alert">{planError}</p>}<button type="button" className="cw-primary-button" disabled={planBusy||running} onClick={()=>confirmPlan('DATA')}>{planBusy?'确认中…':'确认准备数据'}</button></footer>}/>}
     </DetailPanel>}
   </CanvasSplit>;
 }

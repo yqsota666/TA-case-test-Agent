@@ -26,23 +26,33 @@ function PreparedPlanData({data,onSave,editable}) {
     {editing&&<PreparedRowEditor editing={editing} data={data} onClose={()=>setEditing(null)} onSave={async row=>{const next=structuredClone(data);next[editing.table][editing.index]=row;await onSave(next);setEditing(null);}}/>}
   </section>;
 }
-export function PlanDocument({proposal,onSave,onSaveContent,onSaveOperations,onSectionChange,taskProgress=[],locked=false,editable=false,initialSection='tests'}) {
-  const plan=normalizePlan(proposal);
-  const [section,setSection]=useState(initialSection==='tasks'||initialSection==='exchange'?'tasks':'tests');
-  const sections=[['tests','测试方案'],['tasks','任务单']];
+function reviewQuestions(plan) {
+  const issues=[...new Set([...plan.openQuestions,...plan.constructionIssues,...(plan.exchangePlan?.openQuestions||[])])];
+  const result=[];
+  for (const issue of issues) {
+    let message=issue;
+    if (/请确认.*(?:01|02|03|04).*业务日期|文件安排为空.*业务日期/.test(issue)) {
+      message='申请提交和TA确认日期尚未明确。请在对话中指定日期，或让AI推荐日期供审阅。';
+    } else if (/准备模拟数据需要.*申请及对应回传步骤/.test(issue)) {
+      message='AI尚未补齐申请与回传安排，暂不能生成申请文件。请在对话中让AI继续完善方案。';
+    } else if (/不属于协议回传字段.*人工审阅/.test(issue)) {
+      message='业务预期需要单独核验，TA回传只能核对协议结果。请让AI补充业务结果的核对方法。';
+    }
+    if (!result.includes(message)) result.push(message);
+  }
+  return result;
+}
+export function PlanDocument({proposal,onSave,onSaveContent,onSaveOperations,dataApproval,taskProgress=[],locked=false,editable=false}) {
+  const plan=normalizePlan(proposal),questions=reviewQuestions(plan);
   return <div className="cw-plan-shell">
-    <nav className="cw-spectral-nav" aria-label="方案内容区">{sections.map(([key,label])=><button type="button" key={key} aria-pressed={section===key} onClick={()=>{setSection(key);onSectionChange?.(key);}}>{label}</button>)}</nav>
-    <div className="cw-plan-document" key={section} tabIndex={0} role="region" aria-label="方案内容">
+    <div className="cw-plan-document" tabIndex={0} role="region" aria-label="方案内容">
       {plan.objective&&<p className="cw-plan-objective">{plan.objective}</p>}
-      {section==='tests'&&<>
-        {plan.scenarios.length>0?<PlanComparison plan={plan} editable={editable} onSaveContent={onSaveContent}/>:<p>暂无测试项。</p>}
-        {plan.dataSpecification&&<details className="cw-review-common cw-plan-data-details"><summary>完整准备数据与修改<ChevronRight size={15}/></summary><PreparedPlanData data={plan.dataSpecification} onSave={onSave} editable={editable}/></details>}
-        {[...new Set([...plan.openQuestions,...plan.constructionIssues])].length>0&&<section className="cw-plan-questions"><h3>还需确认</h3><ul>{[...new Set([...plan.openQuestions,...plan.constructionIssues])].map(item=><li key={item}>{item}</li>)}</ul></section>}
-      </>}
-      {section==='tasks'&&<><OperationTasks proposal={proposal} progress={taskProgress} locked={locked} editable={editable} onSave={onSaveOperations}/><FileSchedule exchangePlan={proposal.exchangePlan} ordered={proposal.contract?.version===4}/>{[...new Set([...plan.constructionIssues,...(plan.exchangePlan?.openQuestions||[])])].length>0&&<section className="cw-plan-questions"><h3>尚待补齐</h3><ul>{[...new Set([...plan.constructionIssues,...(plan.exchangePlan?.openQuestions||[])])].map(issue=><li key={issue}>{issue}</li>)}</ul></section>}</>}
+      {plan.scenarios.length>0?<PlanComparison plan={plan} editable={editable} onSaveContent={onSaveContent}/>:<p>暂无测试项。</p>}
+      {questions.length>0&&<section className="cw-plan-questions"><h3>还需完善</h3><ul>{questions.map(item=><li key={item}>{item}</li>)}</ul></section>}
+      {(plan.dataSpecification||dataApproval)&&<details className="cw-review-common cw-plan-data-details"><summary>准备数据<ChevronRight size={15}/></summary>{plan.dataSpecification&&<PreparedPlanData data={plan.dataSpecification} onSave={onSave} editable={editable}/>} {dataApproval}</details>}
+      <details className="cw-review-common cw-plan-data-details"><summary>执行与文件安排<ChevronRight size={15}/></summary><OperationTasks proposal={proposal} progress={taskProgress} locked={locked} editable={editable} onSave={onSaveOperations}/><FileSchedule exchangePlan={proposal.exchangePlan} ordered={proposal.contract?.version===4}/></details>
     </div>
   </div>;
-
 }
 
 function PreparedRowEditor({editing,data,onClose,onSave}) {
