@@ -1,18 +1,17 @@
 import crypto from 'node:crypto';
 import {buildDataFile, buildIndexFile, dataFileName, parseDataFile, parseIndexFile} from './codec.js';
-import {fieldsForFile} from './profiles.js';
+import {fieldsForFile,profileForVersion,canonicalProtocolVersion} from './profiles.js';
 import {zipProtocolFiles} from './application-package.js';
 
 const allowed = ['aml', 'includeEmptyR1', 'dataSequence', 'summaryNo', 'sender', 'recipient',
   'fieldNamesCase', 'trailingCrlf', 'directoryLayout', 'indexSuffixes'];
 export function normalizeDeliveryProfile(input = {}, version = '22') {
+  version = canonicalProtocolVersion(version);
   if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).some(k => !allowed.includes(k))) {
     throw new Error('交付配置字段无效');
   }
-  const profile = {aml: version === '22', includeEmptyR1: false, dataSequence: true,
-    sender: 'SYSTEM', recipient: 'SYSTEM', fieldNamesCase: 'upper', trailingCrlf: false,
-    directoryLayout: 'distributor/date', indexSuffixes: {OFI: '', OFX: ''}, ...input,
-    indexSuffixes: {OFI: '', OFX: '', ...input.indexSuffixes}};
+  const defaults = profileForVersion(version).deliveryDefaults;
+  const profile = {...defaults,...input,indexSuffixes:{...defaults.indexSuffixes,...input.indexSuffixes}};
   for (const k of ['aml', 'includeEmptyR1', 'dataSequence', 'trailingCrlf']) {
     if (typeof profile[k] !== 'boolean') throw new Error('交付配置开关无效');
   }

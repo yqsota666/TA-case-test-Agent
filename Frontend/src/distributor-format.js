@@ -1,3 +1,4 @@
+export function protocolVersionLabel(version){return ({'21':'2.1','22':'2.2'})[version]??String(version??'—');}
 export function editableDeliveryProfile(profile){return {...profile,summaryNo:profile.summaryNo??1,indexSuffixes:{...profile.indexSuffixes}};}
 export function deliveryFormatSummary(profile){
  if(!profile)return '尚未配置';

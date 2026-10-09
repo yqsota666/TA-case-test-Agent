@@ -57,3 +57,9 @@ test('227 default is resolved by backend and new distributors persist that actua
  const created=await f.repo.saveDistributor(token,{input});assert.equal(created.delivery_profile.includeEmptyR1,true);
  assert.match(f.calls.at(-1).sql,/exchange_delivery_profiles/);
 });
+
+test('seller format versions map dotted labels to existing internal protocol identifiers',()=>{
+ assert.equal(distributorInput({...input,protocol_version:'2.2'}).protocol_version,'22');
+ assert.equal(distributorInput({...input,protocol_version:'2.1'}).protocol_version,'21');
+ assert.throws(()=>distributorInput({...input,protocol_version:'2.0'}),{code:'INVALID_DISTRIBUTOR'});
+});

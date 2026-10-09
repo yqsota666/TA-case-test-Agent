@@ -1,5 +1,6 @@
 import {authenticateSession,storeError} from './index.js';
 import {channelDeliveryProfile} from './delivery-profile.js';
+import {canonicalProtocolVersion} from '../../platform-protocol/src/profiles.js';
 import {normalizeDeliveryProfile} from '../../platform-protocol/src/delivery-package.js';
 
 const keys=['channel_name','distributor_code','ta_code','protocol_version','ta_environment'];
@@ -7,6 +8,7 @@ export function distributorInput(input){
   if(!input||typeof input!=='object'||Array.isArray(input)||Object.keys(input).some(key=>![...keys,'delivery_profile'].includes(key))||keys.some(key=>typeof input[key]!=='string'))
     throw storeError('INVALID_DISTRIBUTOR',400,'请填写完整的销售商配置');
   const value=Object.fromEntries(keys.map(key=>[key,input[key].trim()]));
+  try{value.protocol_version=canonicalProtocolVersion(value.protocol_version);}catch{throw storeError('INVALID_DISTRIBUTOR',400,'文件格式版本不支持，请选择 2.1 或 2.2');}
   if(!value.channel_name||value.channel_name.length>120||!value.ta_environment||value.ta_environment.length>80||
     /[\u0000-\u001f\u007f]/.test(value.channel_name+value.ta_environment)||
     !/^[0-9A-Za-z]{1,9}$/.test(value.distributor_code)||!/^[0-9A-Za-z]{1,9}$/.test(value.ta_code)||!['21','22'].includes(value.protocol_version))

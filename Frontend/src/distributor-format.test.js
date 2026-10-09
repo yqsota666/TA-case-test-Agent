@@ -15,3 +15,8 @@ test('format summary and editable default retain independent profile values',()=
  assert.equal(deliveryFormatSummary({...profile,aml:false,includeEmptyR1:false,dataSequence:true}),'01/03 · 带序号');
  const edit=editableDeliveryProfile(profile);assert.equal(edit.summaryNo,1);edit.indexSuffixes.OFI='-CHANGED';assert.equal(profile.indexSuffixes.OFI,'');
 });
+
+test('protocol version labels use human readable versions without guessing unsupported formats',async()=>{
+ const {protocolVersionLabel}=await import('./distributor-format.js');
+ assert.equal(protocolVersionLabel('22'),'2.2');assert.equal(protocolVersionLabel('21'),'2.1');assert.equal(protocolVersionLabel('20'),'20');
+});

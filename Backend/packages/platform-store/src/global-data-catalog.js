@@ -30,7 +30,7 @@ export function createGlobalDataCatalog({transaction}){
  return {...createDistributorConfig({transaction}),async listTable(token,input){const {table,source,q,offset,limit}=catalogOptions(input);return transaction(async db=>{
   const auth=await authenticateSession(db,token);
   if(table==='distributors'){
-    const columns=[['distributor_code','销售商代码'],['channel_name','销售商名称'],['ta_code','TA 代码'],['protocol_version','协议版本'],['ta_environment','环境']].map(([key,label])=>({key,label}));
+    const columns=[['distributor_code','销售商代码'],['channel_name','销售商名称'],['ta_code','TA 代码'],['protocol_version','文件格式'],['ta_environment','环境']].map(([key,label])=>({key,label}));
     const pattern='%'+q.replace(/[\\%_]/g,'\\$&')+'%';
     const filter=q?' AND ('+columns.map(({key})=>`t.\`${key}\` LIKE ?`).join(' OR ')+')':'';
     const values=[auth.workspace_id,...(q?columns.map(()=>pattern):[])];
@@ -38,7 +38,7 @@ export function createGlobalDataCatalog({transaction}){
     const [rows]=await db.execute(`SELECT t.id,t.distributor_code,t.channel_name,t.ta_code,t.protocol_version,t.ta_environment,p.profile_json
       FROM exchange_channels t LEFT JOIN exchange_delivery_profiles p ON p.workspace_id=t.workspace_id AND p.channel_id=t.id
       WHERE t.workspace_id=?${filter} ORDER BY t.distributor_code,t.ta_code,t.id LIMIT ${limit} OFFSET ${offset}`,values);
-    columns.push({key:'delivery_profile',label:'文件格式'});
+    columns.push({key:'delivery_profile',label:'交付文件'});
     return {table,source,columns,rows:rows.map(({profile_json,...row})=>({...row,id:String(row.id),delivery_profile:channelDeliveryProfile(row,profile_json)})),total:Number(count.total),offset,limit};
   }
   // The fixed projection is searched as text, retaining field-specific decimals and NULLs in the result.
