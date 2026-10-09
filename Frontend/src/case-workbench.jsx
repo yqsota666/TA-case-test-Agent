@@ -335,7 +335,7 @@ export function CaseWorkbench({accountControl}) {
     <div className="cw-user">{accountControl}<ThemePicker /></div>
   </>;
 
-  return <CanvasSplit className={`cw-shell ${page==='chat'&&['result','expectations','historical-plan'].includes(modal?.type)?'has-detail':''} ${page!=='chat'?'cw-catalog-view':''}`} style={sidebarResize.style}>
+  return <CanvasSplit className={`cw-shell ${page==='chat'?'cw-liquid-home':''} ${page==='chat'&&['result','expectations','historical-plan'].includes(modal?.type)?'has-detail':''} ${page!=='chat'?'cw-catalog-view':''}`} style={sidebarResize.style}>
     <a className="cw-skip" href="#cw-main">跳到对话</a>
     <aside id="cw-sidebar" className="cw-sidebar">{sidebar}{sidebarResize.separator}</aside>
     <CaseAssistant key={draftKey} messages={messages} draft={draft} loading={loading} running={running || !!state.pending}

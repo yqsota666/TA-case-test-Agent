@@ -9,6 +9,7 @@ import './defense-themes.css';
 import './message-body.css';
 import './spectral-components.css';
 import './compact-workbench.css';
+import './liquid-home.css';
 
 const initial = initialTheme();
 document.documentElement.dataset.theme = initial;
