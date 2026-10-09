@@ -212,3 +212,22 @@ test('a completed proposal request replays its saved version without another mod
  const result=await service.propose({...scope,userInput:'请整理方案'});
  assert.equal(result.replayed,true);assert.equal(result.versionNumber,1);assert.equal(result.revision,5);assert.equal(result.reply,'保存的提案回复');
 });
+
+test('streamed discussion carries verified saved-plan context through validation and persistence', async () => {
+  const { repository, rounds } = fixture();
+  repository.getLatestSopProposal = async () => ({ versionNumber: 1 });
+  const deltas = [], controller = new AbortController();
+  const reply = '方案已生成，可在测试方案中查看并修改。下一步：审阅准备数据。';
+  const service = createPersistedDiscussionService({ repository, complete: async request => {
+    assert.equal(request.signal, controller.signal);
+    assert.match(request.system, /系统已核实当前Case存在方案/);
+    request.onDelta(reply);
+    return reply;
+  } });
+  const result = await service.discuss({ ...scope, userInput: '下一步是什么？',
+    signal: controller.signal, onDelta: delta => deltas.push(delta) });
+  assert.deepEqual(deltas, [reply]);
+  assert.equal(result.reply, reply);
+  assert.equal(rounds[0].assistantReply, reply);
+  assert.equal(rounds[0].status, 'COMPLETE');
+});
