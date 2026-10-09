@@ -28,5 +28,19 @@ test('MySQL admission leases serialize duplicate inputs, cache decisions and rej
   await assert.rejects(a.context(foreign,chat.publicId,item.publicId),{code:'CASE_NOT_FOUND'});
   assert.equal((await business.readCaseDiscussion(...scope)).revision,0);
   assert.equal((await a.context(token,chat.publicId.toUpperCase(),item.publicId.toUpperCase())).case,'开户字段校验');
+  for(let i=0;i<8;i++){
+   const pending=await business.beginCaseDiscussionTurn(...scope,{expectedRevision:i,userInput:i===0?'最初目标是合成状态转换测试':'合成后续需求'+i});
+   await business.finishCaseDiscussionTurn(...scope,{turnNumber:pending.turnNumber,assistantReply:'本轮合成建议'+i,promptVersion:'synthetic-context-test'});
+  }
+  await transaction(db=>db.execute(`UPDATE case_discussion_turns t JOIN cases k ON k.workspace_id=t.workspace_id AND k.chat_id=t.chat_id AND k.id=t.case_id SET t.assistant_text=? WHERE k.public_id=? AND t.turn_number=8`,['本轮合成建议7'+'x'.repeat(6500),item.publicId]));
+  await business.beginCaseDiscussionTurn(...scope,{expectedRevision:8,userInput:'尚未完成的回合不能进入审核上下文'});
+  const context=await a.context(...scope);
+  assert.equal(context.initialRequirement,'最初目标是合成状态转换测试');
+  assert.equal(context.recentRequirements.length,6);assert.equal(context.recentConversation.length,12);
+  assert.equal(context.recentConversation[0].revision,3);assert.equal(context.recentConversation[0].role,'user');
+  assert.equal(context.recentConversation[1].role,'assistant');assert.match(context.recentConversation[1].content,/本轮合成建议2/);
+  assert.equal(context.recentConversation.at(-1).revision,8);assert.equal(context.recentConversation.at(-1).content.length,6000);
+  assert.ok(context.recentConversation.every(t=>t.revision<=8));
+
  }finally{await pool.end();}
 });

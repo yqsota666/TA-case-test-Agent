@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createBusinessAdmission,parseAdmission} from '../src/business-admission.js';
+import {ADMISSION_PROMPT_VERSION,createBusinessAdmission,parseAdmission} from '../src/business-admission.js';
 import {createPersistedDiscussionService} from '../src/persisted-discussion.js';
 
 test('rejected and uncertain material never creates a discussion turn or calls the main model',async()=>{
@@ -44,4 +44,29 @@ test('image analysis is screened before persistence and never leaks into main co
     admit:async({text})=>{seen=text;throw Object.assign(new Error('unrelated'),{status:422});}});
   await assert.rejects(service.discuss({userInput:'',images}));
   assert.match(seen,/猫/);assert.equal(writes,0);
+});
+
+
+test('recommendation requests reach discussion with the preceding assistant question in admission context',async()=>{
+ const context={case:'状态转换测试',recentConversation:[{role:'user',revision:1,content:'测试边界及失败重试'},
+  {role:'assistant',revision:1,content:'可以比较不同初始状态，你希望采用哪组条件？'}]};
+ let classified,writes=0,mainCalls=0;
+ const admissionRepository={context:async()=>context,claim:async()=>({lease:'mine'}),finish:async()=>{},release:async()=>{}};
+ const admit=createBusinessAdmission({repository:admissionRepository,complete:async request=>{classified=JSON.parse(request.user);return '{"decision":"ALLOW"}';}});
+ const history={revision:1,turns:context.recentConversation.map(({role,content})=>({role,content}))};
+ const repository={readCaseDiscussion:async()=>history,beginCaseDiscussionTurn:async()=>{writes++;return {turnNumber:2};},
+  finishCaseDiscussionTurn:async()=>({revision:2}),finishCasePlanProposal:async()=>{},abandonCaseDiscussionTurn:async()=>{}};
+ const service=createPersistedDiscussionService({repository,admit,complete:async()=>{mainCalls++;return '可以先采用初始状态一致、只改变目标状态的对照方案。尚未明确的重试间隔作为待采纳建议。下一步：讨论具体边界和预期。';}});
+ const result=await service.discuss({token:'t',chatPublicId:'c',casePublicId:'k',userInput:'你可以推荐吗？帮我生成一版'});
+ assert.deepEqual(classified.context.recentConversation,context.recentConversation);
+ assert.equal(classified.material,'你可以推荐吗？帮我生成一版');assert.equal(writes,1);assert.equal(mainCalls,1);assert.match(result.reply,/对照方案/);
+});
+
+test('assistant context changes invalidate cached decisions, and the revised policy has a fresh cache namespace',async()=>{
+ let answer='请提供准备条件';const hashes=[];
+ const repository={context:async()=>({recentConversation:[{role:'assistant',revision:1,content:answer}]}),claim:async(t,c,k,hash)=>{hashes.push(hash);return {result:{decision:'ALLOW'}};}};
+ const admit=createBusinessAdmission({repository,complete:async()=>assert.fail('cache should be reused')});
+ const input={token:'t',chatPublicId:'c',casePublicId:'k',text:'帮我推荐'};
+ await admit(input);await admit(input);answer='这里有两种业务方案，你想采用哪一个？';await admit(input);
+ assert.equal(hashes[0],hashes[1]);assert.notEqual(hashes[1],hashes[2]);assert.equal(ADMISSION_PROMPT_VERSION,'business-admission-context-v2');
 });

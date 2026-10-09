@@ -17,14 +17,21 @@ export function createAdmissionRepository({transaction}) {
       const {row,keys}=await scoped(db,token,chat,caseId);
       const [[plan]]=await db.execute(`SELECT version_number,status,plan_json FROM case_sop_versions
         WHERE workspace_id=? AND chat_id=? AND case_id=? ORDER BY version_number DESC LIMIT 1`,keys);
-      const [turns]=await db.execute(`SELECT turn_number,user_text FROM case_discussion_turns
+      const [turns]=await db.execute(`SELECT turn_number,user_text,assistant_text FROM case_discussion_turns
         WHERE workspace_id=? AND chat_id=? AND case_id=? AND status='COMPLETE' ORDER BY turn_number DESC LIMIT 6`,keys);
+      const [[first]]=await db.execute(`SELECT user_text FROM case_discussion_turns
+        WHERE workspace_id=? AND chat_id=? AND case_id=? AND status='COMPLETE' ORDER BY turn_number LIMIT 1`,keys);
       const proposal=plan?(typeof plan.plan_json==='string'?JSON.parse(plan.plan_json):plan.plan_json):null;
       return {project:row.project_title,case:row.title,status:row.status,
         planVersion:plan?.version_number??null,planStatus:plan?.status??null,
         objective:proposal?.objective??proposal?.title??null,
         plan:proposal?JSON.stringify(proposal).slice(0,16000):null,
-        recentRequirements:turns.reverse().map(t=>({revision:t.turn_number,text:t.user_text.slice(0,4000)}))};
+        initialRequirement:first?.user_text.slice(0,4000)??null,
+        recentRequirements:[...turns].reverse().map(t=>({revision:t.turn_number,text:t.user_text.slice(0,4000)})),
+        recentConversation:[...turns].reverse().flatMap(t=>[
+          {revision:t.turn_number,role:'user',content:t.user_text.slice(0,4000)},
+          {revision:t.turn_number,role:'assistant',content:(t.assistant_text??'').slice(0,6000)},
+        ])};
     }),
     claim:(token,chat,caseId,hash)=>transaction(async db=>{
       const {keys}=await scoped(db,token,chat,caseId),lease=randomUUID();
