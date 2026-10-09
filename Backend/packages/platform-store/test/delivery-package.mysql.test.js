@@ -7,6 +7,7 @@ import mysql from 'mysql2/promise';
 import {migrationConfig} from '../src/migrate.js';
 import {createCaseRepository,sessionTokenHash} from '../src/index.js';
 import {createExchangeRepository} from '../src/exchange.js';
+import {createGlobalDataCatalog} from '../src/global-data-catalog.js';
 import {createApplicationPreparationRepository} from '../src/application-preparation.js';
 import {createApplicationPreparationService} from '../../case-api/src/prepare-applications.js';
 import {createProjectExchangeService} from '../../case-api/src/project-exchange.js';
@@ -27,8 +28,15 @@ for (const code of ['005','227','926']) test(`MySQL: ${code} persists full chann
   const [foreignUser]=await db.execute("INSERT INTO platform_users(public_id,email,password_hash,display_name) VALUES (?,?,?,'Foreign synthetic')",[foreignId,foreignId+'@example.invalid','synthetic']);
   await db.execute('INSERT INTO workspaces(public_id,owner_user_id) VALUES (?,?)',[crypto.randomUUID(),foreignUser.insertId]);
   await db.execute('INSERT INTO platform_sessions(token_hash,user_id,expires_at) VALUES (?,?,DATE_ADD(NOW(),INTERVAL 1 HOUR))',[sessionTokenHash(foreignToken),foreignUser.insertId]);
-  const [channel]=await db.execute("INSERT INTO exchange_channels(workspace_id,channel_name,ta_environment,ta_code,distributor_code,protocol_version) VALUES (?,'包合成','synthetic','27',?,'22')",[workspace.insertId,code]);
-  const channelId=String(channel.insertId),repository=createCaseRepository({transaction}),exchange=createExchangeRepository({transaction}),preparations=createApplicationPreparationRepository({transaction});
+  const catalog=createGlobalDataCatalog({transaction}),input={channel_name:'包合成',ta_environment:'synthetic',ta_code:'27',distributor_code:code,protocol_version:'22'};
+  const channel=await catalog.saveDistributor(token,{input}),channelId=channel.id;
+  assert.equal((await catalog.listTable(token,{table:'distributors'})).rows[0].distributor_code,code);
+  assert.equal((await catalog.listTable(foreignToken,{table:'distributors'})).total,0);
+  await assert.rejects(()=>catalog.saveDistributor(foreignToken,{id:channelId,input}),{code:'CHANNEL_NOT_FOUND'});
+  await assert.rejects(()=>catalog.saveDistributor(token,{input}),{code:'DISTRIBUTOR_EXISTS'});
+  await catalog.saveDistributor(token,{id:channelId,input:{...input,channel_name:'更名合成'}});
+  const repository=createCaseRepository({transaction}),exchange=createExchangeRepository({transaction}),preparations=createApplicationPreparationRepository({transaction});
+  assert.equal((await exchange.listChannels(token)).channels[0].name,'更名合成');
   const applicationPreparation=createApplicationPreparationService({repository,preparations,exchangeRepository:exchange,derive:()=>{throw new Error('no execution-time model');}});
   const project=createProjectExchangeService({repository,preparations,exchangeRepository:exchange,applicationPreparation});
   for(const accounts of [2]){
