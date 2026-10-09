@@ -1,9 +1,9 @@
 import React from 'react';
-import {Play, MessagesSquare, ListChecks, ClipboardCheck, Database, BadgeCheck, GitBranch, ArrowLeftRight, ScanSearch, CheckCheck, Flag, Archive} from './ui-icons.jsx';
+import {MessagesSquare, ListChecks, ClipboardCheck, Database, ArrowLeftRight, CheckCheck} from './ui-icons.jsx';
 import {diagramStates} from './workflow-diagram-model.js';
 import './workflow-diagram.css';
-const icons=[Play,MessagesSquare,ListChecks,ClipboardCheck,Database,BadgeCheck,GitBranch,ArrowLeftRight,ScanSearch,CheckCheck,Flag,Archive];
-const positions=Array.from({length:12},(_,i)=>({x:130+(Math.floor(i/4)%2?3-i%4:i%4)*240,y:94+Math.floor(i/4)*184}));
+const icons=[MessagesSquare,ListChecks,ClipboardCheck,Database,ArrowLeftRight,CheckCheck];
+const positions=Array.from({length:6},(_,i)=>({x:130+(Math.floor(i/3)%2?2-i%3:i%3)*340,y:94+Math.floor(i/3)*184}));
 const labels={done:'已通过',current:'当前节点',pending:'未执行',blocked:'受阻',partial:'部分完成',unknown:'未核实',skipped:'不涉及'};
 export function WorkflowDiagram(props) {
   if(props.loading)return <div className="cw-flow-feedback" role="status">正在读取流程…</div>;
@@ -11,9 +11,9 @@ export function WorkflowDiagram(props) {
   const nodes=diagramStates(props);
   const current=nodes.find(n=>n.status==='current');
   return <section className="cw-flow" aria-label="真实 Case 工作流">
-    <div className="cw-flow-summary"><span className="cw-flow-live-dot"/>{current?.label || '状态暂不可用'}<span>{!current?'请刷新重试':['CASE_FINAL','CHAT_CLOSED'].includes(current.id)?'已结束':props.workflow?.interrupted?'等待操作':'执行中'}</span></div>
+    <div className="cw-flow-summary"><span className="cw-flow-live-dot"/>{current?.label || (['CASE_FINAL','CHAT_CLOSED'].includes(props.workflow?.stage)?'测试流程已结束':'状态暂不可用')}<span>{['CASE_FINAL','CHAT_CLOSED'].includes(props.workflow?.stage)?(props.workflow.stage==='CHAT_CLOSED'?'项目已封存':'已结束'):!current?'请刷新重试':props.workflow?.interrupted?'等待操作':'执行中'}</span></div>
     <div className="cw-flow-canvas" tabIndex={0} aria-label="流程图，可横向滚动">
-      <svg viewBox="0 0 980 550" role="img" aria-labelledby="cw-flow-title cw-flow-desc">
+      <svg viewBox="0 0 980 390" role="img" aria-labelledby="cw-flow-title cw-flow-desc">
         <title id="cw-flow-title">Case 完整流程图</title>
         <desc id="cw-flow-desc">{nodes.map(n=>`${n.label}：${labels[n.status]}`).join('；')}。实线表示已通过路径，虚线表示后续或未核实路径。</desc>
         {nodes.slice(1).map((node,i)=>{
@@ -30,7 +30,7 @@ export function WorkflowDiagram(props) {
           <circle className="cw-flow-circle" cx={x} cy={y} r={28}/>
           <Icon x={x-10} y={y-10} width={20} height={20} strokeWidth={1.6}/>
           <text className="cw-flow-label" x={x} y={y+56} textAnchor="middle">{node.label}</text>
-          <text className="cw-flow-status" x={x} y={y+78} textAnchor="middle">{i===10&&['PASS','FAIL'].includes(props.caseStatus)?(props.caseStatus==='PASS'?'通过':'未通过'):labels[node.status]}</text>
+          <text className="cw-flow-status" x={x} y={y+78} textAnchor="middle">{i===5&&node.status==='done'&&['PASS','FAIL'].includes(props.caseStatus)?(props.caseStatus==='PASS'?'通过':'未通过'):labels[node.status]}</text>
         </g>;})}
       </svg>
     </div>
