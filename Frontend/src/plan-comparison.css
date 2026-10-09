@@ -9,8 +9,8 @@
 .cw-review-table thead {background:var(--cw-hover);color:var(--cw-muted);}
 .cw-review-table th,.cw-review-table td {padding:20px 18px;vertical-align:top;text-align:left;overflow-wrap:anywhere;}
 .cw-review-table thead th {padding-top:13px;padding-bottom:13px;font-weight:500;font-size:12px;}
-.cw-review-table th:first-child {width:19%;}
-.cw-review-table th:nth-child(2) {width:31%;}
+.cw-review-table th:first-child {width:25%;}
+.cw-review-table th:nth-child(2) {width:30%;}
 .cw-review-table tbody th {font-weight:600;}
 .cw-review-table tbody tr + tr {border-top:1px solid var(--cw-line);}
 .cw-review-table th:last-child:has(.cw-sr-only),.cw-review-edit {width:60px;}
@@ -32,3 +32,15 @@
 .cw-review-edit button:active,.cw-plan-item-editor button:active {transform:translateY(1px);}
 @media(hover:hover) {.cw-review-edit button:hover,.cw-review-common summary:hover,.cw-review-detail summary:hover {color:var(--cw-ink);}.cw-review-edit button:hover {background:var(--cw-hover);}}
 @media(max-width:600px) {.cw-review-table,.cw-review-table tbody {display:block;width:100%;}.cw-review-table thead {display:none;}.cw-review-table tbody tr {display:grid;grid-template-columns:minmax(0,1fr);padding:18px;gap:16px;}.cw-review-table tbody :is(th,td) {display:block;width:auto;padding:0;}.cw-review-table tbody th:first-child {width:auto;font-size:14px;}.cw-review-table td[data-label]::before {content:attr(data-label);display:block;margin-bottom:6px;font-size:11px;color:var(--cw-muted);}.cw-review-edit {text-align:right!important;}.cw-review-detail {margin-top:6px;}.cw-plan-item-editor > header {padding:20px;}.cw-plan-item-editor form {padding:0 20px 20px;}}
+
+.cw-review-cell-text {margin:0;white-space:pre-wrap;overflow-wrap:anywhere;}
+.cw-review-cell-text + .cw-review-cell-text {margin-top:12px;}
+.cw-plan-data-details {margin-top:24px;}
+.cw-plan-data-details .cw-prepared-data {margin-top:12px;}
+
+.cw-single-test {font-size:13px;line-height:1.8;overflow-wrap:anywhere;}
+.cw-single-test h3 {font-size:14px;margin:0 0 16px;}
+.cw-single-test dt {color:var(--cw-muted);margin-top:16px;}
+.cw-single-test dd {margin:6px 0 0;}
+
+.cw-review-baseline {margin:0 0 12px;font-size:13px;line-height:1.8;color:var(--cw-muted);overflow-wrap:anywhere;}

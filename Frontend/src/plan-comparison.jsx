@@ -3,31 +3,29 @@ import {ChevronRight,ClipboardCheck,Plus,X} from './ui-icons.jsx';
 import './plan-comparison.css';
 export function ExpectedText({text=''}) {
   const parts=text.match(/[^；;\n]+[；;]?/g)?.map(p=>p.trim()).filter(Boolean)||[];
-  return <ul className="cw-review-points">{parts.map((part,i)=><li key={i}>{part}</li>)}</ul>;
+  const content=<ul className="cw-review-points">{parts.map((part,i)=><li key={i}>{part}</li>)}</ul>;
+  return text.length>320?<><p className="cw-review-cell-text">{text.slice(0,140)}…</p><details className="cw-review-detail"><summary>展开完整预期<ChevronRight size={13}/></summary>{content}</details></>:content;
 }
 export function PlanComparison({plan,editable,onSaveContent}) {
   const [editing,setEditing]=useState(null);
-  const splitConditions=text=>(text||'').match(/[^，,；;。]+[，,；;。]?/g)?.map(s=>s.trim()).filter(Boolean)||[];
-  const conditions=plan.scenarios.map(s=>splitConditions(s.setup));
-  const commonClauses=conditions.length>1?conditions[0].filter(clause=>conditions.every(parts=>parts.includes(clause))):[];
-  const commonSetup=plan.scenarios.length>1 && plan.scenarios.every(s=>s.setup===plan.scenarios[0].setup)?plan.scenarios[0].setup:'';
-  const common=[...new Set([...plan.preconditions,...(commonSetup?[commonSetup]:commonClauses)])];
+  const clauses=value=>(value||'').split(/[，；;。\n]/).map(s=>s.trim()).filter(Boolean);
+  const shared=key=>plan.scenarios.length>1?clauses(plan.scenarios[0][key]).filter(c=>plan.scenarios.every(s=>clauses(s[key]).includes(c))):[];
+  const commonSetup=shared('setup'),commonAction=shared('action');
+  const sharedContent=[...new Set([...commonSetup,...commonAction])];
+  const common=[...new Set(plan.preconditions)].filter(c=>!sharedContent.includes(c));
+  const difference=(item,key,common)=>clauses(item[key]).filter(c=>!common.includes(c)).join('；');
   return <>
-    {common.length>0&&<details className="cw-review-common"><summary>共同条件<ChevronRight size={15}/></summary><ul>{common.map((s,i)=><li key={i}>{s}</li>)}</ul></details>}
-    <div className="cw-spectral-items">
-      {plan.scenarios.map((item,index)=><details className="cw-spectral-item" key={index} open={index===0?true:undefined}>
-        <summary><span className="cw-spectral-mark" aria-hidden="true"><ClipboardCheck size={19}/></span><strong>{item.title||`测试项 ${index+1}`}</strong><Plus className="cw-spectral-chevron" size={18} aria-hidden="true"/></summary>
-        <div className="cw-spectral-item-body">
-          <ExpectedText text={item.expected}/>
-          <details className="cw-review-detail"><summary>条件与操作<ChevronRight size={13}/></summary><dl>
-            {(commonSetup||conditions[index].filter(clause=>!commonClauses.includes(clause)).join(''))&&<><dt>条件</dt><dd>{commonSetup||conditions[index].filter(clause=>!commonClauses.includes(clause)).join('')}</dd></>}
-            {item.action&&<><dt>操作</dt><dd>{item.action}</dd></>}
-          </dl></details>
-          {item.evidence&&<details className="cw-review-detail"><summary>核对依据<ChevronRight size={13}/></summary><p>{item.evidence}</p></details>}
-          {editable&&<div className="cw-spectral-item-actions"><button type="button" onClick={()=>setEditing({index,item})} aria-label={`修改${item.title}`}>修改</button></div>}
-        </div>
-      </details>)}
-    </div>
+    {sharedContent.length>0&&<p className="cw-review-baseline">{sharedContent.join('；')}</p>}
+    {common.length>0&&<details className="cw-review-common"><summary>{plan.scenarios.length>1?'共同条件与操作':'基础条件'}<ChevronRight size={15}/></summary><ul>{common.map((s,i)=><li key={i}>{s}</li>)}</ul></details>}
+    {plan.scenarios.length===1?<section className="cw-single-test"><h3>{plan.scenarios[0].title||'测试内容'}</h3><dl>{plan.scenarios[0].setup&&<><dt>条件</dt><dd>{plan.scenarios[0].setup}</dd></>}{plan.scenarios[0].action&&<><dt>操作</dt><dd>{plan.scenarios[0].action}</dd></>}<dt>预期结果</dt><dd><ExpectedText text={plan.scenarios[0].expected}/></dd></dl>{plan.scenarios[0].evidence&&<details className="cw-review-detail"><summary>核对依据<ChevronRight size={13}/></summary><p>{plan.scenarios[0].evidence}</p></details>}{editable&&<button type="button" className="cw-row-edit" onClick={()=>setEditing({index:0,item:plan.scenarios[0]})}>修改测试内容</button>}</section>:<div className="cw-review-table-wrap" tabIndex={0} aria-label="测试方案表格">
+      <table className="cw-review-table"><caption className="cw-sr-only">各情况的条件、操作与预期</caption><thead><tr><th scope="col">情况</th><th scope="col">条件与操作</th><th scope="col">预期结果</th></tr></thead><tbody>
+        {plan.scenarios.map((item,index)=>{const setup=difference(item,'setup',commonSetup),action=difference(item,'action',commonAction);return <tr key={index}>
+          <th scope="row">{item.title||`情况 ${index+1}`}{editable&&<div className="cw-review-edit"><button type="button" onClick={()=>setEditing({index,item})} aria-label={`修改${item.title||`情况 ${index+1}`}`}>修改</button></div>}</th>
+          <td data-label="条件与操作">{setup&&<p className="cw-review-cell-text">{setup}</p>}{action&&<p className="cw-review-cell-text">{action}</p>}{!setup&&!action&&<span>同共同条件与操作</span>}</td>
+          <td data-label="预期结果"><ExpectedText text={item.expected}/>{(item.evidence||commonSetup.length||commonAction.length)&&<details className="cw-review-detail"><summary>完整条件与核对依据<ChevronRight size={13}/></summary><dl>{item.setup&&<><dt>条件</dt><dd>{item.setup}</dd></>}{item.action&&<><dt>操作</dt><dd>{item.action}</dd></>}{item.evidence&&<><dt>核对依据</dt><dd>{item.evidence}</dd></>}</dl></details>}</td>
+        </tr>;})}
+      </tbody></table>
+    </div>}
     {editing&&<PlanItemEditor item={editing.item} onClose={()=>setEditing(null)} onSave={async item=>{await onSaveContent(editing.index,item);setEditing(null);}}/>}
   </>;
 }
