@@ -59,8 +59,8 @@ test('institution AML uses X3 and new-account ZIP may contain only 01 without a 
 });
 test('custom suffix, directory and AML policies vary by channel without hardcoded customer cases', () => {
   const result = buildDeliveryPackage(applications({code: '005'}), {dataSequence: false,
-    indexSuffixes: {OFI: '-DLJ', OFX: '-CUSTOM'}, directoryLayout: 'date'});
-  assert.ok(result.fileNames.includes('20260817/OFI_005_27_20260817-DLJ.TXT'));
+    indexSuffixes: {OFI: '-DLJJ', OFX: '-CUSTOM'}, directoryLayout: 'date'});
+  assert.ok(result.fileNames.includes('20260817/OFI_005_27_20260817-DLJJ.TXT'));
   assert.ok(result.fileNames.includes('20260817/OFX_005_27_20260817-CUSTOM.TXT'));
   assert.equal(buildDeliveryPackage(applications({code: '926'}), {aml: false, directoryLayout: 'flat'}).fileNames.length, 3);
   assert.throws(() => normalizeDeliveryProfile({indexSuffixes: {OFI: '/../'}}), /后缀/);

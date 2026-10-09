@@ -67,7 +67,7 @@ for (const code of ['005','227','926']) test(`MySQL: ${code} persists full chann
    assert.equal(delivery.fileName,'20260817.zip');
    assert.equal(delivery.manifest.length,code==='227'?7:6);
    assert.equal(delivery.manifest.find(f=>f.fileType==='OFI').fileName,
-     `${code}/20260817/OFI_${code}_27_20260817${code==='005'?'-DLJ':''}.TXT`);
+     `${code}/20260817/OFI_${code}_27_20260817${code==='005'?'-DLJJ':''}.TXT`);
    if(process.env.DELIVERY_ARTIFACT_DIRECTORY){
     const directory=join(process.env.DELIVERY_ARTIFACT_DIRECTORY,code);mkdirSync(directory,{recursive:true});
     writeFileSync(join(directory,delivery.fileName),delivery.rawBytes);
