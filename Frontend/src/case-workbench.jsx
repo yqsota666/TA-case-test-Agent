@@ -22,7 +22,7 @@ import {ResultReview} from './result-review.jsx';
 import './generated-draft.css';
 import {WorkflowDiagram} from './workflow-diagram.jsx';
 import {ExpectationReview} from './expectation-review.jsx';
-import {liveSnapshot,requestCase,casePath} from './live-case-api.js';
+import {liveSnapshot,requestCase,requestCaseStream,casePath} from './live-case-api.js';
 import {discussionAction} from './discussion-actions.js';
 import {MessageBody} from './message-body.jsx';
 import {ThemePicker} from './theme-picker.jsx';
@@ -82,6 +82,9 @@ export function CaseWorkbench({accountControl}) {
   const [newProjectId, setNewProjectId] = useState('');
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
+  const [streamReply,setStreamReply]=useState(null);
+  const streamController=useRef(null);
+  useEffect(()=>()=>streamController.current?.abort(),[]);
   const [completed, setCompleted] = useState(false);
   const [nodeErrorCode,setNodeErrorCode]=useState('');
   const [nodeError, setNodeError] = useState('');
@@ -112,7 +115,8 @@ export function CaseWorkbench({accountControl}) {
   const [retryOriginalInput,setRetryOriginalInput]=useState('');
   const inputDisabled=loading||running||!!state.pending||((completed||projectReadOnly)&&!newConversation);
   const addImages=async files=>{if(inputDisabled||readingImages)return;const request=viewRequest.current;setReadingImages(true);try{const added=await readMessageImages(files,images);if(request===viewRequest.current)setImageDrafts(v=>({...v,[draftKey]:[...(v[draftKey]||[]),...added]}));}catch(e){setNotice(e.message);}finally{setReadingImages(false);}};
-  const messages = newConversation ? [] : state.messages[state.selected] || [];
+  const savedMessages = newConversation ? [] : state.messages[state.selected] || [];
+  const messages = streamReply?.caseId===state.selected && streamReply.text ? [...savedMessages,{id:'streaming-assistant',role:'assistant',text:streamReply.text,continuation:streamReply.failed?'回复中断，完整结果尚未同步。':undefined}] : savedMessages;
   const dataSet = state.sets.find(set => set.id === dataSetId);
 
   const applySnapshot = snapshot => {
@@ -182,6 +186,7 @@ export function CaseWorkbench({accountControl}) {
   }, [messages]);
 
   const selectCase = async id => {
+    streamController.current?.abort();setStreamReply(null);
     const project=state.sets.find(item=>item.cases.some(c=>c.id===id));
     if(!project)return;
     const request=++viewRequest.current;
@@ -189,11 +194,12 @@ export function CaseWorkbench({accountControl}) {
     setPage('chat');setLoading(true);setNodeError('');setDataSetId(null);setModal(null);
     try {const snapshot=await liveSnapshot(project.id,id);if(request===viewRequest.current)applySnapshot(snapshot);} catch(error){if(request===viewRequest.current)setNodeError(error.message);} finally {if(request===viewRequest.current)setLoading(false);}
   };
-  const openCatalogCase=async(chatId,caseId)=>{const request=++viewRequest.current;const url=new URL(location.href);url.searchParams.delete('page');url.searchParams.delete('draftTable');url.searchParams.set('chatId',chatId);url.searchParams.set('caseId',caseId);history.replaceState(null,'',url);setPage('chat');setDataSetId(null);setModal(null);setLoading(true);try{const snapshot=await liveSnapshot(chatId,caseId);if(request===viewRequest.current)applySnapshot(snapshot);}catch(error){if(request===viewRequest.current)setNodeError(error.message);}finally{if(request===viewRequest.current)setLoading(false);}};
+  const openCatalogCase=async(chatId,caseId)=>{streamController.current?.abort();setStreamReply(null);const request=++viewRequest.current;const url=new URL(location.href);url.searchParams.delete('page');url.searchParams.delete('draftTable');url.searchParams.set('chatId',chatId);url.searchParams.set('caseId',caseId);history.replaceState(null,'',url);setPage('chat');setDataSetId(null);setModal(null);setLoading(true);try{const snapshot=await liveSnapshot(chatId,caseId);if(request===viewRequest.current)applySnapshot(snapshot);}catch(error){if(request===viewRequest.current)setNodeError(error.message);}finally{if(request===viewRequest.current)setLoading(false);}};
   const toggleSet = id => setState(value => ({...value, sets: value.sets.map(set => set.id === id ? {...set, expanded: !set.expanded} : set)}));
   const submitFirstNode = async (text, action=discussionAction({text,waiting:state.workflow?.waiting,messages}),sentImages=[],originalInput=text) => {
     if (running || loading || ((completed || projectReadOnly) && !newConversation)) return;
     const request=viewRequest.current;
+    const controller=new AbortController();streamController.current=controller;setStreamReply(null);
     setRetryOriginalInput(originalInput);setRunning(true); setNodeError('');setNodeErrorCode(''); setRetryInput(text);setRetryImages(sentImages); setRetryAction(action); setActiveAction(action);
     pendingScroll.current = true;
     try {
@@ -213,14 +219,19 @@ export function CaseWorkbench({accountControl}) {
       const before=await requestCase(path+'/workflow');
       if(!before.waiting?.includes(action))throw new Error('当前流程不支持此操作，请刷新后查看当前步骤。');
       if(action==='PROPOSE_PLAN' && messages.filter(m=>m.role==='assistant').length<2)throw new Error('请先完成两轮讨论，再整理方案。');
-      await requestCase(path+(action==='PROPOSE_PLAN'?'/plan':'/discussion'),{userInput:text,...(sentImages.length?{images:sentImages}:{})});
+      await requestCaseStream(path+(action==='PROPOSE_PLAN'?'/plan':'/discussion'),{userInput:text,...(sentImages.length?{images:sentImages}:{})},{signal:controller.signal,onDelta:delta=>{
+        if(request===viewRequest.current)setStreamReply(value=>({caseId,text:(value?.caseId===caseId?value.text:'')+delta}));
+      }});
+      if(request===viewRequest.current)setStreamReply(null);
       await requestCase(path+'/workflow/resume',{eventId:crypto.randomUUID(),expectedStage:before.stage});
       const snapshot=await liveSnapshot(chatId,caseId);
       if(request===viewRequest.current)applySnapshot(snapshot);
+      if(request===viewRequest.current)setStreamReply(null);
       setImageDrafts(v=>({...v,[draftKey]:[],[caseId]:[]}));
       setState(value=>({...value,drafts:{...value.drafts,[draftKey]:'',[caseId]:''},quotes:{...value.quotes,[draftKey]:'',[caseId]:''}}));
     } catch(error) {
       if(request===viewRequest.current) {
+        setStreamReply(value=>value?{...value,failed:true}:value);
         setNodeError(error.message);setNodeErrorCode(error.code||'');
         try {const snapshot=await firstNodeRequest('state');if(request===viewRequest.current)applySnapshot(snapshot);} catch { /* Keep the original input available for retry. */ }
         if(request===viewRequest.current) {
@@ -282,6 +293,7 @@ export function CaseWorkbench({accountControl}) {
     }
   };
   const openNewConversation = projectId => {
+    streamController.current?.abort();setStreamReply(null);
     ++viewRequest.current;
     const url=new URL(location.href);url.searchParams.delete('page');url.searchParams.delete('draftTable');url.searchParams.delete('caseId');if(projectId)url.searchParams.set('chatId',projectId);else url.searchParams.delete('chatId');history.replaceState(null,'',url);
     setPage('chat'); setNewProjectId(projectId); setNewConversation(true); setDataSetId(null); setModal(null); setNotice('');

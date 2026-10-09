@@ -1,4 +1,19 @@
 import {accountStorageOwner} from './account-storage.js';
+import {readCaseEventStream} from './case-event-stream.js';
+export async function requestCaseStream(path,body,{onDelta,signal}={}) {
+  const owner=accountStorageOwner();
+  const response=await fetch('/live-api'+path,{method:'POST',credentials:'same-origin',cache:'no-store',signal,
+    headers:{'Content-Type':'application/json',Accept:'text/event-stream',...(owner?{'X-Case-Account':owner}:{})},body:JSON.stringify(body)});
+  const checkOwner=()=>{if(owner!==accountStorageOwner())throw Object.assign(new Error('账户已切换，请重新连接'),{status:409,code:'ACCOUNT_CHANGED'});};
+  checkOwner();
+  if(!response.ok){
+    const value=await response.json();
+    if(response.status===401||value.error==='ACCOUNT_CHANGED')window.dispatchEvent(new Event('case-session-expired'));
+    throw Object.assign(new Error(value.message||value.error||'请求失败'),{status:response.status,code:value.error});
+  }
+  if(!response.headers.get('content-type')?.includes('text/event-stream'))throw new Error('服务器没有返回流式回复');
+  return readCaseEventStream(response.body,(event,value)=>{checkOwner();if(event==='delta')onDelta?.(value.text);});
+}
 export async function requestCase(path, body) {
   const owner=accountStorageOwner();
   const response = await fetch('/live-api'+path, {method:body===undefined?'GET':'POST',credentials:'same-origin',cache:'no-store',headers:{...(body===undefined?{}:{'Content-Type':'application/json'}),...(!['/auth/me','/auth/login','/auth/register','/auth/demo'].includes(path)&&owner?{'X-Case-Account':owner}:{})},body:body===undefined?undefined:JSON.stringify(body)});
