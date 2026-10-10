@@ -20,6 +20,7 @@ test('stale and locked prepared plans cannot be edited',async()=>{
   }
 });
 test('invalid formats and customer references are rejected before saving',async()=>{
+  await assert.rejects(call({}, {versionNumber:4,dataSpecification:{...data,customers:[{name:'模拟客户/227',investorType:'1',simulatedBalance:'100.00'}]}}),{code:'DATA_EDIT_INVALID'});
   await assert.rejects(call({}, {versionNumber:4,dataSpecification:{...data,customers:[{name:'Test',investorType:'1',simulatedBalance:'100'}]}}),{code:'DATA_EDIT_INVALID'});
   await assert.rejects(call({getLatestSopProposal:async()=>({versionNumber:4,status:'PENDING_CONFIRMATION',proposal})},{versionNumber:4,dataSpecification:{...data,accounts:[{customerIndex:99,branchCode:'0001'}]}}),{code:'DATA_EDIT_INVALID'});
 });

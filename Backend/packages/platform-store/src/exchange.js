@@ -1,3 +1,4 @@
+import {isPersonalName} from '../../case-agent/src/simulated-customer-policy.js';
 import {channelDeliveryProfile} from './delivery-profile.js';
 import {buildDeliveryPackage, deliveryDataFileName, normalizeDeliveryProfile} from '../../platform-protocol/src/delivery-package.js';
 import {readOperationFacts} from './operation-facts.js';
@@ -37,6 +38,13 @@ function validSnapshot(fileType, record, version, channel, businessDate, unassig
     || !/^\d{3}$/.test(record.BusinessCode || '')
     || String(record.DistributorCode || '') !== String(channel.distributor_code)) {
     throw storeError('INVALID_APPLICATION', 400, '申请号、业务代码或销售机构不一致');
+  }
+  if ((record.BranchCode && record.BranchCode !== channel.distributor_code) ||
+      (record.TargetBranchCode && record.TargetBranchCode !== (record.TargetDistributorCode || channel.distributor_code))) {
+    throw storeError('INVALID_APPLICATION',400,'销售商级网点代码必须等于对应销售商代码');
+  }
+  if (fileType === '01' && String(record.IndividualOrInstitution) === '1' && !isPersonalName(record.InvestorName)) {
+    throw storeError('INVALID_APPLICATION',400,'模拟个人姓名必须是正常的三个汉字姓名');
   }
   const requirements = FIELD_REQUIREMENTS[fileType];
   const byBusiness = requirements.requiredByBusiness[record.BusinessCode];
@@ -174,7 +182,7 @@ export function createExchangeRepository({ transaction }) {
           WHERE r.workspace_id=? AND r.chat_id=? AND r.case_id=? AND r.channel_id=? AND sc.transaction_account_id=? FOR UPDATE`,
         [auth.workspace_id,scope.chat_id,scope.case_id,scope.channel_id,record.TransactionAccountID]);
       }
-      if (!sourceAccount || (record.BranchCode && sourceAccount.branch_code !== record.BranchCode) ||
+      if (!sourceAccount || (record.BranchCode && scope.distributor_code !== record.BranchCode) ||
           (record.IndividualOrInstitution &&
             sourceAccount.investor_type !== record.IndividualOrInstitution) ||
           (fileType === '01' && (sourceAccount.name !== record.InvestorName ||

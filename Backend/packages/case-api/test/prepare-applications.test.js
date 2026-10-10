@@ -16,7 +16,7 @@ function fixture({ intents = [opening, trade], confirmed = true, failOnce = fals
   let saved = { phase: 'NOT_STARTED', revision: 0, intents: [], turns: [], stagedKeys: [], files: [] };
   const applications = [], files = [], bindings = [], calls = [];
   const repository = { generatedData: async () => ({ reviewStatus: confirmed ? 'CONFIRMED' : 'PENDING_REVIEW',
-    planVersionId: '5', customers: [{ id: '1', name: '测试客户', investor_type: '1' }],
+    planVersionId: '5', customers: [{ id: '1', name: '陈思远', investor_type: '1' }],
     accounts: [{ id: '2', customer_id: '1', account_no: 'TESTACCOUNT1', branch_code: '306' }],
     funds: [{ id: '3', fund_code: '000001', share_class: 'A' }], holdings: [] }),
   getLatestSopProposal: async () => ({ status: 'LOCKED', proposal: strictPlan ?? { objective: '开户后申购' } }) };
