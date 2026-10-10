@@ -1,5 +1,11 @@
 # 项目版本与工作树索引
 
+## 5199 模拟个人姓名与销售商级网点硬规则（2026-10-10，本地待验收）
+
+独立功能树`/Users/apple/.codex/worktrees/ta-customer-channel-rules/gf`、分支`codex/ta-customer-channel-rules`，从实时核实的platform-integration/33ea7d08建立。44966298实现模拟个人正常三字姓名、01/03网点等于实际所选销售商并保留前导零、X1/X3继承一致字段及最终申请入库校验；不覆写历史已确认数据或文件。姓名在方案审阅前构造，人工编辑不合规值明确拒绝；网点由通道填写，不沿用AI添加的001后缀。当前测试环境规则与中登通用协议分开记录。
+
+代码已本机合入统一入口`codex/platform-integration`（集成efc9a8ef），Frontend5199/PID23319、API3106/PID23318仍从统一树运行，数据库ta_case_agent_chain不变。HTTP5199为200、API未登录401正常。后端444通过、0失败、21项MySQL专项按开关跳过；真实Sophnet DeepSeek-V4-Pro-0813个人草稿姓名陈思远，227/305/926/005四种通道实际生成并解包ZIP验证01/03/X1销售商和网点一致、OFI顺序与新账户原申请引用保留。未导入外部TA，不代表TA导入验收成功；本轮不改OFG策略。功能树.context/customer-policy保存合成样例与测试证据，说明docs/模拟个人姓名与销售商网点规则.md。无push/PR。
+
 ## 当前统一平台集成入口（2026-10-09，本地已验证，待用户验收）
 
 按用户“后端更新都合并到一个分支，否则看不到”的要求，最新 Case／Agent 平台统一使用 `codex/platform-integration`，工作树 `/Users/apple/.codex/worktrees/platform-integration/gf`，验收 http://127.0.0.1:5199/?theme=liquid 。Frontend5199/PID81833 与 API3106/PID81832 均从此树运行，数据库继续 `ta_case_agent_chain`。本条覆盖下方分散的5199前后端入口、5204流式候选及5197“唯一最新”的旧基线说法；5197/3104和5204/3111暂留原进程作历史核对，不作为后续最新开发入口。操作前重新核对Git/lsof。
