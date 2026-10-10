@@ -60,6 +60,14 @@ function fixture({ existing, sameBytes, returnItem, application, batchApplicatio
   return { calls, repository: createExchangeRepository({ transaction: action => action(db) }) };
 }
 
+test('staging enforces channel branch policy even when old draft has a suffixed branch', async () => {
+  const {repository}=fixture({sourceAccount:{id:1,branch_code:'306001',name:'Alice',investor_type:'0'}});
+  const stage=r=>repository.stageApplication(token,{chatPublicId,casePublicId,sopVersionId:'61',channelId:'71',businessDate:'20261003',fileType:'01',record:r});
+  await stage(record);
+  await assert.rejects(stage({...record,BranchCode:'306001'}),{code:'INVALID_APPLICATION'});
+  await assert.rejects(stage({...record,IndividualOrInstitution:'1',InvestorName:'模拟客户/306'}),{code:'INVALID_APPLICATION'});
+});
+
 test('stages an encoded 01 snapshot under a locked SOP and server-side scope', async () => {
   const { repository, calls } = fixture();
   const result = await repository.stageApplication(token, {

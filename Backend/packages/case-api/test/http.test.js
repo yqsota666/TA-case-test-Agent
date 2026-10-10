@@ -247,7 +247,7 @@ test('review input survives split UTF-8 chunks and larger table edits fit the re
   assert.equal(calls.at(-1)[1].userInput, '修改客户余额');
 
   const manyCustomers = Array.from({ length: 50 }, (_, index) => ({ id: null,
-    name: `模拟客户${index}${'甲'.repeat(100)}`, investorType: '1', simulatedBalance: '100.00',
+    name: `模拟机构${index}${'甲'.repeat(100)}`, investorType: '0', simulatedBalance: '100.00',
     branchCode: '305' }));
   const edit = { revision: 0, changes: { customers: manyCustomers,
     accounts: [], funds: [], holdings: [] } };
