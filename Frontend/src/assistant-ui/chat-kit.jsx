@@ -6,6 +6,7 @@ import remarkGfm from 'remark-gfm';
 import {ArrowUp, Check, Copy, LoaderCircle} from 'lucide-react';
 import {formatDuration} from '../message-body.jsx';
 import './chat-kit.css';
+import {useVoiceInput,VoiceControls,VoiceFeedback} from './voice-input.jsx';
 
 // Adapted from assistant-ui's MIT Thread and MarkdownText elements; see docs/assistant-ui接入验收.md.
 export function Thread({children, ...props}) {
@@ -86,11 +87,17 @@ export function ChatMessage({message, text, children, onQuote}) {
     {!user && <MessageActions text={content} durationMs={message.durationMs} createdAt={message.createdAt}/>}
   </article></MessagePrimitive.Root>;
 }
-export const Composer = forwardRef(function Composer({value, onChange, onPaste, onImageSend, hasImages=false, disabled=false, replying=false}, ref) {
-  return <ComposerPrimitive.Root className="cw-composer aui-composer" data-slot="aui-composer">
+export const Composer = forwardRef(function Composer({value, onChange, onPaste, onImageSend, hasImages=false, disabled=false, replying=false,voiceEnabled=true}, ref) {
+  const input=useRef(null);
+  const voice=useVoiceInput({value,onChange,disabled:disabled||replying,enabled:voiceEnabled,inputRef:input});
+  const setInput=node=>{input.current=node;if(typeof ref==='function')ref(node);else if(ref)ref.current=node;};
+  return <ComposerPrimitive.Root className="cw-composer aui-composer" data-slot="aui-composer" data-voice-active={voice.active}
+    onSubmitCapture={event=>{if(voice.active){event.preventDefault();event.stopPropagation();}}}
+    onKeyDownCapture={event=>{if(voice.active && event.key==='Escape'){event.preventDefault();event.stopPropagation();voice.cancel();}else if(voice.active && event.key==='Enter' && event.target.tagName==='TEXTAREA'){event.preventDefault();event.stopPropagation();}}}>
     <label className="cw-sr-only" htmlFor="cw-message">输入消息</label>
-    <ComposerPrimitive.Input id="cw-message" ref={ref} value={value} onChange={onChange} onPaste={onPaste} onKeyDown={event=>{if(hasImages&&!value.trim()&&event.key==='Enter'&&!event.shiftKey&&!event.nativeEvent.isComposing&&event.keyCode!==229){event.preventDefault();if(!disabled)onImageSend?.();}}} placeholder="输入消息…"
+    <ComposerPrimitive.Input id="cw-message" ref={setInput} value={value} readOnly={voice.active} onChange={onChange} onPaste={voice.active?event=>event.preventDefault():onPaste} onKeyDown={event=>{if(hasImages&&!value.trim()&&event.key==='Enter'&&!event.shiftKey&&!event.nativeEvent.isComposing&&event.keyCode!==229){event.preventDefault();if(!disabled)onImageSend?.();}}} placeholder="输入消息…"
       rows={1} maxRows={7} cancelOnEscape={false} addAttachmentOnPaste={false} enterKeyHint="send"/>
-    <div className="aui-composer-toolbar">{replying?<button type="button" className="cw-send aui-composer-send is-replying" aria-label="正在输入…" title="正在输入…" disabled aria-busy="true"><LoaderCircle size={20}/></button>:hasImages?<button type="button" className="cw-send aui-composer-send" aria-label="发送消息" disabled={disabled} onClick={onImageSend}><ArrowUp size={20}/></button>:<ComposerPrimitive.Send className="cw-send aui-composer-send" aria-label="发送消息" title="发送消息"><ArrowUp size={20}/></ComposerPrimitive.Send>}</div>
+    <VoiceFeedback voice={voice}/>
+    <div className="aui-composer-toolbar"><VoiceControls voice={voice} disabled={disabled||replying}/>{!voice.active && (replying?<button type="button" className="cw-send aui-composer-send is-replying" aria-label="正在输入…" title="正在输入…" disabled aria-busy="true"><LoaderCircle size={20}/></button>:hasImages?<button type="button" className="cw-send aui-composer-send" aria-label="发送消息" disabled={disabled} onClick={onImageSend}><ArrowUp size={20}/></button>:<ComposerPrimitive.Send className="cw-send aui-composer-send" disabled={disabled} aria-label="发送消息" title="发送消息"><ArrowUp size={20}/></ComposerPrimitive.Send>)}</div>
   </ComposerPrimitive.Root>;
 });

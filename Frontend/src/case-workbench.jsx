@@ -390,7 +390,7 @@ export function CaseWorkbench({accountControl}) {
         <MessageImages images={images} onRemove={index=>setImageDrafts(v=>({...v,[draftKey]:(v[draftKey]||[]).filter((_,i)=>i!==index)}))} onOpen={image=>setModal({type:'image',image})} disabled={inputDisabled||readingImages}/>
         {newConversation && <div className="cw-project-bar"><button type="button" className="cw-project-picker" onClick={()=>openNewConversation(newProjectId)}>{state.sets.some(project=>project.status==='ACTIVE')?'创建Case':'创建项目'}</button></div>}
         <input ref={imageInput} type="file" hidden accept="image/png,image/jpeg,image/webp,image/gif" multiple onChange={event=>{addImages(event.target.files);event.target.value='';}}/>
-        <Composer ref={composer} value={draft} hasImages={images.length>0} disabled={inputDisabled||readingImages} replying={running||!!state.pending}
+        <Composer ref={composer} value={draft} voiceEnabled={page==='chat'&&!dataSetId} hasImages={images.length>0} disabled={inputDisabled||readingImages} replying={running||!!state.pending}
           onImageSend={()=>sendComposer(draft.trim()||(quote?'':'请解析图片内容。'))}
           onPaste={event=>{const files=Array.from(event.clipboardData.items).filter(i=>i.kind==='file'&&i.type.startsWith('image/')).map(i=>i.getAsFile()).filter(Boolean);if(files.length){event.preventDefault();addImages(files);}}}
           onChange={event=>setState(value=>({...value,drafts:{...value.drafts,[draftKey]:event.target.value}}))}/>
