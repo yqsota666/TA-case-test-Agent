@@ -4,7 +4,7 @@ import {mkdirSync,writeFileSync,readFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {cases} from './cases.mjs';
 import {route} from './router.mjs';
-import {discussionAction} from '../../../Frontend/src/discussion-actions.js';
+import {discussionAction} from './baseline.mjs';
 import {createPersistedDiscussionService} from '../../packages/case-agent/src/persisted-discussion.js';
 import {createSophnetCompletion} from '../../packages/case-agent/src/sophnet.js';
 import {loadFundMarketDefaults,withFundMarketDefaults} from '../../packages/case-agent/src/fund-market-defaults.js';

@@ -3,7 +3,7 @@ import {mkdirSync,writeFileSync,readFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {route} from './router.mjs';
 import {cases} from './cases.mjs';
-import {discussionAction} from '../../../Frontend/src/discussion-actions.js';
+import {discussionAction} from './baseline.mjs';
 
 const output=fileURLToPath(new URL('../../../.context/intent-routing/',import.meta.url));
 mkdirSync(output,{recursive:true});
