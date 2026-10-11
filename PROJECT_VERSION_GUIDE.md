@@ -1,5 +1,11 @@
 # 项目版本与工作树索引
 
+## 工作台独立滚动修复（2026-10-11，已接入5199）
+
+按用户本地验收后“可以直接合”的授权，`codex/fixed-workspace-scroll` 从统一平台89183224开发，两轮独立senior-staff-engineer审查及修复完成，代码提交b62247a0已快进收拢至`codex/platform-integration`。当前入口仍为 http://127.0.0.1:5199/?theme=liquid ，工作树 `/Users/apple/.codex/worktrees/platform-integration/gf`；前端5199热更新，原API3106及数据库不变，无后端重启或迁移。操作前核对实时Git/lsof。
+
+外框固定动态视口，消息、左栏和右栏独立滚动，输入区留底；长输入/四附件和260px极矮窗口入口可达。保留现有布局材质及业务确认。5199六种尺寸浏览器回归、32项前端单测及构建通过；另3项旧SSR测试在原基线同样失败，未混入修复。未调用模型、修改Case、确认/生成/投递TA、push或创建PR。独立5210预览已停止。说明 `docs/工作台独立滚动修复.md`。
+
 ## 5199 模拟个人姓名与销售商级网点硬规则（2026-10-10，本地待验收）
 
 独立功能树`/Users/apple/.codex/worktrees/ta-customer-channel-rules/gf`、分支`codex/ta-customer-channel-rules`，从实时核实的platform-integration/33ea7d08建立。44966298实现模拟个人正常三字姓名、01/03网点等于实际所选销售商并保留前导零、X1/X3继承一致字段及最终申请入库校验；不覆写历史已确认数据或文件。姓名在方案审阅前构造，人工编辑不合规值明确拒绝；网点由通道填写，不沿用AI添加的001后缀。当前测试环境规则与中登通用协议分开记录。
