@@ -8,6 +8,7 @@ import '../src/defense-themes.css';
 import '../src/message-body.css';
 import '../src/spectral-components.css';
 import '../src/compact-workbench.css';
+import '../src/liquid-home.css';
 
 const params = new URLSearchParams(location.search);
 setAccountStorageOwner('assistant-ui-fixture');
