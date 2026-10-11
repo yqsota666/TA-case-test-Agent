@@ -55,11 +55,12 @@ test('a plan request yields a reviewable proposal without locking it', async () 
   assert.equal('proposal' in correction, false);
 });
 
-test('proposal guard and structural format reject premature or unsafe output', async () => {
+test('proposal accepts first-message requests while rejecting unsafe structure', async () => {
   let called = false;
   const graph = createDiscussionGraph({ complete: async () => { called = true; return JSON.stringify(proposal); } });
-  await assert.rejects(proposeDiscussionPlan(graph, { priorTurns: [], userInput: '生成 Plan' }));
-  assert.equal(called, false);
+  const first=await proposeDiscussionPlan(graph, { priorTurns: [], userInput: '生成 Plan，03日期20261006，04日期20261007' });
+  assert.equal(first.proposal.exchangePlan.status,'READY');
+  assert.equal(called, true);
   assert.deepEqual(parsePlanProposal(JSON.stringify(proposal)), proposal);
   assert.throws(() => parsePlanProposal('```json\n' + JSON.stringify(proposal) + '\n```'), { code: 'MODEL_OUTPUT_FORMAT' });
   assert.throws(() => parsePlanProposal(JSON.stringify({ ...proposal, scenarios: [] })), { code: 'MODEL_OUTPUT_FORMAT' });

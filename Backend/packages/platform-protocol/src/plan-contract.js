@@ -35,7 +35,13 @@ export function planContractValidationIssues(c,plan) {
     const allowed=new Set(fieldsForFile(c.protocolVersion,step.fileType).map(f=>f.name));
     return Object.keys(a.fields).filter(k=>owned.has(k)||!allowed.has(k)).map(k=>`${a.key} fields.${k}属于系统字段或不属于${step.fileType}协议，必须由系统填充或移出该申请`);
   });
-  return [...forbidden,
+  const bindings=c.expectations.flatMap((a,i)=>{
+    if(!a || typeof a.expectedQuote!=='string' || typeof a.expectedValue!=='string')return [`expectations[${i}]缺少原文或预期值`];
+    const numeric=['confirmedAmount','confirmedVolume','totalVolume','availableVolume','frozenVolume'].includes(a.field);
+    const bound=numeric?hasNumericFieldExpectation(a.field,a.expectedValue,a.expectedQuote,a.operator):hasLiteralExpectation(a.expectedValue,a.expectedQuote,a.field);
+    return bound?[]:[`expectations[${i}].expectedQuote未明确支持${a.field}=${a.expectedValue}。按原Plan重新绑定对应结果字段；申请输入不能当作回传确认值，业务预期应完整保留而非伪造协议断言。`];
+  });
+  return [...forbidden,...bindings,
     !validApplications(c,c.dataSpecification,plan)&&'申请字段、发送步骤或账户基金引用无效',
     ...(c.version>=3?operationChainIssues(c,plan):[]),
     !validExpectations(c,c.dataSpecification,plan)&&'预期原文、字段值或证据绑定无效'].filter(Boolean);

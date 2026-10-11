@@ -22,3 +22,13 @@ export function consolidateExchangePlan(plan) {
   if(!removed.size)return plan;
   return {...plan,steps:steps.filter(s=>!removed.has(s.stepId)).map(s=>({...s,dependsOn:dependencies(s)}))};
 }
+
+// Same-package file order belongs to OFI, not a second platform submission.
+// Only an explicit 01 -> 03 SENT edge in the same round and exact DATE is equivalent.
+export function compilePackageFileOrder(plan) {
+  if(plan?.status!=='READY')return plan;
+  return {...plan,steps:plan.steps.map(step=>({...step,dependsOn:step.dependsOn.filter(dep=>{
+    const parent=plan.steps.find(s=>s.stepId===dep.stepId);
+    return !(step.direction==='SEND'&&step.fileType==='03'&&dep.condition==='SENT'&&parent?.direction==='SEND'&&parent.fileType==='01'&&parent.roundId===step.roundId&&parent.businessTime.kind==='DATE'&&step.businessTime.kind==='DATE'&&parent.businessTime.value===step.businessTime.value);
+  })}))};
+}
