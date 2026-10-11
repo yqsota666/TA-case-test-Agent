@@ -14,3 +14,13 @@ test('Sophnet tool response uses quota governance and carries cancellation witho
  assert.deepEqual(await complete({system:'route',user:'input',tools,maxTokens:512,signal:controller.signal}),message);
  assert.deepEqual(payload.tools,tools);assert.equal(payload.max_tokens,512);assert.ok(governed.messages.at(-1).content.includes('route_action'));
 });
+test('a quoted null from the provider is repaired once without accepting malformed parameters',async()=>{
+ let calls=0;
+ const result=await decideDiscussionAction(async request=>{
+  calls++;
+  assert.deepEqual(request.toolChoice,{type:'function',function:{name:'route_action'}});
+  if(calls===2)assert.equal(JSON.parse(request.user).previousDecision.tool_calls.length,1);
+  return {tool_calls:[{function:{name:'route_action',arguments:JSON.stringify({intent:'DISCUSS',needsClarification:false,reason:'讨论调整份额',nextAction:calls===1?'null':null})}}]};
+ },context);
+ assert.equal(calls,2);assert.equal(result.nextAction,null);assert.equal(result.intent,'DISCUSS');
+});

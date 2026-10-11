@@ -9,12 +9,15 @@ export const ROUTING_POLICY = `你是测试平台的动作路由器，负责理�
 
 const parameters={type:'object',additionalProperties:false,properties:{intent:{type:'string',enum:['DISCUSS','PROPOSE_PLAN']},needsClarification:{type:'boolean'},reason:{type:'string'},nextAction:{type:['string','null'],enum:['PROPOSE_PLAN',null]}},required:['intent','needsClarification','reason','nextAction']};
 export async function decideDiscussionAction(complete,context,{signal}={}) {
-  const message=await complete({system:ROUTING_POLICY+'只能调用一次route_action提交决策。pendingNextAction是系统保存的待办建议，不代表本轮授权；最新取消、修改及限定优先。',user:JSON.stringify(context),thinkingMode:'disabled',maxTokens:512,signal,
+  let previousDecision;
+  for(let attempt=0;attempt<2;attempt++){
+  const message=await complete({system:ROUTING_POLICY+'只能调用一次route_action提交决策。nextAction为空时使用JSON null，不得写成字符串"null"。needsClarification=true时intent必须是DISCUSS且nextAction必须为null。pendingNextAction是系统保存的待办建议，不代表本轮授权；最新取消、修改及限定优先。',user:JSON.stringify(attempt?{context,previousDecision,repairInstruction:'上次工具参数未通过校验。按照工具schema修正类型、字段和动作白名单；保持本轮用户意图，不增加确认或执行动作。'}:context),thinkingMode:'disabled',maxTokens:512,signal,toolChoice:{type:'function',function:{name:'route_action'}},
     tools:[{type:'function',function:{name:'route_action',description:'选择讨论或整理审阅草稿，不执行确认或交易',parameters}}]});
   const calls=message?.tool_calls;
   let value;
   try{if(calls?.length===1&&calls[0].function?.name==='route_action')value=JSON.parse(calls[0].function.arguments);}catch{}
-  if(!value || Object.keys(value).sort().join(',')!=='intent,needsClarification,nextAction,reason' || !context.allowedActions.includes(value.intent) || typeof value.needsClarification!=='boolean' || typeof value.reason!=='string' || !value.reason.trim() || value.reason.length>160 || ![null,'PROPOSE_PLAN'].includes(value.nextAction) || value.intent==='PROPOSE_PLAN'&&value.needsClarification || value.needsClarification&&value.nextAction!==null)
-    throw Object.assign(new Error('未能确定本轮操作，请重试；也可点击整理为审阅方案'),{code:'ACTION_DECISION_INVALID',status:502});
+  if(!value || Object.keys(value).sort().join(',')!=='intent,needsClarification,nextAction,reason' || !context.allowedActions.includes(value.intent) || typeof value.needsClarification!=='boolean' || typeof value.reason!=='string' || !value.reason.trim() || value.reason.length>160 || ![null,'PROPOSE_PLAN'].includes(value.nextAction) || value.intent==='PROPOSE_PLAN'&&value.needsClarification || value.needsClarification&&value.nextAction!==null){previousDecision=message;continue;}
   return value;
+  }
+  throw Object.assign(new Error('未能确定本轮操作，请重试；也可点击整理为审阅方案'),{code:'ACTION_DECISION_INVALID',status:502});
 }
