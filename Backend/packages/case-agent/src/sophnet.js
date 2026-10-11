@@ -1,3 +1,4 @@
+import {setTimeout as delay} from 'node:timers/promises';
 import OpenAI from 'openai';
 
 export function createSophnetCompletion({
@@ -8,12 +9,13 @@ export function createSophnetCompletion({
 } = {}) {
   if (!client && !apiKey) throw new Error('SOPHNET_API_KEY is required');
   const sdk = client ?? new OpenAI({ apiKey, baseURL, maxRetries: 0, timeout: 90000 });
-  return async ({ system, user, messages, reasoningEffort, thinkingMode, maxTokens, onDelta, signal }) => {
+  return async ({ system, user, messages, reasoningEffort, thinkingMode, maxTokens, onDelta, signal, tools, toolChoice }) => {
     if ((user === undefined) === (messages === undefined)) {
       throw new TypeError('provide either user or messages');
     }
     if(reasoningEffort!==undefined && !['low','high','max'].includes(reasoningEffort))throw new TypeError('invalid reasoningEffort');
     if(thinkingMode!==undefined && !['enabled','disabled'].includes(thinkingMode))throw new TypeError('invalid thinkingMode');
+    if(tools && onDelta)throw new TypeError('tool decisions cannot stream text');
     const outputLimit=maxTokens??defaultMaxTokens;
     if(outputLimit!==undefined && (!Number.isSafeInteger(outputLimit)||outputLimit<1))throw new TypeError('invalid maxTokens');
     const limitedTokens=defaultMaxTokens===undefined?outputLimit:Math.min(outputLimit,defaultMaxTokens);
@@ -24,6 +26,7 @@ export function createSophnetCompletion({
       ...(thinkingMode===undefined?{}:{thinking:{type:thinkingMode}}),
       ...(reasoningEffort===undefined?{}:{reasoning_effort:reasoningEffort}),
       model,
+      ...(tools?{tools,tool_choice:toolChoice??'auto'}:{}),
       ...(limitedTokens===undefined?{}:{max_tokens:limitedTokens}),
       messages:providerMessages,
       ...(onDelta?{stream:true,stream_options:{include_usage:true}}:{}),
@@ -50,11 +53,21 @@ export function createSophnetCompletion({
       }else{
         code='MODEL_UNAVAILABLE';status=503;message='模型服务响应异常，请重试同一待完成回合';
       }
-      throw Object.assign(new Error(message),{code,status});
+      throw Object.assign(new Error(message),{code,status,...(error.status===429?{retryable:true}:{})});
     }
     return response;
     };
-    const response=govern?await govern({model,messages:providerMessages,maxTokens:limitedTokens,invoke}):await invoke();
+    const governedMessages=tools?[...providerMessages,{role:'system',content:JSON.stringify(tools)}]:providerMessages;
+    let response;
+    for(let attempt=0;attempt<2;attempt++){
+      try{response=govern?await govern({model,messages:governedMessages,maxTokens:limitedTokens,invoke}):await invoke();break;}
+      catch(error){
+        if(attempt || !error.retryable || signal?.aborted)throw error;
+        try{await delay(1500,undefined,{signal});}
+        catch{throw Object.assign(new Error('回复已中断，请重试原输入'),{code:'MODEL_CANCELLED',status:499});}
+      }
+    }
+    if(tools)return response.choices?.[0]?.message;
     const content = response.choices?.[0]?.message?.content;
     if (typeof content !== 'string') {
       const error = new Error('模型没有返回文本');
