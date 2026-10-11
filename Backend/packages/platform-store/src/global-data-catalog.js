@@ -1,6 +1,7 @@
 import {authenticateSession,storeError} from './index.js';
 import {createDistributorConfig} from './distributor-config.js';
 import {channelDeliveryProfile} from './delivery-profile.js';
+import {dataQueryFields,publicQueryFields,compileCatalogQuery,extraCatalogOptions,catalogSuggestions} from './catalog-query.js';
 const fields={name:'客户名称',investor_type:'客户类型',simulated_balance:'模拟余额',account_no:'交易账号',branch_code:'网点代码',customer_name:'客户名称',fund_code:'基金代码',fund_name:'基金名称',share_class:'份额类别',nav:'单位净值',total_volume:'总份额',available_volume:'可用份额',frozen_volume:'冻结份额',snapshot_date:'余额日期',ta_account_id:'TA账号',certificate_type:'证件类型',certificate_no:'证件号码',channel_name:'交换通道',business_date:'业务日期',file_type:'文件类型',business_code:'业务代码',app_no:'申请编号',status:'申请状态',created_at:'生成时间'};
 export {protocolColumnLabels as protocolLabels} from './protocol-column-labels.js';
 import {protocolColumnLabels as protocolLabels} from './protocol-column-labels.js';
@@ -12,7 +13,7 @@ export function catalogOptions(input={}){
  const table=input.table??'customers',source=input.source??'draft',q=String(input.q??'').trim();
  const offset=Number(input.offset??0),limit=Number(input.limit??100);
  if(!(Object.hasOwn(draft,table)||table==='distributors')||!['draft','formal'].includes(source)||q.length>200||!Number.isSafeInteger(offset)||offset<0||offset>1000000||!Number.isSafeInteger(limit)||limit<1||limit>200)throw storeError('INVALID_CATALOG_QUERY',400,'查询条件无效');
- return {table,source,q,offset,limit};
+ return {table,source,q,offset,limit,...extraCatalogOptions(input)};
 }
 export function catalogProjectionColumns(query){
  const parts=[];let depth=0,quote=null,start=query.toUpperCase().indexOf('SELECT')+6;
@@ -27,38 +28,47 @@ export function catalogProjectionColumns(query){
  return new Set(parts.map(part=>/\sAS\s+([a-z_]+)\s*$/i.exec(part)?.[1]??/^\s*\w+\.([a-z_]+)\s*$/i.exec(part)?.[1]).filter(Boolean));
 }
 export function createGlobalDataCatalog({transaction}){
- return {...createDistributorConfig({transaction}),async listTable(token,input){const {table,source,q,offset,limit}=catalogOptions(input);return transaction(async db=>{
+ return {...createDistributorConfig({transaction}),async listTable(token,input){const options=catalogOptions(input),{table,source,q,offset,limit}=options;return transaction(async db=>{
   const auth=await authenticateSession(db,token);
   if(table==='distributors'){
     const columns=[['distributor_code','销售商代码'],['channel_name','销售商名称'],['ta_code','TA 代码'],['protocol_version','文件格式'],['ta_environment','环境']].map(([key,label])=>({key,label}));
-    const pattern='%'+q.replace(/[\\%_]/g,'\\$&')+'%';
-    const filter=q?' AND ('+columns.map(({key})=>`t.\`${key}\` LIKE ?`).join(' OR ')+')':'';
-    const values=[auth.workspace_id,...(q?columns.map(()=>pattern):[])];
-    const [[count]]=await db.execute(`SELECT COUNT(*) AS total FROM exchange_channels t WHERE t.workspace_id=?${filter}`,values);
-    const [rows]=await db.execute(`SELECT t.id,t.distributor_code,t.channel_name,t.ta_code,t.protocol_version,t.ta_environment,p.profile_json
+    const queryFields=dataQueryFields(table,new Set(columns.map(c=>c.key)));
+    const compiled=compileCatalogQuery(options,queryFields,{defaultOrder:'v.distributor_code,v.ta_code,v.id'});
+    const values=[auth.workspace_id,...compiled.values];
+    const base=`SELECT t.id,t.distributor_code,t.channel_name,t.ta_code,t.protocol_version,t.ta_environment,p.profile_json
       FROM exchange_channels t LEFT JOIN exchange_delivery_profiles p ON p.workspace_id=t.workspace_id AND p.channel_id=t.id
-      WHERE t.workspace_id=?${filter} ORDER BY t.distributor_code,t.ta_code,t.id LIMIT ${limit} OFFSET ${offset}`,values);
+      WHERE t.workspace_id=?`;
+    const query=`SELECT * FROM (${base}) v WHERE 1=1${compiled.sql}`;
+    if(options.optionsField)return catalogSuggestions(db,query,values,queryFields,options.optionsField);
+    const [[count]]=await db.execute(`SELECT COUNT(*) AS total FROM (${query}) counted`,values);
+    const [rows]=await db.execute(`${query} ORDER BY ${compiled.order} LIMIT ${limit} OFFSET ${offset}`,values);
     columns.push({key:'delivery_profile',label:'交付文件'});
-    return {table,source,columns,rows:rows.map(({profile_json,...row})=>({...row,id:String(row.id),delivery_profile:channelDeliveryProfile(row,profile_json)})),total:Number(count.total),offset,limit};
+    return {table,source,columns,queryFields:publicQueryFields(queryFields),rows:rows.map(({profile_json,...row})=>({...row,id:String(row.id),delivery_profile:channelDeliveryProfile(row,profile_json)})),total:Number(count.total),offset,limit};
   }
   // The fixed projection is searched as text, retaining field-specific decimals and NULLs in the result.
-  const base=`${(source==='formal'?formal:draft)[table]} WHERE t.workspace_id=?`;
-  const pattern='%'+q.replace(/[\\%_]/g,'\\$&')+'%';
+  const rowKey=source==='formal'&&table==='holdings'?"CONCAT(t.channel_id,':',t.account_id,':',t.fund_code,':',t.share_class)":'t.id';
+  const batchProjection=table==='applications'?`(SELECT b.public_id FROM batch_applications ba JOIN exchange_batches b ON b.workspace_id=ba.workspace_id AND b.chat_id=ba.chat_id AND b.id=ba.batch_id WHERE ba.workspace_id=t.workspace_id AND ba.chat_id=t.chat_id AND ba.application_id=t.id LIMIT 1) AS batchId,`:'';
+  const projection=(source==='formal'?formal:draft)[table].replace(/^SELECT /,`SELECT ${rowKey} AS _rowKey,${batchProjection}`);
+  const base=`${projection} WHERE t.workspace_id=?`;
   const projected=catalogProjectionColumns(base);
-  const searchable=Object.keys(fields).filter(k=>projected.has(k));
-  const filter=q?` AND (${searchable.map(k=>`CAST(v.\`${k}\` AS CHAR) LIKE ?`).join(' OR ')}${base.includes('caseTitle')?' OR v.project LIKE ? OR v.caseTitle LIKE ?':''}${base.includes('record_json')?' OR CAST(v.record_json AS CHAR) LIKE ?':''})`:'';
-  const searchValues=q?[...searchable.map(()=>pattern),...(base.includes('caseTitle')?[pattern,pattern]:[]),...(base.includes('record_json')?[pattern]:[])]:[];
-  const query=`SELECT * FROM (${base}) v WHERE 1=1${filter}`;
+  const queryFields=dataQueryFields(table,projected);
+  const quickFields=queryFields.filter(f=>!['chatId','caseId','batchId'].includes(f.key));
+  const compiled=compileCatalogQuery(options,queryFields,{quickFields,defaultOrder:'v._rowKey'});
+  const searchValues=compiled.values;
+  const query=`SELECT * FROM (${base}) v WHERE 1=1${compiled.sql}`;
+  if(options.optionsField)return catalogSuggestions(db,query,[auth.workspace_id,...searchValues],queryFields,options.optionsField);
   const [[count]]=await db.execute(`SELECT COUNT(*) AS total FROM (${query}) counted`,[auth.workspace_id,...searchValues]);
-  const [rows]=await db.execute(`${query} ORDER BY ${base.includes('caseTitle')?'project,caseTitle':'account_no' in fields&&table==='holdings'?'account_no,fund_code':'1'} LIMIT ${limit} OFFSET ${offset}`,[auth.workspace_id,...searchValues]);
+  const [rows]=await db.execute(`${query} ORDER BY ${compiled.order} LIMIT ${limit} OFFSET ${offset}`,[auth.workspace_id,...searchValues]);
   const records=rows.map(({record_json,...row})=>({...row,...(record_json?(typeof record_json==='string'?JSON.parse(record_json):record_json):{})}));
+  for(const row of records)for(const key of ['business_date','snapshot_date'])if(row[key] instanceof Date)row[key]=row[key].toISOString().slice(0,10);
   const rawKeys=new Set(records.flatMap(Object.keys));
   const aliases={name:'InvestorName',customer_name:'InvestorName',investor_type:'IndividualOrInstitution',account_no:'TransactionAccountID',branch_code:'BranchCode',certificate_type:'CertificateType',certificate_no:'CertificateNo',app_no:'AppSheetSerialNo',business_code:'BusinessCode',business_date:'TransactionDate',ta_account_id:'TAAccountID'};
   for(const row of records)for(const [local,protocol] of Object.entries(aliases)){
     if(rawKeys.has(protocol)&&(row[protocol]===undefined||row[protocol]===null||row[protocol]==='')&&row[local]!==undefined&&row[local]!==null)row[protocol]=row[local];
   }
-  const keys=[...rawKeys].filter(k=>!['chatId','caseId'].includes(k)&&!(aliases[k]&&rawKeys.has(aliases[k])));
+  const stableKeys=[...projected].filter(key=>key!=='record_json');
+  const keys=[...new Set([...stableKeys,...rawKeys])].filter(k=>!['chatId','caseId','batchId','_rowKey'].includes(k)&&!(aliases[k]&&rawKeys.has(aliases[k])));
   const columns=keys.map(key=>({key,label:fields[key]??protocolLabels[key]??({project:'项目',caseTitle:'Case'}[key])??'其他协议字段'}));
-  return {table,source,rows:records,columns,total:Number(count.total),offset,limit};
+  return {table,source,rows:records,columns,queryFields:publicQueryFields(queryFields),total:Number(count.total),offset,limit};
  });}};
 }

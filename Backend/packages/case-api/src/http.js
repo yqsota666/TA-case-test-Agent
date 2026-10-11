@@ -85,11 +85,11 @@ export function createCaseHttpHandler({ accountModelQuotas, modelRuntime, global
     const collectionRoute=Boolean(collection && ['GET','POST'].includes(request.method));
     const lifecycle=chatLifecycle && lifecyclePath.exec(pathname);
     const lifecycleRoute=Boolean(lifecycle && ((!lifecycle[2] && request.method==='GET') || (lifecycle[2] && request.method==='POST')));
-    const globalDataRoute=Boolean(globalDataCatalog && /^\/api\/data\/tables\/[a-z]+$/.test(pathname) && request.method==='GET');
+    const globalDataRoute=Boolean(globalDataCatalog && ((/^\/api\/data\/tables\/[a-z]+$/.test(pathname) && request.method==='GET')||(/^\/api\/data\/tables\/[a-z]+\/search$/.test(pathname)&&request.method==='POST')));
     const distributor=/^\/api\/data\/distributors(?:\/([1-9][0-9]{0,18}))?$/.exec(pathname);
     const distributorRoute=Boolean(globalDataCatalog && distributor && request.method==='POST');
     const distributorDefaultsRoute=Boolean(globalDataCatalog && pathname==='/api/data/distributors/default-profile' && request.method==='GET');
-    const globalFileRoute=Boolean(globalFileCatalog && ['/api/files/catalog','/api/files/catalog/download'].includes(pathname) && request.method==='GET');
+    const globalFileRoute=Boolean(globalFileCatalog && ((['/api/files/catalog','/api/files/catalog/download'].includes(pathname) && request.method==='GET')||(pathname==='/api/files/catalog/search'&&request.method==='POST')));
     const catalog = pathname === '/api/data/catalog' && request.method === 'GET';
     const match = pathPattern.exec(pathname);
     const application = applicationPath.exec(pathname);
@@ -137,7 +137,13 @@ export function createCaseHttpHandler({ accountModelQuotas, modelRuntime, global
         const current=await accountAuth.current(token);
         if(current.user.id!==request.headers['x-case-account']){send(response,409,{error:'ACCOUNT_CHANGED',message:'账户已切换，请重新连接'});return;}
       }
-      if(globalDataRoute && await handleGlobalDataCatalog(request,response,token,globalDataCatalog))return;
+      let catalogBody;
+      if((globalDataRoute||globalFileRoute)&&request.method==='POST') {
+        if(request.headers.origin!==allowedOrigin){send(response,403,{error:'INVALID_ORIGIN'});return;}
+        catalogBody=await jsonBody(request,32*1024);
+        if(!catalogBody||typeof catalogBody!=='object'||Array.isArray(catalogBody)){send(response,400,{error:'INVALID_CATALOG_QUERY',message:'查询条件须为对象'});return;}
+      }
+      if(globalDataRoute && await handleGlobalDataCatalog(request,response,token,globalDataCatalog,catalogBody))return;
       if(distributorDefaultsRoute){
         const params=new URL(request.url,'http://localhost').searchParams;
         send(response,200,await globalDataCatalog.deliveryDefaults(token,{distributorCode:params.get('distributorCode'),taCode:params.get('taCode'),protocolVersion:params.get('protocolVersion')}));return;
@@ -148,7 +154,7 @@ export function createCaseHttpHandler({ accountModelQuotas, modelRuntime, global
         const input=await jsonBody(request);
         send(response,distributor[1]?200:201,await globalDataCatalog.saveDistributor(token,{id:distributor[1],input}));return;
       }
-      if(globalFileRoute && await handleGlobalFileCatalog(request,response,token,globalFileCatalog))return;
+      if(globalFileRoute && await handleGlobalFileCatalog(request,response,token,globalFileCatalog,catalogBody))return;
       if(repository.assertCaseWritable && match && request.method==='POST' && ['discussion','plan','data/execute','data/review','application-preparation'].includes(match[3])){
         await repository.assertCaseWritable(token,match[1],match[2],{discussion:['discussion','plan'].includes(match[3])});
       }
