@@ -197,6 +197,7 @@ export function CaseWorkbench({accountControl}) {
     setPage('chat');setLoading(true);setNodeError('');setDataSetId(null);setModal(null);
     try {const snapshot=await liveSnapshot(project.id,id);if(request===viewRequest.current)applySnapshot(snapshot);} catch(error){if(request===viewRequest.current)setNodeError(error.message);} finally {if(request===viewRequest.current)setLoading(false);}
   };
+  const openRelatedCatalog=(target,project,ids,batch,type)=>{const url=new URL(location.href);url.searchParams.set("page",target);url.searchParams.set("catalogCases",ids.join(","));if(batch){url.searchParams.set("catalogBatch",batch);if(type)url.searchParams.set("catalogType",type);else url.searchParams.delete("catalogType");}else{url.searchParams.delete("catalogBatch");url.searchParams.delete("catalogType");}if(project)url.searchParams.set("catalogProject",project);else url.searchParams.delete("catalogProject");if(target==="data")url.searchParams.set("dataTable","applications");history.replaceState(null,"",url);setPage(target);setModal(null);};
   const openCatalogCase=async(chatId,caseId)=>{streamController.current?.abort();setStreamReply(null);const request=++viewRequest.current;const url=new URL(location.href);url.searchParams.delete('page');url.searchParams.delete('draftTable');url.searchParams.set('chatId',chatId);url.searchParams.set('caseId',caseId);history.replaceState(null,'',url);setPage('chat');setDataSetId(null);setModal(null);setLoading(true);try{const snapshot=await liveSnapshot(chatId,caseId);if(request===viewRequest.current)applySnapshot(snapshot);}catch(error){if(request===viewRequest.current)setNodeError(error.message);}finally{if(request===viewRequest.current)setLoading(false);}};
   const toggleSet = id => setState(value => ({...value, sets: value.sets.map(set => set.id === id ? {...set, expanded: !set.expanded} : set)}));
   const submitFirstNode = async (text, action=discussionAction({text,waiting:state.workflow?.waiting,messages}),sentImages=[],originalInput=text) => {
@@ -398,8 +399,8 @@ export function CaseWorkbench({accountControl}) {
         </div>
       </div>
       {page!=='chat' && <div className="gc-topbar"><button aria-label="返回对话" title="返回对话" onClick={()=>{setPage('chat');const url=new URL(location.href);url.searchParams.delete('page');history.replaceState(null,'',url);}}><ArrowLeft size={18}/></button><nav aria-label="业务页面">{[['data','数据'],['files','文件']].map(([key,label])=><button key={key} aria-current={page===key?'page':undefined} onClick={()=>{setPage(key);const url=new URL(location.href);url.searchParams.set('page',key);history.replaceState(null,'',url);}}>{label}</button>)}</nav></div>}
-      {page==='data' && <GlobalDataCatalog onOpenCase={openCatalogCase}/>}
-      {page==='files' && <GlobalFileCatalog onOpenCase={openCatalogCase}/>}
+      {page==='data' && <GlobalDataCatalog onOpenCase={openCatalogCase} onOpenFiles={(project,ids,batch,type)=>openRelatedCatalog('files',project,ids,batch,type)}/>}
+      {page==='files' && <GlobalFileCatalog onOpenCase={openCatalogCase} onOpenData={(project,ids,batch,type)=>openRelatedCatalog('data',project,ids,batch,type)}/>}
     </Thread>
     </CaseAssistant>
     <div className={`cw-notice ${notice ? 'is-visible' : ''}`} role="status">{notice}</div>
