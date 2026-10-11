@@ -139,7 +139,7 @@ export function CaseWorkbench({accountControl}) {
       pending:snapshot.pending || null,
       plan:snapshot.plan || null,
       followup:snapshot.followup || null,
-      messages: id ? {[id]:[...snapshot.turns.map((turn,index)=>({id:`turn-${index}`,role:turn.role,text:turn.content,images:turn.images,kind:turn.kind,createdAt:turn.createdAt,durationMs:turn.durationMs,result:!!snapshot.plan && (snapshot.plan.sourceTurnNumber ? turn.role==='assistant' && (turn.sourceTurnNumber!==undefined?turn.sourceTurnNumber===snapshot.plan.sourceTurnNumber:index===snapshot.plan.sourceTurnNumber*2-1) : false)})),
+      messages: id ? {[id]:[...snapshot.turns.map((turn,index)=>({id:`turn-${index}`,role:turn.role,text:turn.content,images:turn.images,kind:turn.kind,draft:turn.draft,createdAt:turn.createdAt,durationMs:turn.durationMs,result:!!snapshot.plan && (snapshot.plan.sourceTurnNumber ? turn.role==='assistant' && (turn.sourceTurnNumber!==undefined?turn.sourceTurnNumber===snapshot.plan.sourceTurnNumber:index===snapshot.plan.sourceTurnNumber*2-1) : false)})),
         ...(snapshot.pending ? [{id:'pending-user',role:'user',text:snapshot.pending.userInput,images:snapshot.pending.images}] : [])]} : {},
     }));
   };
@@ -219,7 +219,6 @@ export function CaseWorkbench({accountControl}) {
       const path=casePath(chatId,caseId);
       const before=await requestCase(path+'/workflow');
       if(!before.waiting?.includes(action))throw new Error('当前流程不支持此操作，请刷新后查看当前步骤。');
-      if(action==='PROPOSE_PLAN' && messages.filter(m=>m.role==='assistant').length<1)throw new Error('请先说明测试需求，再整理方案。');
       await requestCaseStream(path+(action==='PROPOSE_PLAN'?'/plan':'/discussion'),{userInput:text,...(sentImages.length?{images:sentImages}:{})},{signal:controller.signal,onReset:()=>{if(request===viewRequest.current)setStreamReply(null);},onDelta:delta=>{
         if(request===viewRequest.current)setStreamReply(value=>({caseId,text:(value?.caseId===caseId?value.text:'')+delta}));
       }});
@@ -357,20 +356,22 @@ export function CaseWorkbench({accountControl}) {
               text: runtimeMessage.content.filter(part => part.type === 'text').map(part => part.text).join('\n'),
             };
             if (!message.text && !message.result && !message.continuation && !message.images?.length) return null;
-            return <ChatMessage message={message} onQuote={inputDisabled?undefined:text=>{setState(v=>({...v,quotes:{...v.quotes,[draftKey]:text}}));composer.current?.focus();}} text={message.result && state.plan ? planSummary(state.plan.proposal) : message.kind==='PROPOSE_PLAN'?'已整理测试方案。原回复保留在详情中。':message.text}>
+            return <ChatMessage message={message} onQuote={inputDisabled?undefined:text=>{setState(v=>({...v,quotes:{...v.quotes,[draftKey]:text}}));composer.current?.focus();}} text={message.result && state.plan ? (state.plan.status==='DRAFT'?message.text.split('\n')[0]:planSummary(state.plan.proposal)) : message.kind==='PROPOSE_PLAN'?(message.draft?'原方案草稿保留在详情中。':'已整理测试方案。原回复保留在详情中。'):message.text}>
             <MessageImages images={message.images} onOpen={image=>setModal({type:'image',image})}/>
-            {message.kind==='PROPOSE_PLAN' && !message.result && <ArtifactCard title="历史测试方案" meta="查看原回复" onClick={()=>setModal({type:'historical-plan',message})}/>}
-            {message.result && <ArtifactCard title="测试方案" meta={state.plan?.status==='LOCKED'?'已确认':'查看与修改'} onClick={()=>{setPlanError('');setModal({type:state.workflow?.stage==='CONFIRM_EXPECTATIONS'?'expectations':'result'});}}/>}
+            {message.kind==='PROPOSE_PLAN' && !message.result && <ArtifactCard title={message.draft?'历史方案草稿':'历史测试方案'} meta="查看原回复" onClick={()=>setModal({type:'historical-plan',message})}/>}
+            {message.result && <ArtifactCard title={state.plan?.status==='DRAFT'?'方案草稿':'测试方案'} meta={state.plan?.status==='LOCKED'?'已确认':'查看与修改'} onClick={()=>{setPlanError('');setModal({type:state.workflow?.stage==='CONFIRM_EXPECTATIONS'?'expectations':'result'});}}/>}
 
           </ChatMessage>;}}</ThreadMessages>
+          {state.plan?.status==='DRAFT'&&!state.plan.proposal.contract&&!messages.some(m=>m.result) && <ArtifactCard title="方案草稿" meta="查看已有内容" onClick={()=>setModal({type:'result'})}/>}
           {state.workflow?.stage==='CONFIRM_EXPECTATIONS' && state.plan && <div className="cw-expect-handoff"><p>准备数据已确认。接下来核对各测试项的预期结果。</p><button type="button" className="cw-result" onClick={()=>{setPlanError('');setModal({type:'expectations'});}}><span className="cw-result-icon"><FileText size={18}/></span><span><span className="cw-result-title">预期结果</span><span className="cw-result-summary">查看与修改</span></span><span className="cw-result-action">查看详情<ChevronRight size={14}/></span></button></div>}
           {!newConversation && state.generatedData?.status==='VALIDATED' && <button type="button" className="cw-result" onClick={openGeneratedData}>
             <span className="cw-result-icon" aria-hidden="true"><Table2 size={18}/></span><span className="cw-result-copy"><span className="cw-result-title">草稿数据</span><span className="cw-result-summary">{state.generatedData.reviewStatus==='CONFIRMED'?'已确认':'查看数据'}</span></span><span className="cw-result-action">查看详情<ChevronRight size={14}/></span>
           </button>}
           {!newConversation && ['EVALUATE_RESULT','CONFIRM_RESULT','CASE_FINAL'].includes(state.workflow?.stage) && <button type="button" className="cw-result" onClick={()=>setModal({type:'review-result'})}><span className="cw-result-icon" aria-hidden="true"><FileText size={18}/></span><span className="cw-result-copy"><span className="cw-result-title">结果核对</span></span><span className="cw-result-action">查看详情<ChevronRight size={14}/></span></button>}
-          {!newConversation && state.plan?.proposal?.exchangePlan?.status==='READY' && <button type="button" className="cw-result" onClick={()=>setModal({type:'exchange'})}>
+          {!newConversation && state.plan?.proposal?.contract && state.plan?.proposal?.exchangePlan?.status==='READY' && <button type="button" className="cw-result" onClick={()=>setModal({type:'exchange'})}>
             <span className="cw-result-icon" aria-hidden="true"><FileArchive size={18}/></span><span className="cw-result-copy"><span className="cw-result-title">文件交换</span><span className="cw-result-summary">申请文件与 TA 回传</span></span><span className="cw-result-action">查看详情<ChevronRight size={14}/></span>
           </button>}
+          {!newConversation && state.workflow?.waiting?.includes('PROPOSE_PLAN') && messages.length>0 && <button type="button" className="cw-primary-button" disabled={inputDisabled || running || !!state.pending} onClick={()=>submitFirstNode(quotedInput(draft.trim()||'请根据已有讨论整理为审阅方案',quote),'PROPOSE_PLAN',images,draft.trim()||'请根据已有讨论整理为审阅方案')}>整理为审阅方案</button>}
           {!loading && !newConversation && currentSet.id && showProjectLifecycle(currentSet.status,currentCase.status) && <ProjectLifecycleCard chatId={currentSet.id} caseId={state.selected} onChanged={async()=>applySnapshot(await liveSnapshot(currentSet.id,state.selected))} onNavigate={async target=>{if(target.casePublicId)await openCatalogCase(target.chatPublicId,target.casePublicId);else {applySnapshot(await liveSnapshot(target.chatPublicId,null));openNewConversation(target.chatPublicId);}}}/>}
           {!newConversation && (loading||running||!!state.pending) && !nodeError && <p className="cw-reply-status" role="status">{loading?'连接讨论服务…':(state.pending?.kind||activeAction)==='PROPOSE_PLAN'?'正在整理方案…':'正在回复…'}</p>}
           {newConversation && (loading||running) && <p role="status">{loading?'连接讨论服务…':'正在回复…'}</p>}
@@ -427,7 +428,7 @@ export function CaseWorkbench({accountControl}) {
         const request=viewRequest.current;
         await requestCase(casePath(currentSet.id,state.selected)+'/plan/data',{versionNumber:state.plan.versionNumber,dataSpecification:state.plan.proposal.contract.dataSpecification,applications});
         const snapshot=await liveSnapshot(currentSet.id,state.selected);if(request===viewRequest.current)applySnapshot(snapshot);
-      }} onSaveContent={savePlanContent} editable={state.plan.status==='PENDING_CONFIRMATION'&&!running&&!planBusy} onSave={async dataSpecification=>{
+      }} onSaveContent={savePlanContent} editable={['PENDING_CONFIRMATION','DRAFT'].includes(state.plan.status)&&!running&&!planBusy} onSave={async dataSpecification=>{
         const request=viewRequest.current;
         await requestCase(casePath(currentSet.id,state.selected)+'/plan/data',{versionNumber:state.plan.versionNumber,dataSpecification});
         const snapshot=await liveSnapshot(currentSet.id,state.selected);if(request===viewRequest.current)applySnapshot(snapshot);
