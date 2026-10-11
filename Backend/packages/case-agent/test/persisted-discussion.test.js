@@ -135,12 +135,16 @@ test('proposal uses server history and saves the exact displayed reply with its 
     ['请讨论规则', firstReply, '再讨论边界', secondReply, '请给出 Plan，03日期20261006，04日期20261007']);
 });
 
-test('premature proposal is rejected before creating a pending turn', async () => {
-  const { service, rounds } = fixture();
-  await assert.rejects(service.propose({ ...scope, userInput: '现在生成 Plan' }), /至少需要一轮/);
-  assert.equal(rounds.length, 0);
+test('a first-message proposal is generated from the supplied requirement without an arbitrary turn gate',async()=>{
+ const {repository,rounds}=fixture();
+ const service=createPersistedDiscussionService({repository,complete:async request=>{
+  if(request.messages)return JSON.stringify(plan);
+  if(request.system.includes('四张公共数据表'))return JSON.stringify(planContract(plan).dataSpecification);
+  const {version,protocolVersion,dataSpecification,...derived}=planContract(plan);return JSON.stringify(derived);
+ }});
+ const result=await service.propose({...scope,userInput:'整理方案，03日期20261006，04日期20261007'});
+ assert.equal(result.phase,'PROPOSAL_PENDING');assert.equal(rounds.length,1);assert.equal(rounds[0].status,'COMPLETE');
 });
-
 
 test('linked retest supplies read-only failure context to model without copying prior confirmations',async()=>{
  const sourceContext={casePublicId:'source',status:'FAIL',originalPlan:{objective:'原目标'},humanFailureReason:'实际持仓不一致',evidence:[{id:'holding:1',values:{totalVolume:'90.00'}}],contextIsReadOnly:true};
@@ -160,7 +164,7 @@ test('sealed Chat rejects a pending-turn retry before any model call',async()=>{
 });
 
 for (const invalidStage of ['DATA_SPEC_INVALID', 'INVALID_PLAN_CONTRACT']) {
-  test(`${invalidStage} releases proposal intent so the user can correct the request`, async () => {
+  test(`${invalidStage} saves an explicitly incomplete draft so the user can correct or retry`, async () => {
     const { service, repository, rounds } = fixture();
     await service.discuss({ ...scope, userInput: '请讨论规则' });
     await service.discuss({ ...scope, userInput: '再讨论边界' });
@@ -173,8 +177,11 @@ for (const invalidStage of ['DATA_SPEC_INVALID', 'INVALID_PLAN_CONTRACT']) {
       const { version, protocolVersion, dataSpecification, ...derived } = planContract(plan);
       return JSON.stringify(derived);
     } });
-    await assert.rejects(proposing.propose({ ...scope, userInput: '请生成Plan，03日期20261006，04日期20261007' }), { code: invalidStage });
-    assert.equal(rounds.at(-1).status, 'ABANDONED');
+    const draft=await proposing.propose({ ...scope, userInput: '请生成Plan，03日期20261006，04日期20261007' });
+    assert.equal(draft.phase,'DRAFT_PENDING');
+    assert.equal(rounds.at(-1).status, 'COMPLETE');
+    assert.equal(rounds.at(-1).draft,true);
+    assert.equal(draft.proposal.contract,undefined);
     invalid = false;
     const result = await proposing.propose({ ...scope, userInput: '修正后的Plan请求，03日期20261006，04日期20261007' });
     assert.equal(result.versionNumber, 1);
@@ -206,11 +213,22 @@ test('temporary contract model failure retains the same proposal intent for retr
 
 test('a completed proposal request replays its saved version without another model call',async()=>{
  const history={revision:5,pending:null,turns:[{role:'user',content:'请整理方案'},{role:'assistant',content:'保存的提案回复'}]};
- const repository={readCaseDiscussion:async()=>history,getLatestSopProposal:async()=>({sourceTurnNumber:5,versionNumber:1,proposal:plan}),
+ const repository={readCaseDiscussion:async()=>history,getLatestSopProposal:async()=>({sourceTurnNumber:5,versionNumber:1,status:'PENDING_CONFIRMATION',proposal:plan}),
  beginCaseDiscussionTurn:async()=>{throw new Error('must not create another turn');},finishCaseDiscussionTurn:async()=>{},finishCasePlanProposal:async()=>{},abandonCaseDiscussionTurn:async()=>{}};
  const service=createPersistedDiscussionService({repository,complete:async()=>{throw new Error('must not call model');}});
  const result=await service.propose({...scope,userInput:'请整理方案'});
  assert.equal(result.replayed,true);assert.equal(result.versionNumber,1);assert.equal(result.revision,5);assert.equal(result.reply,'保存的提案回复');
+});
+
+test('same text with a new image does not replay the saved proposal',async()=>{
+ const {repository}=fixture();
+ repository.readCaseDiscussion=async()=>({revision:5,pending:null,turns:[{role:'user',content:'请整理方案'},{role:'assistant',content:'旧方案'}]});
+ repository.getLatestSopProposal=async()=>({sourceTurnNumber:5,status:'PENDING_CONFIRMATION',proposal:plan});
+ repository.beginCaseDiscussionTurn=async()=>({turnNumber:6,revision:6});
+ let visionCalls=0;
+ const service=createPersistedDiscussionService({repository,complete:async()=>{throw new Error('new proposal model reached');},visionComplete:async()=>{visionCalls++;return '新附件内容';}});
+ await assert.rejects(service.propose({...scope,userInput:'请整理方案',images:[{name:'new.png',dataUrl:'data:image/png;base64,iVBORw0KGgo='}]}),/new proposal model reached/);
+ assert.equal(visionCalls,1);
 });
 
 test('streamed discussion carries verified saved-plan context through validation and persistence', async () => {
@@ -230,4 +248,55 @@ test('streamed discussion carries verified saved-plan context through validation
   assert.equal(result.reply, reply);
   assert.equal(rounds[0].assistantReply, reply);
   assert.equal(rounds[0].status, 'COMPLETE');
+});
+
+const routeMessage=(intent,nextAction=null,needsClarification=false)=>({tool_calls:[{function:{name:'route_action',arguments:JSON.stringify({intent,nextAction,needsClarification,reason:'依据本轮语义和上下文'})}}]});
+test('ordinary chat routes to an actual proposal and keeps compound modifications in the generation input',async()=>{
+ const {repository,rounds}=fixture();let routed,generated;
+ const service=createPersistedDiscussionService({repository,routeComplete:async request=>{routed=JSON.parse(request.user);return routeMessage('PROPOSE_PLAN');},complete:async request=>{
+  if(request.messages){generated=request.messages;return JSON.stringify(plan);}
+  if(request.system.includes('四张公共数据表'))return JSON.stringify(planContract(plan).dataSpecification);
+  const {version,protocolVersion,dataSpecification,...derived}=planContract(plan);return JSON.stringify(derived);
+ }});
+ const userInput='金额改成3000，然后整理方案。03日期20261006，04日期20261007';
+ const result=await service.respond({...scope,userInput});
+ assert.equal(result.phase,'PROPOSAL_PENDING');assert.equal(routed.userInput,userInput);assert.equal(generated.at(-1).content,userInput);assert.equal(rounds[0].kind,'PROPOSE_PLAN');
+});
+test('explicit persisted next action reaches router and cancellation never calls proposal generation',async()=>{
+ const {repository,rounds}=fixture();repository.readCaseDiscussion=async()=>({revision:0,turns:[],pending:null,nextAction:'PROPOSE_PLAN'});
+ const service=createPersistedDiscussionService({repository,routeComplete:async request=>{assert.equal(JSON.parse(request.user).pendingNextAction,'PROPOSE_PLAN');return routeMessage('DISCUSS');},complete:async request=>{assert.ok(!request.system.includes('exchangePlan字段'));return firstReply;}});
+ await service.respond({...scope,userInput:'先别整理，只解释一下'});assert.equal(rounds[0].kind,undefined);
+});
+test('same Case concurrent turns are rejected before a second model call; stale routing cannot write',async()=>{
+ const {repository}=fixture();let release,started;const ready=new Promise(resolve=>started=resolve);
+ const service=createPersistedDiscussionService({repository,routeComplete:async()=>{if(!release){started();await new Promise(resolve=>release=resolve);}return routeMessage('DISCUSS');},complete:async()=>firstReply});
+ const first=service.respond({...scope,userInput:'讨论规则'});await ready;
+ await assert.rejects(service.respond({...scope,userInput:'另一条'}),{code:'DISCUSSION_IN_PROGRESS'});release();await first;
+ let reads=0;const original=repository.readCaseDiscussion;repository.readCaseDiscussion=async(...args)=>({...await original(...args),revision:++reads});
+ await assert.rejects(service.respond({...scope,userInput:'讨论规则'}),{code:'STALE_DISCUSSION'});
+});
+test('unplanned file timing persists a draft without invoking data or expectation generation',async()=>{
+ const {repository,rounds}=fixture();let calls=0;
+ const draft={...plan,exchangePlan:{status:'UNPLANNED',steps:[],openQuestions:['实际业务日期尚待确定']}};
+ const service=createPersistedDiscussionService({repository,complete:async()=>{calls++;return JSON.stringify(draft);}});
+ const result=await service.propose({...scope,userInput:'先整理已有内容，实际日期待定'});
+ assert.equal(calls,1);assert.equal(result.phase,'DRAFT_PENDING');assert.equal(rounds[0].draft,true);assert.equal(result.proposal.contract,undefined);
+});
+
+test('an upstream package dependency error repairs the plan once and reuses prepared data',async()=>{
+ const {indexedPlan}=await import('./indexed-package-fixture.js');
+ const full=indexedPlan({accounts:1,rounds:1}),{contract,...correct}=full;
+ const broken=structuredClone(correct);
+ const trade=broken.exchangePlan.steps.find(s=>s.fileType==='03');
+ const received=broken.exchangePlan.steps.find(s=>s.fileType==='02');
+ received.dependsOn=[{stepId:'open',condition:'SENT'}];trade.dependsOn=[{stepId:received.stepId,condition:'CONFIRMED'}];
+ let plans=0,dataCalls=0,contracts=0;
+ const {repository}=fixture();
+ const service=createPersistedDiscussionService({repository,complete:async request=>{
+  if(request.messages){plans++;if(plans===2){assert.match(request.system,/proposalRepair/);assert.ok(JSON.parse(request.messages.at(-1).content).proposalRepair.validationIssues.length);}return JSON.stringify(plans===1?broken:correct);}
+  if(request.system.includes('四张公共数据表')){dataCalls++;return JSON.stringify(contract.dataSpecification);}
+  contracts++;const {version,protocolVersion,dataSpecification,businessExpectations,...derived}=contract;return JSON.stringify(derived);
+ }});
+ const result=await service.propose({...scope,userInput:'整理同包开户申购草稿，所有文件业务日期20261008'});
+ assert.equal(result.phase,'PROPOSAL_PENDING');assert.equal(plans,2);assert.equal(dataCalls,1);assert.equal(contracts,2);assert.deepEqual(result.proposal.exchangePlan.steps.find(s=>s.fileType==='03').dependsOn,[]);
 });

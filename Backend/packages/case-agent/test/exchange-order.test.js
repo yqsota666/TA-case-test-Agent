@@ -9,14 +9,14 @@ test('actual validate_exchange_order node rejects missing SEND and accepts scope
  const result=await graph.invoke({input:{...input,completed:[{stepId:'send03',condition:'SENT'}]}});
  assert.equal(result.checked.step.stepId,'receive04');
 });
-test('unplanned exchange goes through AI timing question; complete plan skips extra model call',async()=>{
+test('unplanned exchange retains structured questions without a second narrative model call',async()=>{
  const priorTurns=[{role:'user',content:'测试申购'},{role:'assistant',content:'讨论账户'},{role:'user',content:'已有账户'},{role:'assistant',content:'讨论日期'}];
  const base={objective:'测试申购',preconditions:[],scenarios:[{title:'申购',setup:'已有账户',action:'发送申请',expected:'确认成功',evidence:'确认文件'}],openQuestions:[]};
  const calls=[];
  const graph=createDiscussionGraph({complete:async args=>{calls.push(args);return calls.length===1?JSON.stringify({...base,exchangePlan:{status:'UNPLANNED',steps:[],openQuestions:['申请和回传分别是哪天？']}}):'当前理解：已有确认账户，需要申购测试。\n建议先测：按确认日期发送03并接收04。\n请你确认：申请和回传分别是哪一天？';}});
- assert.ok(graph.getGraph().nodes.ask_exchange_timing);
+ assert.ok(!graph.getGraph().nodes.ask_exchange_timing);
  const result=await proposeDiscussionPlan(graph,{priorTurns,userInput:'给我计划'});
- assert.equal(calls.length,2);assert.ok(!calls[1].system.includes('申请和回传分别是哪天？'));assert.deepEqual(JSON.parse(calls[1].messages.at(-1).content).unresolvedExchangeQuestions,['申请和回传分别是哪天？']);assert.equal(result.promptVersion,'exchange-timing-draft-v3');assert.match(result.reply,/哪一天/);assert.equal(result.proposal.exchangePlan.status,'UNPLANNED');
+ assert.equal(calls.length,1);assert.equal(result.promptVersion,'plan-proposal-draft-v12');assert.match(result.reply,/申请和回传分别是哪天/);assert.equal(result.proposal.exchangePlan.status,'UNPLANNED');
  let count=0;
  await proposeDiscussionPlan(createDiscussionGraph({complete:async()=>{count++;return JSON.stringify({...base,exchangePlan});}}),{priorTurns,userInput:'03日期已确认20261006，04日期已确认20261007'});
  assert.equal(count,1);
@@ -28,7 +28,7 @@ test('assistant-only dates or invented model dates trigger timing discussion, no
  let calls=0;
  const graph=createDiscussionGraph({complete:async()=>++calls===1?JSON.stringify(proposal):'当前理解：需要讨论文件业务时间。\n建议先测：按双方确认日期发送申请并接收结果。\n请你确认：03和04各使用哪一天？'});
  const result=await proposeDiscussionPlan(graph,{priorTurns,userInput:'给出计划'});
- assert.equal(result.proposal.exchangePlan.status,'UNPLANNED');assert.equal(calls,2);
+ assert.equal(result.proposal.exchangePlan.status,'UNPLANNED');assert.equal(calls,1);
 });
 
 test('timing evidence requires affirmative business statements, not identifiers or rejected mentions',async()=>{
@@ -63,7 +63,7 @@ test('timing evidence requires affirmative business statements, not identifiers 
   const graph=createDiscussionGraph({complete:async()=>++calls===1?JSON.stringify({...base,exchangePlan:plan}):'当前理解：文件时间还需要确认。\n建议先测：明确申请与回传的业务时间。\n请你确认：03和04分别采用什么时间？'});
   const result=await proposeDiscussionPlan(graph,{priorTurns,userInput:'整理计划'});
   assert.equal(result.proposal.exchangePlan.status,ready?'READY':'UNPLANNED',messages.join('；'));
-  assert.equal(calls,ready?1:2,messages.join('；'));
+  assert.equal(calls,1,messages.join('；'));
  }
 });
 
@@ -118,7 +118,7 @@ test('shared times require evidence for each file while unscoped rejection remai
   const graph=createDiscussionGraph({complete:async()=>++calls===1?JSON.stringify({...base,exchangePlan:plan}):'当前理解：文件时间还需要确认。\n建议先测：明确申请与回传的业务时间。\n请你确认：每个文件分别采用什么时间？'});
   const result=await proposeDiscussionPlan(graph,{priorTurns,userInput:'整理计划'});
   assert.equal(result.proposal.exchangePlan.status,ready?'READY':'UNPLANNED',messages.join('；'));
-  assert.equal(calls,ready?1:2,messages.join('；'));
+  assert.equal(calls,1,messages.join('；'));
   if(missing)assert.deepEqual(result.proposal.exchangePlan.openQuestions.map(question=>question.match(/^请确认 (\d{2}) 文件/)[1]),missing.map(id=>plan.steps.find(step=>step.stepId===id).fileType),messages.join('；'));
  }
 });
@@ -153,7 +153,7 @@ test('offset digits and natural rescheduling cannot supply or preserve unrelated
   const graph=createDiscussionGraph({complete:async()=>++calls===1?JSON.stringify({...base,exchangePlan:plan}):'当前理解：文件时间还需要确认。\n建议先测：明确申请与回传的业务时间。\n请你确认：每个文件分别采用什么时间？'});
   const result=await proposeDiscussionPlan(graph,{priorTurns,userInput:'整理计划'});
   assert.equal(result.proposal.exchangePlan.status,ready?'READY':'UNPLANNED',messages.join('；'));
-  assert.equal(calls,ready?1:2,messages.join('；'));
+  assert.equal(calls,1,messages.join('；'));
   if(missing)assert.deepEqual(result.proposal.exchangePlan.openQuestions.map(question=>question.match(/^请确认 (\d{2}) 文件/)[1]),missing.map(id=>plan.steps.find(step=>step.stepId===id).fileType),messages.join('；'));
  }
 });

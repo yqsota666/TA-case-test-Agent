@@ -422,13 +422,13 @@ export function createCaseHttpHandler({ accountModelQuotas, modelRuntime, global
               Number.isSafeInteger(body.revision) && body.revision >= 0 &&
               typeof body.userInput === 'string' && Boolean(body.userInput.trim()) &&
               body.userInput.length <= 4000 :
-              Object.keys(body).every(k=>['userInput',...(action==='discussion'?['images']:[])].includes(k)) &&
+              Object.keys(body).every(k=>['userInput','images'].includes(k)) &&
               (body.userInput===undefined || typeof body.userInput==='string' && body.userInput.length<=4000) &&
               (Boolean(body.userInput?.trim()) || action==='discussion' && Array.isArray(body.images) && body.images.length>0));
       if (!validInput) {
         send(response, 400, { error: 'INVALID_INPUT' }); return;
       }
-      if(action==='discussion')validateDiscussionImages(body.images);
+      if(['discussion','plan'].includes(action))validateDiscussionImages(body.images);
       if (action === 'plan/confirm') {
         send(response, 200, await confirmPlan({ token, chatPublicId, casePublicId,
           versionNumber: body.versionNumber, section: body.section }));
@@ -443,8 +443,8 @@ export function createCaseHttpHandler({ accountModelQuotas, modelRuntime, global
         send(response, 200, await reviseData({ token, chatPublicId, casePublicId,
           revision: body.revision, userInput: body.userInput.trim() }));
       } else {
-        const method = action === 'plan' ? 'propose' : 'discuss';
-        const input={token,chatPublicId,casePublicId,userInput:body.userInput,...(action==='discussion'?{images:body.images}:{})};
+        const method = action === 'plan' ? 'propose' : discussionService.respond ? 'respond' : 'discuss';
+        const input={token,chatPublicId,casePublicId,userInput:body.userInput,images:body.images};
         if(!String(request.headers.accept).split(',').some(type=>type.trim().split(';')[0]==='text/event-stream')){
           send(response,200,await discussionService[method](input));return;
         }

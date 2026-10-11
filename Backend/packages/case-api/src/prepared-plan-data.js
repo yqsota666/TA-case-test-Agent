@@ -10,7 +10,7 @@ export async function revisePreparedPlanData({repository,admit,token,chatPublicI
   if(parsed.success && parsed.data.customers.some(c=>c.investorType==='1' && !isPersonalName(c.name)))throw fail('DATA_EDIT_INVALID',422,'模拟个人姓名必须是正常的三个汉字姓名');
   if(!parsed.success)throw fail('DATA_EDIT_INVALID',422,'请检查必填字段、金额和代码格式');
   const current=await repository.getLatestSopProposal(token,chatPublicId,casePublicId);
-  if(!current || current.versionNumber!==body.versionNumber || current.status!=='PENDING_CONFIRMATION')throw fail('STALE_PLAN',409,'方案已更新或锁定，请刷新后再修改');
+  if(!current || current.versionNumber!==body.versionNumber || !['PENDING_CONFIRMATION','DRAFT'].includes(current.status))throw fail('STALE_PLAN',409,'方案已更新或锁定，请刷新后再修改');
   if(!current.proposal.contract)throw fail('PLAN_CONTRACT_REQUIRED',409,'当前方案没有准备数据');
   if(admit)await admit({token,chatPublicId,casePublicId,text:JSON.stringify({dataSpecification:parsed.data,...(body.applications!==undefined?{applications:body.applications}:{})}),purpose:'PLAN_DATA_EDIT'});
   const proposal=structuredClone(current.proposal);
