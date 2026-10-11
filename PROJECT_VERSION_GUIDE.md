@@ -1,5 +1,9 @@
 # 项目版本与工作树索引
 
+## 空白对话引导（2026-10-11，已接入5199）
+
+`codex/chat-empty-guidance` 从统一平台ef172dd6开发并本机快进接入5199。新对话和已创建但无消息的Case显示简短测试目标提示；输入草稿时保留，发出消息后消失；加载、处理中、错误和已有方案不显示欢迎提示。保留材质、独立滚动及业务确认。桌面/手机/260px矮窗口、首条消息与失败状态检查、六尺寸滚动回归及构建通过；均为合成前端验收，未调用模型或修改真实Case。统一工作树、API3106和数据库不变，无push/PR。
+
 ## 工作台独立滚动修复（2026-10-11，已接入5199）
 
 按用户本地验收后“可以直接合”的授权，`codex/fixed-workspace-scroll` 从统一平台89183224开发，两轮独立senior-staff-engineer审查及修复完成，代码提交b62247a0已快进收拢至`codex/platform-integration`。当前入口仍为 http://127.0.0.1:5199/?theme=liquid ，工作树 `/Users/apple/.codex/worktrees/platform-integration/gf`；前端5199热更新，原API3106及数据库不变，无后端重启或迁移。操作前核对实时Git/lsof。
