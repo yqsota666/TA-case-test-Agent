@@ -119,6 +119,7 @@ export function CaseWorkbench({accountControl}) {
   const addImages=async files=>{if(inputDisabled||readingImages)return;const request=viewRequest.current;setReadingImages(true);try{const added=await readMessageImages(files,images);if(request===viewRequest.current)setImageDrafts(v=>({...v,[draftKey]:[...(v[draftKey]||[]),...added]}));}catch(e){setNotice(e.message);}finally{setReadingImages(false);}};
   const savedMessages = newConversation ? [] : state.messages[state.selected] || [];
   const messages = streamReply?.caseId===state.selected && streamReply.text ? [...savedMessages,{id:'streaming-assistant',role:'assistant',text:streamReply.text,continuation:streamReply.failed?'回复中断，完整结果尚未同步。':undefined}] : savedMessages;
+  const showEmptyGuidance = page==='chat' && !dataSetId && messages.length===0 && !loading && !running && !state.pending && !nodeError && !state.plan && !state.generatedData && !completed && !projectReadOnly && (!state.workflow || state.workflow.stage==='DISCUSSION');
   const dataSet = state.sets.find(set => set.id === dataSetId);
 
   const applySnapshot = snapshot => {
@@ -348,8 +349,8 @@ export function CaseWorkbench({accountControl}) {
       </header>
       <ThreadViewport ref={scroller} hidden={!!dataSetId || page!=='chat'} className="cw-conversation" aria-label={newConversation ? '新对话' : `${currentCase.name}的对话`}
         onScroll={event => {if (!dataSetId && !newConversation) positions.current[state.selected] = event.currentTarget.scrollTop;}}>
-        <div className={`cw-messages ${newConversation ? 'cw-new-conversation' : ''}`}>
-          {newConversation && <div className="cw-new-welcome"><span className="cw-welcome-bot"><img className="cw-welcome-logo" src="/brand/ta-agent-bot-white.png" alt="" width="144" height="144"/></span><h2>开始新对话</h2></div>}
+        <div className={`cw-messages ${showEmptyGuidance ? 'cw-empty-conversation' : ''}`}>
+          {showEmptyGuidance && <div className="cw-empty-guidance"><h2>想测试什么业务或规则？</h2><p>描述测试目标、已知条件和预期结果。<br/>还没想完整，也可以先说个大概。</p></div>}
           <ThreadMessages>{({message: runtimeMessage}) => {
             const message = runtimeMessage.metadata.custom.caseMessage || {
               id: runtimeMessage.id, role: runtimeMessage.role,
