@@ -29,11 +29,16 @@ export function numericQuoteBindingSpans(quote) {
     const prefix = fieldPrefix(text, match.index);
     if (negatedPrefix(prefix)) continue;
     const segment = text.slice(match.index + match[0].length, matches[i + 1]?.index);
-    // A quantity must immediately follow its field, allowing only comparison language and units.
-    const parsed = segment.match(/^((?:\s|[=:：≤≥]|>=|<=|应为|应该为|应当为|应达到|为|是|等于|至少|最多|不低于|不少于|大于等于|小于等于|不超过|不高于|不多于)*)([-+]?\d+(?:\.\d+)?)(?!\s*(?:[A-Za-z0-9_.+\-/%％×*÷万亿千百十]|[,，]\d))/);
+    const field = aliases.find(alias => alias.name.toLowerCase() === match[0].toLowerCase()).field;
+    // Bind an explicitly stated result, never calculate one from the inputs in the explanation.
+    let parsed = segment.match(/^((?:\s|[=:：≤≥]|>=|<=|应为|应该为|应当为|应达到|为|是|等于|至少|最多|不低于|不少于|大于等于|小于等于|不超过|不高于|不多于)*)([-+]?\d+(?:\.\d+)?)(?!\s*(?:[A-Za-z0-9_.+\-/%％×*÷万亿千百十]|[,，]\d))/);
+    if(!parsed){
+      const result=segment.match(/^(\s*按[^，,。；;\n?？]{1,120}?(?:计算|折算)(?:结果)?(?:为|是|等于)\s*)([-+]?\d+(?:\.\d+)?)(?=\s*(?:元|份)(?![A-Za-z0-9_.+\-/%％×*÷万亿千百十]))/);
+      const unit=field==='confirmedAmount'?'元':'份';
+      if(result && !negatedPrefix(result[1]) && !uncertainTail(result[1]) && segment.slice(result[0].length).trimStart().startsWith(unit))parsed=result;
+    }
     const value = parsed?.[2]?.replace(/^\+/, '');
     if (value === undefined || preciseDecimal(value) === null || uncertainTail(segment.slice(parsed[0].length))) continue;
-    const field = aliases.find(alias => alias.name.toLowerCase() === match[0].toLowerCase()).field;
     const before = prefix.match(/(?:至少|不低于|不少于|大于等于|>=|≥|最多|不高于|不超过|不多于|小于等于|<=|≤)\s*$/)?.[0] ?? '';
     const comparison = before + parsed[1];
     const operator = /(至少|不低于|不少于|大于等于|>=|≥)/.test(comparison) ? 'gte' :
