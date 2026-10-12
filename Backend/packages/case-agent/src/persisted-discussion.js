@@ -50,7 +50,7 @@ export function createPersistedDiscussionService({ repository, complete, visionC
     const existingPlan=await repository.getLatestSopProposal?.(token,chatPublicId,casePublicId);
     const snapshot=await readContext?.(token,{chatPublicId,casePublicId});
     const result = await discussTurn(graphFor(history,{onDelta,onReset,signal,channels,discussionContext:{planAvailable:Boolean(existingPlan && existingPlan.status!=='DRAFT'),snapshot,needsClarification}}), { priorTurns: history.turns.map(t=>({...t,content:imageDiscussionContent(t.content,t.imageAnalysis)})), userInput: imageDiscussionContent(input,imageAnalysis) });
-    if(offerPlan && result.reply.length<=3900){result.reply+='\n可以整理为审阅方案。你可以直接说继续，或点击整理入口。';result.promptVersion='discussion-offer-plan-v1';}
+    if(offerPlan && result.reply.length<=3900){result.reply+='\n下一步可以把当前讨论整理成审阅方案。你可以直接说“帮我生成这个方案”。';result.promptVersion='discussion-offer-plan-v1';}
     signal?.throwIfAborted();
     const saved = await repository.finishCaseDiscussionTurn(token, chatPublicId, casePublicId, {
       turnNumber: pending.turnNumber,
