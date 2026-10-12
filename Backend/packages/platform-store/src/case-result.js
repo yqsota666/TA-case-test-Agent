@@ -19,7 +19,7 @@ export function createCaseResultRepository({transaction}){
  }
  async function businessOutput(db,keys,planVersion,write=false){
   const [[row]]=await db.execute(`SELECT CAST(id AS CHAR) AS id,plan_version AS planVersion,source_kind AS sourceKind,content_text AS content,content_sha256 AS sha256,created_at AS createdAt
-   FROM case_business_outputs WHERE workspace_id=? AND chat_id=? AND case_id=? AND plan_version=? ORDER BY id DESC LIMIT 1${write?' FOR UPDATE':''}`,[...keys,planVersion]);
+   FROM case_business_outputs WHERE workspace_id=? AND chat_id=? AND case_id=? AND plan_version=? ORDER BY case_business_outputs.id DESC LIMIT 1${write?' FOR UPDATE':''}`,[...keys,planVersion]);
   return row??null;
  }
  async function readBusinessOutput(token,input){return transaction(async db=>{
