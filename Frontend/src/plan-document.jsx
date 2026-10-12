@@ -1,7 +1,9 @@
+import {RecordDetails} from './assistant-ui/record-details.jsx';
+import {DetailTabs,DetailTabPanel} from './assistant-ui/detail-tabs.jsx';
 import {FileSchedule} from './file-schedule.jsx';
 import {OperationTasks} from './operation-tasks.jsx';
 import {planText} from './plan-language.js';
-import React, {useState, useEffect, useRef} from 'react';
+import React, {useState, useEffect, useRef, useId} from 'react';
 import {ChevronRight, X} from './ui-icons.jsx';
 import './plan-editor.css';
 import {PlanComparison} from './plan-comparison.jsx';
@@ -24,7 +26,7 @@ function PreparedPlanData({data,onSave,editable}) {
   const [selected,setSelected]=useState('customers'),table=dataTables[selected],rows=data[selected]||[];
   const value=(row,key)=>key==='investorType'?(String(row[key])==='1'?'个人':'机构'):key==='customerIndex'?(data.customers?.[row[key]]?.name||'—'):key==='accountIndex'?`准备账户 ${row[key]+1}`:key==='fundIndex'?(data.funds?.[row[key]]?.fundName||'—'):row[key];
   return <section className="cw-prepared-data"><div className="cw-plan-items-header"><h3>准备数据</h3><div className="cw-plan-view" role="group" aria-label="准备数据表">{Object.entries(dataTables).map(([key,item])=><button type="button" key={key} aria-pressed={selected===key} onClick={()=>setSelected(key)}>{item.title}</button>)}</div></div>
-    {rows.length?<div className="cw-plan-comparison"><table><caption className="cw-sr-only">{table.title}准备数据</caption><thead><tr>{table.columns.map(([key,label])=><th scope="col" key={key}>{label}</th>)}{editable&&<th scope="col" className="cw-data-action">操作</th>}</tr></thead><tbody>{rows.map((row,index)=><tr key={index}>{table.columns.map(([key])=><td key={key}>{value(row,key)}</td>)}{editable&&<td className="cw-data-action"><button type="button" className="cw-row-edit" aria-label={`修改${table.title}第${index+1}行`} onClick={()=>setEditing({table:selected,index,row:{...row}})}>修改</button></td>}</tr>)}</tbody></table></div>:<p>无需准备初始{table.title}记录。</p>}
+    {rows.length===1?<RecordDetails items={table.columns.map(([key,label])=>[label,value(rows[0],key)])} editLabel={`修改${table.title}第1行`} onEdit={editable?()=>setEditing({table:selected,index:0,row:{...rows[0]}}):undefined}/>:rows.length?<div className="cw-plan-comparison" tabIndex={0} role="region" aria-label={`${table.title}准备数据列表`}><table><caption className="cw-sr-only">{table.title}准备数据</caption><thead><tr>{table.columns.map(([key,label])=><th scope="col" key={key}>{label}</th>)}{editable&&<th scope="col" className="cw-data-action">操作</th>}</tr></thead><tbody>{rows.map((row,index)=><tr key={index}>{table.columns.map(([key])=><td key={key}>{value(row,key)}</td>)}{editable&&<td className="cw-data-action"><button type="button" className="cw-row-edit" aria-label={`修改${table.title}第${index+1}行`} onClick={()=>setEditing({table:selected,index,row:{...row}})}>修改</button></td>}</tr>)}</tbody></table></div>:<p>无需准备初始{table.title}记录。</p>}
     {editing&&<PreparedRowEditor editing={editing} data={data} onClose={()=>setEditing(null)} onSave={async row=>{const next=structuredClone(data);next[editing.table][editing.index]=row;await onSave(next);setEditing(null);}}/>}
   </section>;
 }
@@ -45,14 +47,22 @@ function reviewQuestions(plan) {
   return result;
 }
 export function PlanDocument({proposal,onSave,onSaveContent,onSaveOperations,dataApproval,taskProgress=[],locked=false,editable=false}) {
-  const plan=normalizePlan(proposal),questions=reviewQuestions(plan);
+  const plan=normalizePlan(proposal),questions=reviewQuestions(plan),id=useId();
+  const [view,setView]=useState('content');
   return <div className="cw-plan-shell">
-    <div className="cw-plan-document" tabIndex={0} role="region" aria-label="方案内容">
-      {plan.objective&&<p className="cw-plan-objective">{plan.objective}</p>}
-      {plan.scenarios.length>0?<PlanComparison plan={plan} sourceScenarios={proposal.scenarios} editable={editable} onSaveContent={onSaveContent}/>:<p>暂无测试项。</p>}
-      {questions.length>0&&<section className="cw-plan-questions"><h3>还需完善</h3><ul>{questions.map(item=><li key={item}>{item}</li>)}</ul></section>}
-      {plan.dataSpecification&&<details className="cw-review-common cw-plan-data-details"><summary>准备数据<ChevronRight size={15}/></summary><PreparedPlanData data={plan.dataSpecification} onSave={onSave} editable={editable}/></details>}
-      <details className="cw-review-common cw-plan-data-details"><summary>执行与文件安排<ChevronRight size={15}/></summary><OperationTasks proposal={proposal} progress={taskProgress} locked={locked} editable={editable} onSave={onSaveOperations}/><FileSchedule exchangePlan={proposal.exchangePlan} ordered={proposal.contract?.version===4}/></details>
+    <DetailTabs id={id} label="方案分区" items={[["content","方案内容"],["data","准备数据"],["files","文件安排"]]} value={view} onChange={setView}/>
+    <div className="cw-plan-document" role="region" aria-label="方案内容">
+      <DetailTabPanel id={id} value={view} tab="content">
+        {plan.objective&&<section className="cw-plan-goal"><h2>测试目标</h2><p className="cw-plan-objective">{plan.objective}</p></section>}
+        {plan.scenarios.length>0?<PlanComparison plan={plan} sourceScenarios={proposal.scenarios} editable={editable} onSaveContent={onSaveContent}/>:<p>暂无测试项。</p>}
+        {questions.length>0&&<section className="cw-plan-questions"><h3>还需完善</h3><ul>{questions.map(item=><li key={item}>{item}</li>)}</ul></section>}
+      </DetailTabPanel>
+      <DetailTabPanel id={id} value={view} tab="data">
+        {plan.dataSpecification?<PreparedPlanData data={plan.dataSpecification} onSave={onSave} editable={editable}/>:<p className="cw-detail-empty">准备数据尚未整理完成，可以在对话中继续完善方案。</p>}
+      </DetailTabPanel>
+      <DetailTabPanel id={id} value={view} tab="files">
+        <OperationTasks proposal={proposal} progress={taskProgress} locked={locked} editable={editable} onSave={onSaveOperations}/><FileSchedule exchangePlan={proposal.exchangePlan} ordered={proposal.contract?.version===4}/>
+      </DetailTabPanel>
     </div>
     {dataApproval}
   </div>;

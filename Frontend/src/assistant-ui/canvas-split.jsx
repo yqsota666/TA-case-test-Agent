@@ -16,13 +16,13 @@ export function CanvasSplitMessage({ speaker, className, ...props }) {
 export function CanvasSplitDocument({ className, ...props }) {
     return (<div data-slot="canvas-split-document" className={cn("flex min-w-0 flex-1 flex-col", className)} {...props}/>);
 }
-export function CanvasSplitHeader({ title, version, saved, onCopy, onClose, className, ...props }) {
+export function CanvasSplitHeader({ title, version, saved, onCopy, onClose, icon:Icon=FileTextIcon, closeLabel='关闭方案详情', className, ...props }) {
     return (<div data-slot="canvas-split-header" className={cn("border-foreground/[0.07] flex items-center gap-2 border-b px-3.5 py-2.5", className)} {...props}>
-      <FileTextIcon className="text-foreground/35 size-3.5 shrink-0"/>
-      <span className="min-w-0 flex-1 truncate text-[13px] font-medium">
+      <Icon aria-hidden="true" className="text-foreground/35 size-3.5 shrink-0"/>
+      <h2 className="cw-detail-title">
         {title}
-      </span>
-      <button type="button" aria-label="关闭方案详情" onClick={onClose} disabled={!onClose} className={cn(ghostButton, "size-7 shrink-0 disabled:pointer-events-none disabled:opacity-30")}>
+      </h2>
+      <button type="button" aria-label={closeLabel} onClick={onClose} disabled={!onClose} className={cn(ghostButton, "size-7 shrink-0 disabled:pointer-events-none disabled:opacity-30")}>
         <XIcon className="size-3.5"/>
       </button>
     </div>);

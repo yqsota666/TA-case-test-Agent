@@ -1,6 +1,8 @@
 import React, {useEffect,useRef,useState} from 'react';
 import {CanvasSplitDocument,CanvasSplitHeader,CanvasSplitBody} from './canvas-split.jsx';
-export function DetailPanel({title,children,onClose}) {
+import {ArrowLeftRight,ClipboardCheck,FileText,Table2} from '../ui-icons.jsx';
+import './artifact-detail.css';
+export function DetailPanel({title,children,onClose,kind='plan',closeLabel='关闭方案详情'}) {
   const ref=useRef(null);
   const close=useRef(onClose);close.current=onClose;
   const [narrow,setNarrow]=useState(()=>matchMedia('(max-width:1100px)').matches);
@@ -27,7 +29,7 @@ export function DetailPanel({title,children,onClose}) {
     update();panel.focus();query.addEventListener('change',update);document.addEventListener('keydown',keys,true);
     return()=>{query.removeEventListener('change',update);document.removeEventListener('keydown',keys,true);siblings.forEach((element,i)=>{element.inert=original[i];});if(previous?.isConnected&&!previous.closest('[inert]'))previous.focus();};
   },[]);
-  return <CanvasSplitDocument className="aui-detail" role={narrow?'dialog':'region'} aria-modal={narrow||undefined} aria-label={title} tabIndex={-1} ref={ref}>
-    <CanvasSplitHeader title={title} onClose={onClose}/><CanvasSplitBody>{children}</CanvasSplitBody>
+  return <CanvasSplitDocument className={`aui-detail cw-artifact-detail cw-artifact-detail--${kind}`} role={narrow?'dialog':'region'} aria-modal={narrow||undefined} aria-label={title} tabIndex={-1} ref={ref}>
+    <CanvasSplitHeader title={title} icon={{plan:FileText,data:Table2,files:ArrowLeftRight,result:ClipboardCheck}[kind]??FileText} closeLabel={closeLabel} onClose={onClose}/><CanvasSplitBody>{children}</CanvasSplitBody>
   </CanvasSplitDocument>;
 }
