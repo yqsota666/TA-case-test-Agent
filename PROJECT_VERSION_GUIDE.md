@@ -1,5 +1,9 @@
 # 项目版本与工作树索引
 
+## 搜索筛选界面候选（2026-10-12，本地待验收）
+
+用户继续授权coding，`codex/catalog-filter-design`从统一平台0878e534开发，功能树 `/Users/apple/.codex/worktrees/fixed-workspace-scroll/gf`。候选 http://127.0.0.1:5210/?theme=liquid&page=data&dataTable=customers 代理现有3106，5199不替换。复用适配OpenStatus MIT候选多选组件，搜索/业务筛选/已应用条件分层，高级条件、排序、常用查询独立弹层；保留材质与后端查询契约，无新依赖或后端改动。40项前端测试、构建、真实SQL合成事务浏览器桌面/390px/260px矮窗口通过；本地项目skill自审修复同字段多约束覆盖和样式优先级问题。证据 `.context/catalog-design`，说明 `docs/搜索筛选界面改造.md`。不代表用户已视觉验收，无push/PR或业务数据写入。操作前核对实时Git/进程。
+
 ## 对话意图与草稿恢复接入5199（2026-10-12）
 
 按用户“切到5199，再继续”，修复分支先合入搜索功能最新基线99c2483d，组合提交6958597e通过464项后端、40项前端及构建（22项MySQL专项按开关跳过），再快进接入`codex/platform-integration`。5199/API3106从统一树重启，数据库仍为`ta_case_agent_chain`，没有迁移。意图识别、草稿检查点及可编辑恢复、同包文件顺序编译与审阅入口已接入。本轮正在通过5199真实前端在用户`test01`项目中新建Case逐条回放原输入，不能将前一轮重建上下文的通过当作本次结果。新Case为`2fac65c1-688b-45fa-bdff-59b14bf41dd8`，原Case保留。未push/PR；启动前核对实时Git与进程。本条覆盖下节“尚未接入5199”的候选状态。
