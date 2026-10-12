@@ -5,6 +5,7 @@ import {setAccountStorageOwner} from './account-storage.js';
 import './account-gate.css';
 import {avatarImage} from './avatar-image.js';
 import {AccountPage} from './account-page.jsx';
+import {ThemePicker} from './theme-picker.jsx';
 
 function AuthForm({onAuthenticated}) {
   const [register,setRegister]=useState(false);
@@ -25,6 +26,7 @@ function AuthForm({onAuthenticated}) {
     catch(error){setError(error.message);}finally{setBusy(false);}
   };
   return <main className="account-entry">
+    <div className="account-appearance"><ThemePicker/></div>
     <section className="account-sheet" aria-labelledby="account-title">
       <div className="account-brand-row">
         <img className="account-brand" src="/brand/ta-agent-bot-white.png" alt="" onError={event=>{event.currentTarget.hidden=true;}} />

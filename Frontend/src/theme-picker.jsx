@@ -2,16 +2,20 @@ import {createContext, useContext, useEffect, useRef, useState} from 'react';
 import {Palette, Check} from './ui-icons.jsx';
 import './theme-picker.css';
 import './palette-preview.css';
+import './theme-surfaces.css';
 
 export const themes = [
   ['liquid','蓝色玻璃'], ['neutral','灰白'], ['warm','暖灰'], ['contrast','深灰侧栏'],
 ];
 const valid = value => themes.some(([id]) => id === value);
+const preferenceKey = 'case-agent-appearance';
 const ThemeContext = createContext(null);
 export const useTheme = () => useContext(ThemeContext);
 function requestedAppearance() {
   const palette = new URLSearchParams(location.search).get('palette');
-  return valid(palette) ? palette : 'contrast';
+  if (valid(palette)) return palette;
+  try {const saved = localStorage.getItem(preferenceKey); if (valid(saved)) return saved;} catch {}
+  return 'contrast';
 }
 function applyAppearance(value) {
   document.documentElement.dataset.theme = 'liquid';
@@ -28,6 +32,7 @@ export function ThemeProvider({children}) {
     if (!valid(value)) return;
     applyAppearance(value);
     setAppearance(value);
+    try {localStorage.setItem(preferenceKey, value);} catch {}
     const url = new URL(location.href);
     url.searchParams.set('theme', 'liquid');
     url.searchParams.set('palette', value);

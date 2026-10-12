@@ -1,0 +1,56 @@
+/* Shared surface roles for authentication, catalogs and workflow details. */
+html:root[data-theme=liquid]:not([data-palette]) {
+  --study-accent:#146279;--study-accent-deep:#104e64;--study-focus:#176c88;
+}
+html:root[data-theme=liquid] {
+  --sp-ink:var(--study-ink);--sp-muted:var(--study-muted);--sp-line:var(--study-line);
+  --sp-accent:var(--study-accent);--sp-well:var(--study-hover);--sp-surface:var(--study-table);
+  --sp-highlight:var(--study-table);--sp-edge:var(--study-line);
+  --sp-shadow:rgb(30 40 50 / 10%);--sp-glass:var(--study-document);--sp-modal:var(--study-modal);
+  --wf-text:var(--study-ink);--wf-muted:var(--study-muted);--wf-line:var(--study-line);
+  --wf-surface:var(--study-table);--wf-accent:var(--study-accent);
+  --wf-sidebar:var(--study-hover);
+}
+html[data-theme=liquid][data-palette] {
+  --study-mark:var(--preview-tint);--study-document-icon:var(--preview-tint);
+  --study-modal:var(--preview-card);--study-backdrop:rgb(30 35 40 / 24%);
+  --study-document-shadow:inset 0 1px #fff,0 6px 20px rgb(25 30 35 / 5%);
+  --study-document-hover-shadow:inset 0 1px #fff,0 8px 24px rgb(25 30 35 / 10%);
+  --study-modal-shadow:0 24px 80px rgb(25 30 35 / 16%);
+  --study-edge-shadow:inset 0 1px rgb(255 255 255 / 70%),0 3px 8px rgb(25 30 35 / 8%);
+  --study-selected-shadow:inset 0 1px #fff;
+}
+html[data-theme=liquid] .account-entry {background:var(--study-canvas);}
+html[data-theme=liquid] .account-sheet {background:var(--study-document);box-shadow:var(--study-modal-shadow);}
+html[data-theme=liquid] .account-brand {background:var(--study-accent);}
+html[data-theme=liquid] .account-submit {background:var(--study-accent);color:#fff;border-color:var(--study-accent);}
+html[data-theme=liquid] .account-submit:hover:not(:disabled) {background:var(--study-accent-deep);}
+html[data-theme=liquid] .account-sheet input {background:var(--study-table);}
+html[data-theme=liquid] .account-appearance {position:absolute;right:24px;top:24px;z-index:2;}
+html[data-theme=liquid] .account-appearance .cw-appearance-trigger {width:44px;height:44px;background:var(--study-table);border:1px solid var(--study-line);}
+html[data-theme=liquid] .account-appearance .cw-appearance-panel {top:52px;bottom:auto;}
+html[data-theme=liquid][data-palette=contrast] .account-entry {background:linear-gradient(90deg,#30363d 0%,#242a30 30%,#fafbfc 30%,#fafbfc 100%);}
+html[data-theme=liquid][data-palette] :is(.cw-modal,.aui-detail,.gc-filter-dialog,.gc-detail) {background:var(--study-modal);color:var(--study-ink);}
+html[data-theme=liquid][data-palette] .cw-modal::backdrop {background:var(--study-backdrop);}
+html[data-theme=liquid] :is(.cw-spectral-item,.cw-modal .cw-plan-comparison,.cw-modal .cw-exchange-table,.cw-modal .cw-review-check-table) {background:var(--study-table);}
+html[data-theme=liquid] .cw-modal .cw-plan-confirm-footer {background:var(--study-hover);}
+html[data-theme=liquid] .cw-result .cw-result-icon {background:var(--study-document-icon);}
+html[data-theme=liquid] .cw-spectral-item>summary:hover {background:var(--study-hover);}
+html[data-theme=liquid] .wde-tabs button.active {background:var(--study-selected);color:var(--study-on-selected);}
+html[data-theme=liquid] .gc-filter-dialog button.gc-primary {background:var(--study-accent);color:#fff;}
+html[data-theme=liquid] :is(.wdb-tables button.active,.wdb-tables button:hover,.wdb-grid tr:hover td,.wdr-user) {background:var(--study-hover);}
+html[data-theme=liquid] .wde-scroll th {background:var(--study-table-head);color:var(--study-muted);}
+html[data-theme=liquid] .wde-scroll tr:nth-child(even) td {background:var(--study-table);}
+html[data-theme=liquid] .wde-scroll :is(input,select):is(:hover,:focus) {border-color:var(--study-focus);}
+html[data-theme=liquid] :is(.wde-backdrop,.bdp-backdrop) {background:var(--study-backdrop);color:var(--study-ink);}
+html[data-theme=liquid] .bdp-shell {background:var(--study-table);color:var(--study-ink);border-color:var(--study-line);}
+html[data-theme=liquid] :is(.bdp-header,.bdp-table-list,.bdp-viewer-head,.bdp-table-scroll th,.bdp-table-scroll td) {border-color:var(--study-line);}
+html[data-theme=liquid] :is(.bdp-header span,.bdp-close,.bdp-table-list button,.bdp-table-scroll td) {color:var(--study-ink);}
+html[data-theme=liquid] :is(.bdp-table-scroll thead th,.bdp-table-scroll .bdp-row-number) {background:var(--study-table-head);color:var(--study-muted);}
+html[data-theme=liquid] :is(.bdp-close:hover,.bdp-table-list button:hover,.bdp-table-scroll input:hover,.bdp-cell-link:hover) {background:var(--study-hover);}
+html[data-theme=liquid] .bdp-table-list button.selected {background:var(--study-selected);color:var(--study-on-selected);}
+html[data-theme=liquid] .bdp-cell-link {color:var(--study-accent);text-decoration-color:currentColor;}
+html[data-theme=liquid] :is(.bdp-table-scroll input:focus-visible,.bdp-cell-link:focus-visible) {outline-color:var(--study-focus);background:var(--study-hover);}
+@media(max-width:600px) {
+  html[data-theme=liquid][data-palette=contrast] .account-entry {background:linear-gradient(180deg,#30363d 0%,#242a30 24%,#fafbfc 24%,#fafbfc 100%);}
+}

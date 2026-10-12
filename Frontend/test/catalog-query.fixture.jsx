@@ -7,6 +7,7 @@ import '../src/base.css';
 import '../src/case-workbench.css';
 import '../src/defense-themes.css';
 import '../src/liquid-home.css';
+import '../src/theme-picker.jsx';
 
 setAccountStorageOwner('catalog-synthetic-fixture');
 document.documentElement.dataset.theme=new URLSearchParams(location.search).get('theme')||'liquid';
