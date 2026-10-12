@@ -24,12 +24,13 @@ export function checkDiscussionReply(reply,{planAvailable=false,snapshot}={}) {
 export async function completeDiscussionReply(complete,request,context={}) {
   const contextual=withDiscussionSnapshot(request,context.snapshot);
   const evidenceHint='\n最后核对：用户只给允许或拒绝时，只陈述原有状态与允许/拒绝，不升级为已成功/失败，不解释队列、处理环节、原因或执行机制。材料未给原因时明确材料未说明原因；也不能根据状态名称推断是否终态等未提供的属性。对比表不增加重复含义的列。用户只要解释时，只回答区别，不额外报告阶段、确认状态或安排下一步。';
-  const stageHint=context.snapshot?.plan?.status==='DRAFT'?' 当前方案已退回草稿，只可建议继续讨论并重新整理方案供审阅。本轮只说当前这一步，不展开审阅后的确认或执行动作；禁止提示点击确认预期或生成文件。':'';
+  const stageHint=context.snapshot?.plan?.status==='DRAFT'?' 当前保存的是草稿，下一步可按已有条件整理成审阅方案。用户只问下一步时，用一至两句说明当前可做的动作；条件已明确时不要求继续讨论，不重复整份条件，不展开审阅后的确认或执行动作。只有确实缺失关键业务规则时才说明问题；禁止提示点击确认预期或生成文件。':'';
+  const offerHint=context.offerPlan?' 下一步已可建议整理现有讨论。自然说明可按已有条件生成审阅方案，用户可以说“帮我生成这个方案”等自然语言；不要把具体说法当固定口令，不要求用户再次逐项认可已给条件，不重复下一步提示。':'';
   const exchangeHint=context.snapshot?.exchange?.status==='NOT_REQUIRED'?' 当前方案明确不走TA文件链路；回复不得安排现在或未来生成、提交TA文件，不能说确认预期后生成文件，也不追加发文通道或销售商待选任务。':'';
   for(let attempt=0;attempt<2;attempt++) {
     try{
       if(attempt)await request.onReset?.();
-      const reply=await complete({...contextual,system:contextual.system+evidenceHint+(context.planAvailable?'\n系统已核实当前Case存在方案；可以引用已有方案供用户查看，不代表本轮新建、确认或执行方案。':'')+stageHint+exchangeHint+(attempt?'\n上一条回复未通过讨论校验。请简洁回答原问题，不声称本轮已执行任何操作；已有方案可称为待审阅方案。只返回给用户的答复。'+stageHint+exchangeHint:'')});
+      const reply=await complete({...contextual,system:contextual.system+evidenceHint+(context.planAvailable?'\n系统已核实当前Case存在方案；可以引用已有方案供用户查看，不代表本轮新建、确认或执行方案。':'')+stageHint+exchangeHint+offerHint+(attempt?'\n上一条回复未通过讨论校验。请简洁回答原问题，不声称本轮已执行任何操作；已有方案可称为待审阅方案。只返回给用户的答复。'+stageHint+exchangeHint:'')});
       return checkDiscussionReply(reply,context);
     }catch(error){
       if(!['MODEL_OUTPUT_FORMAT','MODEL_EMPTY_OUTPUT'].includes(error.code))throw error;

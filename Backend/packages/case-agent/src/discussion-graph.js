@@ -2,6 +2,7 @@ import {observeGraph} from './observability.js';
 import { StateGraph, StateSchema, START, END } from '@langchain/langgraph';
 import { z } from 'zod';
 import {DISCUSSION_VOICE,checkDiscussionReply,completeDiscussionReply} from './discussion-reply.js';
+import {planPlatformOwnershipIssues} from './plan-platform-ownership.js';
 import {
   FIRST_DISCUSSION_PROMPT,
   FIRST_DISCUSSION_PROMPT_VERSION,
@@ -16,6 +17,7 @@ import {
 } from './plan-proposal.js';
 
 export const FOLLOWUP_DISCUSSION_PROMPT_VERSION = 'followup-discussion-draft-adaptive-v7';
+export const HISTORICAL_PLAN_CONTEXT = '历史方案已保留；本轮业务内容以当前已保存草稿与用户消息为准，历史生成不证明确认或执行。';
 export const FOLLOWUP_DISCUSSION_PROMPT = DISCUSSION_VOICE + '\n阅读完整对话，以用户最新纠正为准。承接上轮问题的答案，推动下一步，不循环索要已经提供的信息。';
 
 const Turn = z.object({ role: z.enum(['user', 'assistant']), content: z.string() });
@@ -62,16 +64,18 @@ export function createDiscussionGraph({ complete, onDelta, onReset, signal, disc
   }));
   graph.addNode('propose_plan', async ({ userInput, priorTurns }) => {
     const proposeComplete=request=>complete(currentProposal?{...request,
-      system:request.system+' currentProposal是当前已保存的业务草稿，仅供承接条件；不证明已确认或已执行。用户最新输入优先。历史AI失败诊断、可选核验建议和技术缺失不是用户新增要求，不继承为业务问题；重新检查当前用户已给的日期、同包安排与实际业务规则。',
-      messages:request.messages.map((turn,i)=>i===priorTurns.length?{...turn,content:JSON.stringify({userInput:turn.content,currentProposal})}:turn),
+      system:request.system+' currentProposal是当前已保存的业务草稿，仅供承接条件；不证明已确认或已执行，也不是系统能力事实。保留用户明确的业务值，但必须纠正与系统平台职责冲突的历史AI说法：交易账号由平台在构造申请包前生成，不能写成TA处理开户后生成交易账号；TA回传确认和TA账号绑定，不生成或更换平台交易账号。用户最新输入优先。历史AI失败诊断、可选核验建议和技术缺失不是用户新增要求，不继承为业务问题；重新检查当前用户已给的日期、同包安排与实际业务规则。',
+      messages:request.messages.map((turn,i)=>i===priorTurns.length?{...turn,content:JSON.stringify({userInput:turn.content,currentProposal})}:turn).filter(turn=>turn.role!=='assistant'||turn.content!==HISTORICAL_PLAN_CONTEXT),
     }:request);
-    let parsed,previous,proposal;
+    let parsed,previous,proposal,ownershipIssues=[];
     for(let attempt=0;attempt<2;attempt++){
       const reply=await proposeComplete({thinkingMode:'disabled',reasoningEffort:'low',
         system:PLAN_PROPOSAL_PROMPT+(proposalRepair?' 上次文件安排与后续申请契约不一致。请依据proposalRepair修复文件安排，保持用户业务条件、日期与真实未来结果依赖；不能机械删除真实依赖。只生成修复后的方案JSON。':'')+(attempt?' 上次格式或日期证据校验未通过。只修正JSON结构、日期格式、模拟日期标识和纯文本字段，保留用户范围与业务值；用户允许模拟日期时，preconditions逐文件写为【模拟假设】01业务日期YYYYMMDD等；不可改写用户指定日期、取消或待定指令。必须直接以{开头、以}结尾，不能含代码围栏、解释或额外字段。':''),
-        messages:[...priorTurns,{role:'user',content:proposalRepair?JSON.stringify({userInput,proposalRepair}):userInput},...(attempt?[{role:'assistant',content:previous},{role:'user',content:'请修正上述方案输出格式及日期证据：模拟日期必须明确标为【模拟假设】并逐文件列出日期。用户指定、改期或待定仍优先，不能为了READY捏造真实时间。业务条件仍以原对话为准。'}]:[])]});
+        messages:[...priorTurns,{role:'user',content:proposalRepair?JSON.stringify({userInput,proposalRepair}):userInput},...(attempt?[{role:'assistant',content:previous},{role:'user',content:ownershipIssues.length?ownershipIssues.join('\n'):'请修正上述方案输出格式及日期证据：模拟日期必须明确标为【模拟假设】并逐文件列出日期。用户指定、改期或待定仍优先，不能为了READY捏造真实时间。业务条件仍以原对话为准。'}]:[])]});
       try{
         parsed=parsePlanProposal(reply);
+        ownershipIssues=planPlatformOwnershipIssues(parsed);
+        if(ownershipIssues.length)throw Object.assign(new Error(ownershipIssues.join('；')),{code:'MODEL_OUTPUT_FORMAT'});
         proposal=guardExchangeTimeEvidence(parsed,[...priorTurns.filter(turn=>turn.role==='user').map(turn=>turn.content),userInput]);
         const draftDates=parsed.preconditions.some(value=>/模拟.*(?:日期|日)|(?:日期|日).*模拟/.test(value)) || [...priorTurns.filter(turn=>turn.role==='user').map(turn=>turn.content),userInput].some(value=>/日期.{0,12}模拟|模拟.{0,12}日期/.test(value));
         if(attempt===0 && draftDates && parsed.exchangePlan.status==='READY' && proposal.exchangePlan.status==='UNPLANNED'){previous=reply;continue;}
