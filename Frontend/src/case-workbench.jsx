@@ -360,7 +360,7 @@ export function CaseWorkbench({accountControl}) {
             if (!message.text && !message.result && !message.continuation && !message.images?.length) return null;
             return <ChatMessage message={message} onQuote={inputDisabled?undefined:text=>{setState(v=>({...v,quotes:{...v.quotes,[draftKey]:text}}));composer.current?.focus();}} text={message.result && state.plan ? (state.plan.status==='DRAFT'?message.text.split('\n')[0]:planSummary(state.plan.proposal)) : message.kind==='PROPOSE_PLAN'?(message.draft?'原方案草稿保留在详情中。':'已整理测试方案。原回复保留在详情中。'):message.text}>
             <MessageImages images={message.images} onOpen={image=>setModal({type:'image',image})}/>
-            {message.kind==='PROPOSE_PLAN' && !message.result && <ArtifactCard title={message.draft?'历史方案草稿':'历史测试方案'} meta="查看原回复" onClick={()=>setModal({type:'historical-plan',message})}/>}
+            {message.kind==='PROPOSE_PLAN' && !message.result && <ArtifactCard title={message.draft?'方案草稿':'测试方案'} meta="查看详情" onClick={()=>setModal({type:'historical-plan',message})}/>}
             {message.result && <ArtifactCard title={state.plan?.status==='DRAFT'?'方案草稿':'测试方案'} meta={state.plan?.status==='LOCKED'?'已确认':'查看与修改'} onClick={()=>{setPlanError('');setModal({type:state.workflow?.stage==='CONFIRM_EXPECTATIONS'?'expectations':'result'});}}/>}
 
           </ChatMessage>;}}</ThreadMessages>
@@ -423,7 +423,7 @@ export function CaseWorkbench({accountControl}) {
       setImageDrafts(v=>({...v,[caseId]:images}));
     }}/></Modal>}
     {modal?.type === 'navigation' && <Modal title="项目" onClose={() => setModal(null)}><div className="cw-mobile-sidebar">{sidebar}</div></Modal>}
-    {modal?.type === 'historical-plan' && <DetailPanel title="历史测试方案" onClose={()=>setModal(null)}><HistoricalPlan message={modal.message} messages={messages} currentPlan={state.plan} onOpenCurrent={()=>{setPlanError('');setModal({type:state.workflow?.stage==='CONFIRM_EXPECTATIONS'?'expectations':'result'});}} onResume={()=>{setModal(null);composer.current?.focus();}}/></DetailPanel>}
+    {modal?.type === 'historical-plan' && <DetailPanel title={modal.message.draft?'方案草稿':'测试方案'} onClose={()=>setModal(null)}><HistoricalPlan message={modal.message} messages={messages} currentPlan={state.plan} onOpenCurrent={()=>{setPlanError('');setModal({type:state.workflow?.stage==='CONFIRM_EXPECTATIONS'?'expectations':'result'});}} onResume={()=>{setModal(null);composer.current?.focus();}}/></DetailPanel>}
     {modal?.type === 'expectations' && state.plan && <DetailPanel title="确认预期结果" onClose={()=>setModal(null)}><ExpectationReview key={state.selected+state.plan.versionNumber} plan={state.plan} busy={planBusy||running} error={planError} onConfirm={()=>confirmPlan('EXPECTATIONS')} onSaveContent={savePlanContent}/></DetailPanel>}
     {modal?.type === 'result' && <DetailPanel title="测试方案" onClose={() => setModal(null)}>
       {state.plan && <PlanDocument key={state.selected+state.plan.versionNumber} proposal={state.plan.proposal} taskProgress={state.workflow?.tasks} locked={state.plan.status==='LOCKED'} onSaveOperations={async applications=>{
