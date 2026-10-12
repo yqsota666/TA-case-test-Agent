@@ -13,7 +13,8 @@ export function normalizePlan(proposal={}) {
     scenarios:Array.isArray(proposal.scenarios)?proposal.scenarios.filter(item=>item&&typeof item==='object').map(item=>Object.fromEntries(['title','setup','action','expected','evidence'].map(key=>[key,text(item[key])]))):[],
     exchangePlan:proposal.exchangePlan&&typeof proposal.exchangePlan==='object'?{status:text(proposal.exchangePlan.status),steps:Array.isArray(proposal.exchangePlan.steps)?proposal.exchangePlan.steps:[],openQuestions:strings(proposal.exchangePlan.openQuestions)}:null};
 }
-export function planSummary(proposal) {
+export function planSummary(proposal,status) {
+  if(status==='LOCKED')return '方案已确认。可以打开查看详情。';
   return '方案已整理。可以打开查看、修改，确认后再继续。';
 }
 const dataTables={customers:{title:'客户',columns:[['name','名称'],['investorType','客户类型'],['simulatedBalance','模拟余额']]},accounts:{title:'账户',columns:[['customerIndex','所属客户'],['branchCode','开户网点']]},funds:{title:'基金',columns:[['fundCode','基金代码'],['fundName','名称'],['shareClass','份额类别'],['nav','单位净值']]},holdings:{title:'持仓',columns:[['accountIndex','所属账户'],['fundIndex','基金'],['totalVolume','初始份额']]}};
