@@ -115,3 +115,16 @@ test('TA receive-result language normalizes business expectation without asking 
   assert.equal(result.scenarios[0].expected,expected);
  }
 });
+
+test('a comma-separated explicit status completes the same operation without creating a false business question',()=>{
+ const raw={...proposal,openQuestions:[]};
+ const expected='03申购申请以2000.00元确认成功，状态为CONFIRMED（成功确认），确认份额为2000.00份';
+ const result=parsePlanProposal(JSON.stringify({...raw,scenarios:[{...raw.scenarios[0],expected}]}));
+ assert.equal(result.scenarios[0].expected,expected);assert.deepEqual(result.openQuestions,[]);
+ const repeated=parsePlanProposal(JSON.stringify({...raw,openQuestions:['请澄清场景1的TA业务确认结果：03申购申请以2000.00元确认成功','请澄清场景1的TA业务确认结果：02开户确认回传状态为CONFIRMED（成功确认）','实际手续费规则待明确'],scenarios:[{...raw.scenarios[0],expected}]}));
+ assert.deepEqual(repeated.openQuestions,['实际手续费规则待明确']);
+ for(const ambiguous of ['03申购申请以2000.00元确认成功，开户状态为CONFIRMED','03申购申请以2000.00元确认成功，状态为FAILED','申购是否确认成功，状态为CONFIRMED','03申购申请以2000.00元确认成功；状态为CONFIRMED']){
+  const parsed=parsePlanProposal(JSON.stringify({...raw,scenarios:[{...raw.scenarios[0],expected:ambiguous}]}));
+  assert.ok(parsed.openQuestions.length>0,ambiguous);
+ }
+});

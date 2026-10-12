@@ -43,7 +43,7 @@ function validatePriorTurns(priorTurns) {
   }
 }
 
-export function createDiscussionGraph({ complete, onDelta, onReset, signal, discussionContext={}, proposalRepair }) {
+export function createDiscussionGraph({ complete, onDelta, onReset, signal, discussionContext={}, proposalRepair, currentProposal }) {
   if (typeof complete !== 'function') throw new TypeError('complete must be a function');
   const graph = new StateGraph(DiscussionState);
   graph.addNode('ask_testing_intent', async ({ userInput }) => ({
@@ -61,9 +61,13 @@ export function createDiscussionGraph({ complete, onDelta, onReset, signal, disc
     promptVersion: FOLLOWUP_DISCUSSION_PROMPT_VERSION,
   }));
   graph.addNode('propose_plan', async ({ userInput, priorTurns }) => {
+    const proposeComplete=request=>complete(currentProposal?{...request,
+      system:request.system+' currentProposal是当前已保存的业务草稿，仅供承接条件；不证明已确认或已执行。用户最新输入优先。历史AI失败诊断、可选核验建议和技术缺失不是用户新增要求，不继承为业务问题；重新检查当前用户已给的日期、同包安排与实际业务规则。',
+      messages:request.messages.map((turn,i)=>i===priorTurns.length?{...turn,content:JSON.stringify({userInput:turn.content,currentProposal})}:turn),
+    }:request);
     let parsed,previous,proposal;
     for(let attempt=0;attempt<2;attempt++){
-      const reply=await complete({thinkingMode:'disabled',reasoningEffort:'low',
+      const reply=await proposeComplete({thinkingMode:'disabled',reasoningEffort:'low',
         system:PLAN_PROPOSAL_PROMPT+(proposalRepair?' 上次文件安排与后续申请契约不一致。请依据proposalRepair修复文件安排，保持用户业务条件、日期与真实未来结果依赖；不能机械删除真实依赖。只生成修复后的方案JSON。':'')+(attempt?' 上次格式或日期证据校验未通过。只修正JSON结构、日期格式、模拟日期标识和纯文本字段，保留用户范围与业务值；用户允许模拟日期时，preconditions逐文件写为【模拟假设】01业务日期YYYYMMDD等；不可改写用户指定日期、取消或待定指令。必须直接以{开头、以}结尾，不能含代码围栏、解释或额外字段。':''),
         messages:[...priorTurns,{role:'user',content:proposalRepair?JSON.stringify({userInput,proposalRepair}):userInput},...(attempt?[{role:'assistant',content:previous},{role:'user',content:'请修正上述方案输出格式及日期证据：模拟日期必须明确标为【模拟假设】并逐文件列出日期。用户指定、改期或待定仍优先，不能为了READY捏造真实时间。业务条件仍以原对话为准。'}]:[])]});
       try{

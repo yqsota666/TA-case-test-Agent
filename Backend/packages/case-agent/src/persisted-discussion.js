@@ -92,10 +92,14 @@ export function createPersistedDiscussionService({ repository, complete, visionC
       { expectedRevision: history.revision, userInput: input, kind: 'PROPOSE_PLAN',...(images.length?{images,imageAnalysis}:{}) });
     const channels=readChannels ? (await readChannels(token)).channels : undefined;
     const contextualComplete=channels ? withDiscussionChannels(complete,channels) : complete;
-    const checkpoint=history.pending?await repository.getLatestSopProposal?.(token,chatPublicId,casePublicId):null;
+    const latest=await repository.getLatestSopProposal?.(token,chatPublicId,casePublicId);
+    const checkpoint=history.pending?latest:null;
+    const currentProposal=latest?.proposal?Object.fromEntries(['objective','preconditions','scenarios'].map(key=>[key,latest.proposal[key]])):undefined;
+    const priorTurns=history.turns.map(t=>({...t,content:t.role==='assistant'&&t.kind==='PROPOSE_PLAN'?
+      '历史方案已保留；本轮业务内容以当前已保存草稿与用户消息为准，历史生成不证明确认或执行。':imageDiscussionContent(t.content,t.imageAnalysis)}));
     const result=checkpoint?.status==='DRAFT' && checkpoint.sourceTurnNumber===pending.turnNumber && !checkpoint.proposal.contract?
       {proposal:checkpoint.proposal,reply:displayPlanProposal(checkpoint.proposal),phase:'PROPOSAL_PENDING',promptVersion:'plan-proposal-draft-v12'}:
-      await proposeDiscussionPlan(graphFor(history,{signal,channels}), { priorTurns: history.turns.map(t=>({...t,content:imageDiscussionContent(t.content,t.imageAnalysis)})), userInput: modelInput });
+      await proposeDiscussionPlan(graphFor(history,{signal,channels,currentProposal}), { priorTurns, userInput: modelInput });
     signal?.throwIfAborted();
     await repository.checkpointCasePlanProposal?.(token,chatPublicId,casePublicId,{turnNumber:pending.turnNumber,assistantReply:result.reply,promptVersion:'plan-review-draft-v1',proposal:result.proposal});
     let draft=result.proposal.exchangePlan.status==='UNPLANNED';
@@ -103,7 +107,7 @@ export function createPersistedDiscussionService({ repository, complete, visionC
     if(!draft){
       try {
         const derive=request=>contextualComplete({...request,...(signal?{signal}:{})});
-        const turns=[...history.turns.map(t=>({...t,content:imageDiscussionContent(t.content,t.imageAnalysis)})),{role:'user',content:modelInput}];
+        const turns=[...priorTurns,{role:'user',content:modelInput}];
         try{result.proposal=await definePlanContract(derive,result.proposal,turns);}
         catch(error){
           if(error.stage!=='PLAN_EXCHANGE')throw error;
@@ -117,7 +121,7 @@ export function createPersistedDiscussionService({ repository, complete, visionC
         }
       }catch(error){
         if(signal?.aborted || !['DATA_SPEC_INVALID','INVALID_PLAN_CONTRACT','MODEL_TIMEOUT','MODEL_UNAVAILABLE','MODEL_RUN_LIMIT'].includes(error.code))throw error;
-        console.warn(JSON.stringify({event:'plan_draft_retained',code:error.code,stage:error.stage??'CONTRACT'}));
+        console.warn(JSON.stringify({event:'plan_draft_retained',code:error.code,stage:error.stage??'CONTRACT',...(error.validationIssues?{validationIssues:error.validationIssues}:{})}));
         draft=true;
         draftMessage=error.code==='MODEL_UNAVAILABLE'||error.code==='MODEL_TIMEOUT'?'模型服务暂时未能完成整理，已有草稿已保存，请重试整理。':'执行结构尚未通过校验，已有草稿已保存。无需补充技术字段，可以重试整理或修改业务条件。';
       }

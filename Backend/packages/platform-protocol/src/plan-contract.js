@@ -37,6 +37,7 @@ export function planContractValidationIssues(c,plan) {
   });
   const bindings=c.expectations.flatMap((a,i)=>{
     if(!a || typeof a.expectedQuote!=='string' || typeof a.expectedValue!=='string')return [`expectations[${i}]缺少原文或预期值`];
+    if(!plan.scenarios?.[a.scenarioIndex]?.expected?.includes(a.expectedQuote))return [`expectations[${i}].expectedQuote必须是对应scenarios[${a.scenarioIndex}].expected中的原文片段，不能引用evidence、setup、其他场景或自行改写。没有原文依据的额外协议断言应移除，原有业务预期由系统保留。`];
     const numeric=['confirmedAmount','confirmedVolume','totalVolume','availableVolume','frozenVolume'].includes(a.field);
     const bound=numeric?hasNumericFieldExpectation(a.field,a.expectedValue,a.expectedQuote,a.operator):hasLiteralExpectation(a.expectedValue,a.expectedQuote,a.field);
     return bound?[]:[`expectations[${i}].expectedQuote未明确支持${a.field}=${a.expectedValue}。按原Plan重新绑定对应结果字段；申请输入不能当作回传确认值，业务预期应完整保留而非伪造协议断言。`];

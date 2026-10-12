@@ -27,15 +27,22 @@ export const PlanProposalSchema = z.object({
 
 function normalizeUnconfirmedStatusExpectations(proposal) {
   if(proposal.contract!==undefined)return proposal;
-  const questions=[...proposal.openQuestions];
+  // Recompute our own status diagnostics from this proposal, rather than carrying stale ones from prior AI replies.
+  const questions=proposal.openQuestions.filter(q=>!/^请澄清场景\d+的TA业务确认结果：/.test(q));
   const scenarios=proposal.scenarios.map((scenario,index)=>{
-    const expected=scenario.expected.split(/([；;，,。])/).map(clause=>{
+    const clauses=scenario.expected.split(/([；;，,。])/);
+    const expected=clauses.map((clause,clauseIndex)=>{
       const match=clause.match(/^(\s*(?:(?:预期|期望|应当|应|(?:02|04)(?:文件)?(?:解析结果为|解析为|结果为|为)?|解析结果为|解析为|结果为)\s*)*)(开户|申购)(成功|失败)(\s*)$/);
       if(match){
         const status=match[3]==='成功'?'CONFIRMED':'FAILED';
         return `${match[1]}${match[2]}申请状态为${status}（${match[3]==='成功'?'成功确认':'业务失败'}）${match[4]}`;
       }
       const status=clause.match(/CONFIRMED|FAILED/)?.[0];
+      const next=clauses[clauseIndex+2]??'';
+      const continuedStatus=next.match(/CONFIRMED|FAILED/)?.[0];
+      const expectedStatus=/(?:确认)?成功\s*$/.test(clause)?'CONFIRMED':/(?:确认)?失败\s*$/.test(clause)?'FAILED':null;
+      if(/[，,]/.test(clauses[clauseIndex+1]??'') && expectedStatus && !/(?:不|未|否|吗|或|后)/.test(clause) &&
+         continuedStatus===expectedStatus && /^\s*(?:状态|申请状态|确认状态)/.test(next) && hasLiteralExpectation(continuedStatus,next,'status'))return clause;
       if(((/(?:开户|申购)/.test(clause) && /(?:成功|失败)/.test(clause)) || status) &&
          !(status && hasLiteralExpectation(status,clause,'status')) && questions.length<50){
         const question=`请澄清场景${index+1}的TA业务确认结果：${clause.trim()}`;

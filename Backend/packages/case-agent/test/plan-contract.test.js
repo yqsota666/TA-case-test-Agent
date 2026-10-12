@@ -1,12 +1,35 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {businessExpectationsFor,validPlanContract} from '../../platform-protocol/src/plan-contract.js';
+import {businessExpectationsFor,validPlanContract,planContractValidationIssues} from '../../platform-protocol/src/plan-contract.js';
 import {definePlanContract} from '../src/plan-contract.js';
 import {compareConfirmedExpectations,createCaseResultGraph} from '../src/case-result-graph.js';
 import {planContract} from './plan-contract-fixture.js';
 import {exchangePlan} from './exchange-plan-fixture.js';
 const plan={scenarios:[{expected:'确认成功，CONFIRMED'}],exchangePlan};
 const contract=planContract(plan);
+test('contract repair removes invented protocol assertions while retaining required quantities and business expectations',async()=>{
+ const p={...plan,scenarios:[{expected:'确认成功，CONFIRMED；确认份额2000.00份；回传后同步正式资源',evidence:'核对持仓总份额2000.00份'}]};
+ const c=planContract(p),base=c.expectations[0];
+ c.expectations.push({...base,field:'confirmedVolume',expectedQuote:'确认份额2000.00份',expectedValue:'2000.00'});
+ const invalid=structuredClone(c);
+ invalid.expectations.push({...base,source:'CURRENT_FORMAL_HOLDING',field:'totalVolume',expectedQuote:p.scenarios[0].evidence,expectedValue:'2000.00',selector:{...base.selector,fileType:null,businessDate:null,fundCode:'000001',shareClass:'0'}});
+ assert.equal(validPlanContract(invalid,p),false);
+ assert.ok(planContractValidationIssues(invalid,p).some(i=>i.includes('expectations[2].expectedQuote必须')));
+ let calls=0;
+ const result=await definePlanContract(async request=>{
+  if(++calls===1)return JSON.stringify(c.dataSpecification);
+  const evidence=JSON.parse(request.user).expectationEvidence[0];
+  assert.deepEqual(evidence.numericBindings,[{field:'confirmedVolume',operator:'eq',value:'2000.00'}]);
+  assert.ok(evidence.unsupportedNumericFields.includes('totalVolume'));assert.ok(evidence.unsupportedNumericFields.includes('confirmedAmount'));
+  const {version,protocolVersion,dataSpecification,...derived}=calls===2?invalid:c;
+  if(calls===3){assert.match(request.system,/模型自行添加、原Plan没有明确依据的协议断言必须移除/);assert.ok(JSON.parse(request.user).validationIssues.some(i=>i.includes('不能引用evidence')));}
+  return JSON.stringify(derived);
+ },p);
+ assert.equal(calls,3);assert.equal(validPlanContract(result.contract,p),true);
+ assert.ok(result.contract.expectations.some(a=>a.field==='confirmedVolume'&&a.expectedValue==='2000.00'));
+ assert.ok(!result.contract.expectations.some(a=>a.field==='totalVolume'));
+ assert.deepEqual(result.contract.businessExpectations,[{scenarioIndex:0,expectedQuote:p.scenarios[0].expected}]);
+});
 test('strict Plan validates linked drafts, typed expectations and fixed application amounts before confirmation',async()=>{
  assert.equal(validPlanContract(contract,plan),true);
  for(const mutate of [c=>c.expectations[0].selector.accountIndex=9,c=>c.expectations[0].source='constructor',c=>c.expectations[0].selector.businessDate='20260230',c=>c.expectations[0].field='invented',c=>c.expectations=[],c=>c.applications[0].fields.TAAccountID='invented',c=>c.dataSpecification.accounts.push({customerIndex:9,branchCode:'306'})]){
@@ -18,6 +41,17 @@ test('strict Plan validates linked drafts, typed expectations and fixed applicat
  assert.deepEqual(JSON.parse(calls[0].user).plan,plan);
  for(const call of calls){assert.deepEqual(JSON.parse(call.user).discussionContext,context);assert.ok(!call.system.includes(context[0].content));}
  await assert.rejects(definePlanContract(async()=>'{invalid',plan),{code:'DATA_SPEC_INVALID'});
+});
+
+test('contract construction uses the current plan and user requirements without recycling old AI failure diagnostics',async()=>{
+ const user={role:'user',content:'按已经讨论的条件整理方案'},old={role:'assistant',content:'旧失败诊断：请补充未要求的额外核验项'};
+ let calls=0;
+ const result=await definePlanContract(async request=>{
+  const input=JSON.parse(request.user);assert.deepEqual(input.discussionContext,[user]);assert.deepEqual(input.plan,plan);
+  if(++calls===1)return JSON.stringify(contract.dataSpecification);
+  const {version,protocolVersion,dataSpecification,...derived}=contract;return JSON.stringify(derived);
+ },plan,[old,user]);
+ assert.equal(validPlanContract(result.contract,plan),true);assert.deepEqual(result.contract.missing,[]);
 });
 test('confirmed typed expectations match the exact account/round; ambiguity, missing and wrong outcomes never pass',async()=>{
  const snapshot={plan:{...plan,contract},preparedAccounts:[{transactionAccountId:'90000000000000001'}],evidence:[{id:'app:1',source:{kind:'APPLICATION_CONFIRMATION',channelId:'7',fileType:'03',businessDate:'20261006'},values:{transactionAccountId:'90000000000000001',status:'CONFIRMED'}}],pending:[],issues:[]};

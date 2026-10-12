@@ -297,6 +297,30 @@ test('ordinary chat routes to an actual proposal and keeps compound modification
  const result=await service.respond({...scope,userInput});
  assert.equal(result.phase,'PROPOSAL_PENDING');assert.equal(routed.userInput,userInput);assert.equal(generated.at(-1).content,userInput);assert.equal(rounds[0].kind,'PROPOSE_PLAN');
 });
+
+test('regeneration carries current business content and ordinary discussion without recycling old generated contracts',async()=>{
+ const {repository}=fixture();
+ const latest={...plan,preconditions:['保留已讨论的业务条件']};
+ repository.getLatestSopProposal=async()=>({status:'DRAFT',proposal:latest,sourceTurnNumber:1});
+ repository.readCaseDiscussion=async()=>({revision:0,pending:null,turns:[
+  {role:'user',content:'原始业务要求，03日期20261006，04日期20261007'},
+  {role:'assistant',kind:'PROPOSE_PLAN',content:'旧生成失败：技术字段和旧契约不应当成为新业务要求'},
+  {role:'user',content:'补充业务规则'},
+  {role:'assistant',content:'普通讨论里的业务说明仍应承接'},
+ ]});
+ const service=createPersistedDiscussionService({repository,complete:async request=>{
+  if(request.messages){
+   assert.ok(!request.messages[1].content.includes('旧契约'));assert.equal(request.messages[3].content,'普通讨论里的业务说明仍应承接');
+   const input=JSON.parse(request.messages.at(-1).content);
+   assert.equal(input.userInput,'请整理当前方案');assert.deepEqual(input.currentProposal,{objective:latest.objective,preconditions:latest.preconditions,scenarios:latest.scenarios});
+   return JSON.stringify(plan);
+  }
+  if(request.system.includes('四张公共数据表'))return JSON.stringify(planContract(plan).dataSpecification);
+  assert.ok(JSON.parse(request.user).discussionContext.every(t=>t.role==='user'));
+  const {version,protocolVersion,dataSpecification,...derived}=planContract(plan);return JSON.stringify(derived);
+ }});
+ assert.equal((await service.propose({...scope,userInput:'请整理当前方案'})).phase,'PROPOSAL_PENDING');
+});
 test('explicit persisted next action reaches router and cancellation never calls proposal generation',async()=>{
  const {repository,rounds}=fixture();repository.readCaseDiscussion=async()=>({revision:0,turns:[],pending:null,nextAction:'PROPOSE_PLAN'});
  const service=createPersistedDiscussionService({repository,routeComplete:async request=>{assert.equal(JSON.parse(request.user).pendingNextAction,'PROPOSE_PLAN');return routeMessage('DISCUSS');},complete:async request=>{assert.ok(!request.system.includes('exchangePlan字段'));return firstReply;}});
