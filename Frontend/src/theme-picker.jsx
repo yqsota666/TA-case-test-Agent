@@ -1,6 +1,10 @@
 import {createContext, useContext, useEffect, useRef, useState} from 'react';
 import {Palette, Check} from './ui-icons.jsx';
 import './theme-picker.css';
+import './palette-preview.css';
+
+const palette = new URLSearchParams(location.search).get('palette');
+if (['neutral', 'warm', 'contrast'].includes(palette)) document.documentElement.dataset.palette = palette;
 
 export const themes = [
   ['liquid','液态玻璃'], ['prism','棱镜玻璃'], ['opal','欧泊玻璃'], ['glacier','冰晶玻璃'],
