@@ -1,5 +1,11 @@
 # 项目版本与工作树索引
 
+## 聊天产物详情页面布局（2026-10-12，已接入5199）
+
+从实时1c4e2e50建立codex/chat-artifact-cards独立树/Users/apple/.codex/worktrees/chat-artifact-cards/gf。c0f8d145统一当前/历史入口层级，bd43a138调整卡片打开后的方案、准备数据、文件和结果页面，已本地快进接入codex/plan-trigger-fix。5199仍从/Users/apple/Documents/ChatGPT/gf-worktrees/plan-trigger-fix运行，原前端进程热更新；API3106与ta_case_agent_chain不变，无后端代码改动或迁移。
+
+方案采用方案内容/准备数据/文件安排三个分区，保留底部两次明确确认；单条数据展示字段明细，多条保留表格；文件申请/TA回传分区；结果先展示业务预期与实际输出。桌面并排详情、窄屏全屏，保留四外观与原页面材质。54项前端测试、构建、四外观、手机/矮窗口、键盘和隔离服务读取失败重试通过。5199原Case实际核对，接入前后13类业务表数量、原方案摘要与讨论状态相同；未调用模型、确认/生成/提交业务，无push/PR。说明docs/聊天卡片调整.md，证据功能树.context/chat-cards。后续以本条及实时Git/进程为准。
+
 ## 测试方案持续修改与双确认（2026-10-12，已接入5199）
 
 从实时5199的e0b217a7创建独立codex/editable-test-plan，分开实现后台授权确认acd6bbcb、对话与预期修改8a52bca2、统一方案面板6236d1bf，验收记录9928a8cc。已本地快进接入codex/plan-trigger-fix，5199仍从/Users/apple/Documents/ChatGPT/gf-worktrees/plan-trigger-fix运行；前端热更新，API3106重启。数据库仍为ta_case_agent_chain，031仅新增按方案授权表；迁移前后13类业务记录数量及原Case全部方案摘要哈希一致，未写原Case内容、确认或文件。
