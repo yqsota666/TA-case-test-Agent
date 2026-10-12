@@ -1,5 +1,11 @@
 # 项目版本与工作树索引
 
+## 项目与 Case 双击改名（2026-10-12，已接入5199）
+
+按用户“合并到5199”，`codex/sidebar-rename` 的 `9bbdcc49` 与图标修正 `7c00838f` 先与实时平台 `3accdaab` 整合为 `ebe79d1a`，再本地快进接入 `codex/plan-trigger-fix`。工作树仍为 `/Users/apple/Documents/ChatGPT/gf-worktrees/plan-trigger-fix`，5199前端原进程热更新，API3106重启加载同源改名接口，数据库仍为 `ta_case_agent_chain`，无迁移。
+
+项目和 Case 双击或 F2 改名，Enter 保存、Esc 取消；只修改名称，保留状态及业务内容。移除了首版误启用而导致大铅笔独占一行的额外操作区。合并后47项前端单测、482项后端测试（另23项默认跳过）、构建及真实MySQL合成事务专项通过，合成记录全部回滚。5199实际项目/Case改名弹窗及取消、原名和侧栏无额外图标已核对；未修改实际项目/Case名称、调用模型、push或创建PR。说明 `docs/双击改名.md`，运行记录 `.context/sidebar-rename/rollout-pids.json`。5237/3137临时预览停止，后续使用5199。
+
 ## 回复异常提示与默认深灰侧栏（2026-10-12，已接入5199）
 
 按用户“都提交到5199”，`codex/chat-feedback-polish` 的 `138df61e`（轻量异常提示）、`646c7e1b`（默认深灰侧栏）与当前恢复修复 `ad1dd44b` 在独立树整合为 `516d76ae`，随后本地快进接入 `codex/plan-trigger-fix`。5199仍从 `/Users/apple/Documents/ChatGPT/gf-worktrees/plan-trigger-fix/Frontend` 运行，原进程热更新；API3106未在本轮重启。同期业务修复 `7d175b5c` 保留，前端与已验证候选逐字一致。
