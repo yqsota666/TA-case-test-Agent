@@ -23,8 +23,8 @@ test('a reverted draft cannot recommend clicking confirmation or generating a fi
   assert.equal(checkDiscussionReply('下一步不是点确认或生成文件，而是重新整理方案。',context),'下一步不是点确认或生成文件，而是重新整理方案。');
   assert.throws(()=>checkDiscussionReply('当前仍是草稿。接下来直接点确认预期。',context),{validationReason:'STALE_STAGE_ACTION'});
   let attempts=0,resets=0;
-  const reply=await completeDiscussionReply(async request=>{attempts++;assert.match(request.system,/只可建议继续讨论/);return attempts===1?'下一步：点击确认预期。':'方案已回到草稿，请继续讨论后重新整理。';},{system:'test',user:'下一步？',onReset:()=>{resets++;}},context);
-  assert.equal(attempts,2);assert.equal(resets,1);assert.match(reply,/重新整理/);
+  const reply=await completeDiscussionReply(async request=>{attempts++;assert.match(request.system,/下一步可按已有条件整理成审阅方案/);return attempts===1?'下一步：点击确认预期。':'下一步可按现有条件生成审阅方案。';},{system:'test',user:'下一步？',onReset:()=>{resets++;}},context);
+  assert.equal(attempts,2);assert.equal(resets,1);assert.match(reply,/生成审阅方案/);
 });
 test('variable comparisons and long fields are bounded with explicit truncation, not implied missing data',()=>{
   for(const count of [1,2,7,25]){

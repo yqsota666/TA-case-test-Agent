@@ -30,8 +30,8 @@ import {HistoricalPlan} from './historical-plan.jsx';
 import {ThemePicker} from './theme-picker.jsx';
 import {NewCaseForm,NewProjectForm,RenameForm} from './new-case-form.jsx';
 import {PlanDocument, planSummary} from './plan-document.jsx';
-import {MessageSquare, RotateCcw} from './ui-icons.jsx';
-import './node-feedback.css';
+import {RotateCcw} from './ui-icons.jsx';
+import {ReplyFeedback} from './reply-feedback.jsx';
 import {useSidebarResize} from './sidebar-resize.jsx';
 import {ThreadPrimitive} from '@assistant-ui/react';
 import {CaseAssistant} from './case-assistant.jsx';
@@ -121,6 +121,7 @@ export function CaseWorkbench({accountControl}) {
   const quote=state.quotes?.[draftKey]||'';
   const [retryOriginalInput,setRetryOriginalInput]=useState('');
   const canDiscuss=newConversation||(!state.workflow?false:state.workflow.waiting?.includes('DISCUSS'));
+  const recoveredPending=!newConversation&&!loading&&!running&&!!state.pending&&!nodeError;
   const inputDisabled=loading||!!navigationFailure||!canDiscuss||running||!!state.pending||((completed||projectReadOnly)&&!newConversation);
   const addImages=async files=>{if(inputDisabled||readingImages)return;const request=viewRequest.current;setReadingImages(true);try{const added=await readMessageImages(files,images);if(request===viewRequest.current)setImageDrafts(v=>({...v,[draftKey]:[...(v[draftKey]||[]),...added]}));}catch(e){setNotice(e.message);}finally{setReadingImages(false);}};
   const savedMessages = newConversation ? [] : state.messages[state.selected] || [];
@@ -412,10 +413,11 @@ export function CaseWorkbench({accountControl}) {
           </button>}
           {!newConversation && ['EVALUATE_RESULT','CONFIRM_RESULT','CASE_FINAL'].includes(state.workflow?.stage) && <button type="button" className="cw-result" onClick={()=>setModal({type:'review-result'})}><span className="cw-result-icon" aria-hidden="true"><FileText size={18}/></span><span className="cw-result-copy"><span className="cw-result-title">结果核对</span></span><span className="cw-result-action">查看详情<ChevronRight size={14}/></span></button>}
           {!loading && !newConversation && currentSet.id && showProjectLifecycle(currentSet.status,currentCase.status) && <ProjectLifecycleCard chatId={currentSet.id} caseId={state.selected} onChanged={refreshCurrentCase} onNavigate={async target=>{if(renderedView!==viewRequest.current)return;if(target.casePublicId)await openCatalogCase(target.chatPublicId,target.casePublicId);else {const snapshot=await liveSnapshot(target.chatPublicId,null);if(renderedView!==viewRequest.current)return;applySnapshot(snapshot);openNewConversation(target.chatPublicId);}}}/>}
-          {!newConversation && (loading||running||!!state.pending) && !nodeError && <p className="cw-reply-status" role="status">{loading?'连接讨论服务…':(state.pending?.kind||activeAction)==='PROPOSE_PLAN'?'正在整理方案…':'正在回复…'}</p>}
+          {!newConversation && (loading||running) && !nodeError && <p className="cw-reply-status" role="status">{loading?'连接讨论服务…':(state.pending?.kind||activeAction)==='PROPOSE_PLAN'?'正在整理方案…':'正在回复…'}</p>}
+          {recoveredPending && <ReplyFeedback role="status" title="上次回复未完成" message="可以重新尝试发送原输入。"><button type="button" disabled={completed||projectReadOnly} onClick={()=>submitFirstNode(state.pending.userInput,state.pending.kind||retryAction,state.pending.images||[],state.pending.userInput)}><RotateCcw size={15}/><span>重新尝试</span></button></ReplyFeedback>}
           {newConversation && (loading||running) && <p role="status">{loading?'连接讨论服务…':'正在回复…'}</p>}
           
-          {nodeError && <div className="cw-node-error cw-node-feedback" role="alert"><MessageSquare size={16} className="cw-feedback-icon"/><div className="cw-feedback-content"><p>{nodeError}</p>{navigationFailure&&<button type="button" disabled={loading} onClick={()=>navigationFailure.initial?loadInitial():navigateCase(navigationFailure.chatId,navigationFailure.caseId)}>重试加载 Case</button>}{retryInput && !completed && !['MODEL_BUDGET_EXHAUSTED','WORKFLOW_ACTION_UNAVAILABLE'].includes(nodeErrorCode) && <button type="button" disabled={running} aria-busy={running} onClick={()=>submitFirstNode(retryInput,retryAction,retryImages,retryOriginalInput||retryInput)}><RotateCcw size={15}/><span>{running?'重试中…':'重试原输入'}</span></button>}</div></div>}
+          {nodeError && <ReplyFeedback title={navigationFailure?'暂时无法加载':'本次回复未完成'} message={nodeError}>{navigationFailure&&<button type="button" disabled={loading} onClick={()=>navigationFailure.initial?loadInitial():navigateCase(navigationFailure.chatId,navigationFailure.caseId)}>重新加载</button>}{retryInput && !completed && !['MODEL_BUDGET_EXHAUSTED','WORKFLOW_ACTION_UNAVAILABLE'].includes(nodeErrorCode) && <button type="button" disabled={running} aria-busy={running} onClick={()=>submitFirstNode(retryInput,retryAction,retryImages,retryOriginalInput||retryInput)}><RotateCcw size={15}/><span>{running?'重试中…':'重新尝试'}</span></button>}</ReplyFeedback>}
         </div>
       </ThreadViewport>
       {page==='chat' && dataSet && <section className="cw-draft-page" aria-label={`${dataSet.name}的草稿数据`}>

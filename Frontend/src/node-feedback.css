@@ -3,42 +3,54 @@ html[data-theme] .cw-node-feedback {
   align-items:flex-start;
   gap:10px;
   margin:22px 0;
-  color:var(--study-ink);
+  padding:14px 16px;
+  border:1px solid #dce5ec;
+  border-radius:10px;
+  background:#f2f6f9;
+  color:#344451;
   font-size:13px;
   line-height:1.65;
 }
 .cw-node-feedback .cw-feedback-icon {
   flex:none;
-  margin-top:3px;
-  color:var(--study-muted);
+  margin-top:2px;
+  color:#94651d;
 }
-.cw-feedback-content {min-width:0;}
-.cw-node-feedback p {margin:0;overflow-wrap:anywhere;}
+.cw-node-feedback .cw-feedback-content {flex:1;min-width:0;}
+.cw-node-feedback p {margin:0;overflow-wrap:anywhere;white-space:pre-wrap;}
+.cw-node-feedback .cw-feedback-title {margin-bottom:2px;font-weight:600;}
+.cw-node-feedback .cw-feedback-content > p:last-child {color:#596774;}
+.cw-node-feedback .cw-feedback-actions {display:flex;flex:none;flex-wrap:wrap;gap:8px;align-self:center;}
 html[data-theme] .cw-node-feedback button {
   display:inline-flex;
   align-items:center;
+  justify-content:center;
   gap:6px;
-  min-width:110px;
-  min-height:32px;
-  margin-top:8px;
-  padding:4px 8px;
-  border:0;
+  min-height:34px;
+  padding:5px 10px;
+  border:1px solid #d7e1e8;
   border-radius:7px;
-  background:transparent;
+  background:#fff;
   box-shadow:none;
-  color:var(--study-muted);
+  color:#344451;
   font:inherit;
+  white-space:nowrap;
   cursor:pointer;
 }
 @media (hover:hover) {
   html[data-theme] .cw-node-feedback button:hover:not(:disabled) {
-    background:var(--study-hover);
-    color:var(--study-ink);
+    background:#e8eff4;
+    border-color:#bccbd6;
   }
 }
 html[data-theme] .cw-node-feedback button:focus-visible {
-  outline:2px solid var(--study-focus);
-  outline-offset:2px;
+  outline:2px solid var(--study-focus,#246c88);
+  outline-offset:3px;
 }
-html[data-theme] .cw-node-feedback button:active:not(:disabled) {transform:translateY(1px);}
 html[data-theme] .cw-node-feedback button:disabled {opacity:.5;cursor:not-allowed;}
+@media (max-width:600px) {
+  html[data-theme] .cw-node-feedback {flex-wrap:wrap;padding:12px;}
+  .cw-node-feedback .cw-feedback-content {flex-basis:calc(100% - 28px);}
+  .cw-node-feedback .cw-feedback-actions {margin-left:28px;max-width:calc(100% - 28px);}
+  html[data-theme] .cw-node-feedback button {min-height:40px;}
+}
