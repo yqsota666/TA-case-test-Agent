@@ -85,7 +85,9 @@ export function CaseWorkbench({accountControl}) {
   const [newConversation, setNewConversation] = useState(true);
   const [newProjectId, setNewProjectId] = useState('');
   const [loading, setLoading] = useState(true);
-  const [running, setRunning] = useState(false);
+  const [runningCases, setRunningCases] = useState({});
+  const running=!!runningCases[state.selected];
+  const [navigationFailure,setNavigationFailure]=useState(null);
   const [streamReply,setStreamReply]=useState(null);
   const streamController=useRef(null);
   useEffect(()=>()=>streamController.current?.abort(),[]);
@@ -117,7 +119,8 @@ export function CaseWorkbench({accountControl}) {
   const images=imageDrafts[draftKey]||[];
   const quote=state.quotes?.[draftKey]||'';
   const [retryOriginalInput,setRetryOriginalInput]=useState('');
-  const inputDisabled=loading||running||!!state.pending||((completed||projectReadOnly)&&!newConversation);
+  const canDiscuss=newConversation||(!state.workflow?false:state.workflow.waiting?.includes('DISCUSS'));
+  const inputDisabled=loading||!!navigationFailure||!canDiscuss||running||!!state.pending||((completed||projectReadOnly)&&!newConversation);
   const addImages=async files=>{if(inputDisabled||readingImages)return;const request=viewRequest.current;setReadingImages(true);try{const added=await readMessageImages(files,images);if(request===viewRequest.current)setImageDrafts(v=>({...v,[draftKey]:[...(v[draftKey]||[]),...added]}));}catch(e){setNotice(e.message);}finally{setReadingImages(false);}};
   const savedMessages = newConversation ? [] : state.messages[state.selected] || [];
   const messages = streamReply?.caseId===state.selected && streamReply.text ? [...savedMessages,{id:'streaming-assistant',role:'assistant',text:streamReply.text,continuation:streamReply.failed?'回复中断，完整结果尚未同步。':undefined}] : savedMessages;
@@ -145,13 +148,22 @@ export function CaseWorkbench({accountControl}) {
         ...(snapshot.pending ? [{id:'pending-user',role:'user',text:snapshot.pending.userInput,images:snapshot.pending.images}] : [])]} : {},
     }));
   };
+  const loadInitial = async () => {
+    const request=++viewRequest.current;
+    setLoading(true);setNodeError('');setNavigationFailure(null);
+    try {
+      const snapshot=await firstNodeRequest('state');
+      if(request===viewRequest.current)applySnapshot(snapshot);
+    } catch(error) {
+      if(request===viewRequest.current){
+        setNavigationFailure({initial:true});setNodeError('无法加载对话，请重试加载。');
+        setState(value=>({...value,selected:null,workflow:null,plan:null,generatedData:null,pending:null,messages:{}}));
+      }
+    } finally {if(request===viewRequest.current)setLoading(false);}
+  };
   useEffect(() => {
-    let active=true;
-    const request=viewRequest.current;
-    firstNodeRequest('state').then(snapshot => {if(active && request===viewRequest.current)applySnapshot(snapshot);})
-      .catch(error => {if(active && request===viewRequest.current)setNodeError(error.message);})
-      .finally(()=>{if(active && request===viewRequest.current)setLoading(false);});
-    return ()=>{active=false;};
+    loadInitial();
+    return ()=>{++viewRequest.current;};
   }, []);
   useEffect(() => {
     if(!state.pending || !state.selected || newConversation)return;
@@ -190,27 +202,39 @@ export function CaseWorkbench({accountControl}) {
     }
   }, [messages]);
 
-  const selectCase = async id => {
+  const navigateCase = async (chatId,caseId) => {
     streamController.current?.abort();setStreamReply(null);
-    const project=state.sets.find(item=>item.cases.some(c=>c.id===id));
-    if(!project)return;
     const request=++viewRequest.current;
-    const url=new URL(window.location.href);url.searchParams.delete('draftTable');url.searchParams.delete('page');url.searchParams.set('chatId',project.id);url.searchParams.set('caseId',id);window.history.replaceState(null,'',url);
-    setPage('chat');setLoading(true);setNodeError('');setDataSetId(null);setModal(null);
-    try {const snapshot=await liveSnapshot(project.id,id);if(request===viewRequest.current)applySnapshot(snapshot);} catch(error){if(request===viewRequest.current)setNodeError(error.message);} finally {if(request===viewRequest.current)setLoading(false);}
+    setPage('chat');setLoading(true);setNodeError('');setNodeErrorCode('');setRetryInput('');setNavigationFailure(null);setDataSetId(null);setModal(null);setPlanBusy(false);setPlanError('');
+    try {
+      const snapshot=await liveSnapshot(chatId,caseId);
+      if(request!==viewRequest.current)return;
+      if(snapshot.case?.id!==caseId)throw new Error('所选 Case 不存在或已不可访问。');
+      const url=new URL(window.location.href);url.searchParams.delete('draftTable');url.searchParams.delete('page');url.searchParams.set('chatId',chatId);url.searchParams.set('caseId',caseId);window.history.replaceState(null,'',url);
+      applySnapshot(snapshot);
+    } catch(error) {
+      if(request===viewRequest.current){setNavigationFailure({chatId,caseId});setNodeError('无法打开所选 Case，请重试加载。');}
+    } finally {if(request===viewRequest.current)setLoading(false);}
+  };
+  const selectCase = id => {
+    const project=state.sets.find(item=>item.cases.some(c=>c.id===id));
+    if(project)return navigateCase(project.id,id);
   };
   const openRelatedCatalog=(target,project,ids,batch,type)=>{const url=new URL(location.href);url.searchParams.set("page",target);url.searchParams.set("catalogCases",ids.join(","));if(batch){url.searchParams.set("catalogBatch",batch);if(type)url.searchParams.set("catalogType",type);else url.searchParams.delete("catalogType");}else{url.searchParams.delete("catalogBatch");url.searchParams.delete("catalogType");}if(project)url.searchParams.set("catalogProject",project);else url.searchParams.delete("catalogProject");if(target==="data")url.searchParams.set("dataTable","applications");history.replaceState(null,"",url);setPage(target);setModal(null);};
-  const openCatalogCase=async(chatId,caseId)=>{streamController.current?.abort();setStreamReply(null);const request=++viewRequest.current;const url=new URL(location.href);url.searchParams.delete('page');url.searchParams.delete('draftTable');url.searchParams.set('chatId',chatId);url.searchParams.set('caseId',caseId);history.replaceState(null,'',url);setPage('chat');setDataSetId(null);setModal(null);setLoading(true);try{const snapshot=await liveSnapshot(chatId,caseId);if(request===viewRequest.current)applySnapshot(snapshot);}catch(error){if(request===viewRequest.current)setNodeError(error.message);}finally{if(request===viewRequest.current)setLoading(false);}};
+  const openCatalogCase=(chatId,caseId)=>navigateCase(chatId,caseId);
   const toggleSet = id => setState(value => ({...value, sets: value.sets.map(set => set.id === id ? {...set, expanded: !set.expanded} : set)}));
   const submitFirstNode = async (text, action=discussionAction({text,waiting:state.workflow?.waiting,messages}),sentImages=[],originalInput=text) => {
-    if (running || loading || ((completed || projectReadOnly) && !newConversation)) return;
+    if (running || loading || navigationFailure || ((completed || projectReadOnly) && !newConversation)) return;
+    if(!newConversation && !state.workflow?.waiting?.includes(action))return;
     if(newConversation){openNewConversation(newProjectId);return;}
     const request=viewRequest.current;
     const sentQuote=quote;
+    const operationId=crypto.randomUUID();
+    const operationCase=state.selected;
     setState(value=>({...value,drafts:{...value.drafts,[draftKey]:''},quotes:{...value.quotes,[draftKey]:''}}));
     setImageDrafts(value=>({...value,[draftKey]:[]}));
     const controller=new AbortController();streamController.current=controller;setStreamReply(null);
-    setRetryOriginalInput(originalInput);setRunning(true); setNodeError('');setNodeErrorCode(''); setRetryInput(text);setRetryImages(sentImages); setRetryAction(action); setActiveAction(action);
+    setRetryOriginalInput(originalInput);setRunningCases(v=>({...v,[operationCase]:operationId})); setNodeError('');setNodeErrorCode(''); setRetryInput(text);setRetryImages(sentImages); setRetryAction(action); setActiveAction(action);
     pendingScroll.current = true;
     try {
       let chatId=currentSet.id,caseId=state.selected;
@@ -221,7 +245,7 @@ export function CaseWorkbench({accountControl}) {
       }
       const path=casePath(chatId,caseId);
       const before=await requestCase(path+'/workflow');
-      if(!before.waiting?.includes(action))throw new Error('当前流程不支持此操作，请刷新后查看当前步骤。');
+      if(!before.waiting?.includes(action)){const error=new Error('当前流程已更新，请查看当前步骤后继续。');error.code='WORKFLOW_ACTION_UNAVAILABLE';throw error;}
       await requestCaseStream(path+(action==='PROPOSE_PLAN'?'/plan':'/discussion'),{userInput:text,...(sentImages.length?{images:sentImages}:{})},{signal:controller.signal,onReset:()=>{if(request===viewRequest.current)setStreamReply(null);},onDelta:delta=>{
         if(request===viewRequest.current)setStreamReply(value=>({caseId,text:(value?.caseId===caseId?value.text:'')+delta}));
       }});
@@ -230,8 +254,10 @@ export function CaseWorkbench({accountControl}) {
       const snapshot=await liveSnapshot(chatId,caseId);
       if(request===viewRequest.current)applySnapshot(snapshot);
       if(request===viewRequest.current)setStreamReply(null);
-      setImageDrafts(v=>({...v,[draftKey]:[],[caseId]:[]}));
-      setState(value=>({...value,drafts:{...value.drafts,[draftKey]:'',[caseId]:''},quotes:{...value.quotes,[draftKey]:'',[caseId]:''}}));
+      if(request===viewRequest.current){
+        setImageDrafts(v=>({...v,[draftKey]:[],[caseId]:[]}));
+        setState(value=>({...value,drafts:{...value.drafts,[draftKey]:'',[caseId]:''},quotes:{...value.quotes,[draftKey]:'',[caseId]:''}}));
+      }
     } catch(error) {
       if(request===viewRequest.current) {
         setStreamReply(value=>value?{...value,failed:true}:value);
@@ -248,7 +274,10 @@ export function CaseWorkbench({accountControl}) {
           }else{setRetryInput(text);setRetryImages(sentImages);setRetryAction(action);}
         }
       }
-    } finally {pendingScroll.current=false;setRunning(false);}
+    } finally {
+      if(request===viewRequest.current)pendingScroll.current=false;
+      setRunningCases(v=>{if(v[operationCase]!==operationId)return v;const next={...v};delete next[operationCase];return next;});
+    }
   };
   const sendComposer = text => {
     try {const body=quotedInput(text,quote);return submitFirstNode(body,quote||images.length?'DISCUSS':undefined,images,text);}
@@ -274,18 +303,20 @@ export function CaseWorkbench({accountControl}) {
       if(section==='DATA' && snapshot.workflow?.stage==='CONFIRM_EXPECTATIONS')setModal({type:'expectations'});
       else if(section==='DATA')setPlanError('方案已更新，请重新审阅准备数据。');
       else setModal(null);
-    } catch(error) {if(request===viewRequest.current)setPlanError(error.message);} finally {setPlanBusy(false);}
+    } catch(error) {if(request===viewRequest.current)setPlanError(error.message);} finally {if(request===viewRequest.current)setPlanBusy(false);}
   };
   const openGeneratedData = () => {
     const url=new URL(window.location.href);url.searchParams.set('draftTable','customers');
     window.history.replaceState(null,'',url);setDataSetId(currentSet.id);setModal(null);
   };
   const confirmDraft = async () => {
+    const request=viewRequest.current;
     setPlanBusy(true);setPlanError('');
     try {
       await requestCase(casePath(currentSet.id,state.selected)+'/data/confirm',{revision:state.generatedData.revision});
-      applySnapshot(await liveSnapshot(currentSet.id,state.selected));
-    } catch(error) {setPlanError(error.message);} finally {setPlanBusy(false);}
+      const snapshot=await liveSnapshot(currentSet.id,state.selected);
+      if(request===viewRequest.current)applySnapshot(snapshot);
+    } catch(error) {if(request===viewRequest.current)setPlanError(error.message);} finally {if(request===viewRequest.current)setPlanBusy(false);}
   };
   const openWorkflow = async () => {
     const request=++flowRequest.current;
@@ -303,12 +334,12 @@ export function CaseWorkbench({accountControl}) {
     setModal(project?{type:'new-case',projectId:project.id}:{type:'new-project'});
   };
   useEffect(()=>{
-    if(page==='chat'&&!loading&&newConversation&&!namingOpened.current){
+    if(page==='chat'&&!loading&&!navigationFailure&&!nodeError&&newConversation&&!namingOpened.current){
       namingOpened.current=true;
       const project=state.sets.find(p=>p.id===newProjectId&&p.status==='ACTIVE')||state.sets.find(p=>p.status==='ACTIVE');
       setModal(project?{type:'new-case',projectId:project.id}:{type:'new-project'});
     }
-  },[loading,newConversation,newProjectId,page]);
+  },[loading,newConversation,newProjectId,page,navigationFailure,nodeError]);
   const sidebar = <>
     <div className="cw-brand"><img className="cw-brand-logo" src="/brand/ta-agent-bot-white.png" alt="" width="44" height="44"/><span>TA Test Agent</span></div>
     <nav className="cw-primary" aria-label="业务页面">
@@ -338,6 +369,11 @@ export function CaseWorkbench({accountControl}) {
     <div className="cw-user">{accountControl}<ThemePicker /></div>
   </>;
 
+  const renderedView=viewRequest.current;
+  const refreshCurrentCase=async()=>{
+    const snapshot=await liveSnapshot(currentSet.id,state.selected);
+    if(renderedView===viewRequest.current)applySnapshot(snapshot);
+  };
   return <CanvasSplit className={`cw-shell ${page==='chat'?'cw-liquid-home':''} ${page==='chat'&&['result','expectations','historical-plan'].includes(modal?.type)?'has-detail':''} ${page!=='chat'?'cw-catalog-view':''}`} style={sidebarResize.style}>
     <a className="cw-skip" href="#cw-main">跳到对话</a>
     <aside id="cw-sidebar" className="cw-sidebar">{sidebar}{sidebarResize.separator}</aside>
@@ -360,7 +396,7 @@ export function CaseWorkbench({accountControl}) {
               text: runtimeMessage.content.filter(part => part.type === 'text').map(part => part.text).join('\n'),
             };
             if (!message.text && !message.result && !message.continuation && !message.images?.length) return null;
-            return <ChatMessage message={message} onQuote={inputDisabled?undefined:text=>{setState(v=>({...v,quotes:{...v.quotes,[draftKey]:text}}));composer.current?.focus();}} text={message.result && state.plan ? (state.plan.status==='DRAFT'?message.text.split('\n')[0]:planSummary(state.plan.proposal)) : message.kind==='PROPOSE_PLAN'?(message.draft?'原方案草稿保留在详情中。':'已整理测试方案。原回复保留在详情中。'):message.text}>
+            return <ChatMessage message={message} onQuote={inputDisabled?undefined:text=>{setState(v=>({...v,quotes:{...v.quotes,[draftKey]:text}}));composer.current?.focus();}} text={message.result && state.plan ? (state.plan.status==='DRAFT'?message.text.split('\n')[0]:planSummary(state.plan.proposal,state.plan.status)) : message.kind==='PROPOSE_PLAN'?(message.draft?'原方案草稿保留在详情中。':'已整理测试方案。原回复保留在详情中。'):message.text}>
             <MessageImages images={message.images} onOpen={image=>setModal({type:'image',image})}/>
             {message.kind==='PROPOSE_PLAN' && !message.result && <ArtifactCard title={message.draft?'方案草稿':'测试方案'} meta="查看详情" onClick={()=>setModal({type:'historical-plan',message})}/>}
             {message.result && <ArtifactCard title={state.plan?.status==='DRAFT'?'方案草稿':'测试方案'} meta={state.plan?.status==='LOCKED'?'已确认':'查看与修改'} onClick={()=>{setPlanError('');setModal({type:state.workflow?.stage==='CONFIRM_EXPECTATIONS'?'expectations':'result'});}}/>}
@@ -374,11 +410,11 @@ export function CaseWorkbench({accountControl}) {
           </button>}
           {!newConversation && ['EVALUATE_RESULT','CONFIRM_RESULT','CASE_FINAL'].includes(state.workflow?.stage) && <button type="button" className="cw-result" onClick={()=>setModal({type:'review-result'})}><span className="cw-result-icon" aria-hidden="true"><FileText size={18}/></span><span className="cw-result-copy"><span className="cw-result-title">结果核对</span></span><span className="cw-result-action">查看详情<ChevronRight size={14}/></span></button>}
           {!newConversation && state.workflow?.waiting?.includes('PROPOSE_PLAN') && messages.length>0 && <button type="button" className="cw-primary-button" disabled={inputDisabled || running || !!state.pending} onClick={()=>submitFirstNode(quotedInput(draft.trim()||'请根据已有讨论整理为审阅方案',quote),'PROPOSE_PLAN',images,draft.trim()||'请根据已有讨论整理为审阅方案')}>整理为审阅方案</button>}
-          {!loading && !newConversation && currentSet.id && showProjectLifecycle(currentSet.status,currentCase.status) && <ProjectLifecycleCard chatId={currentSet.id} caseId={state.selected} onChanged={async()=>applySnapshot(await liveSnapshot(currentSet.id,state.selected))} onNavigate={async target=>{if(target.casePublicId)await openCatalogCase(target.chatPublicId,target.casePublicId);else {applySnapshot(await liveSnapshot(target.chatPublicId,null));openNewConversation(target.chatPublicId);}}}/>}
+          {!loading && !newConversation && currentSet.id && showProjectLifecycle(currentSet.status,currentCase.status) && <ProjectLifecycleCard chatId={currentSet.id} caseId={state.selected} onChanged={refreshCurrentCase} onNavigate={async target=>{if(renderedView!==viewRequest.current)return;if(target.casePublicId)await openCatalogCase(target.chatPublicId,target.casePublicId);else {const snapshot=await liveSnapshot(target.chatPublicId,null);if(renderedView!==viewRequest.current)return;applySnapshot(snapshot);openNewConversation(target.chatPublicId);}}}/>}
           {!newConversation && (loading||running||!!state.pending) && !nodeError && <p className="cw-reply-status" role="status">{loading?'连接讨论服务…':(state.pending?.kind||activeAction)==='PROPOSE_PLAN'?'正在整理方案…':'正在回复…'}</p>}
           {newConversation && (loading||running) && <p role="status">{loading?'连接讨论服务…':'正在回复…'}</p>}
           
-          {nodeError && <div className="cw-node-error cw-node-feedback" role="alert"><MessageSquare size={16} className="cw-feedback-icon"/><div className="cw-feedback-content"><p>{nodeError}</p>{retryInput && !completed && nodeErrorCode!=='MODEL_BUDGET_EXHAUSTED' && <button type="button" disabled={running} aria-busy={running} onClick={()=>submitFirstNode(retryInput,retryAction,retryImages,retryOriginalInput||retryInput)}><RotateCcw size={15}/><span>{running?'重试中…':'重试原输入'}</span></button>}</div></div>}
+          {nodeError && <div className="cw-node-error cw-node-feedback" role="alert"><MessageSquare size={16} className="cw-feedback-icon"/><div className="cw-feedback-content"><p>{nodeError}</p>{navigationFailure&&<button type="button" disabled={loading} onClick={()=>navigationFailure.initial?loadInitial():navigateCase(navigationFailure.chatId,navigationFailure.caseId)}>重试加载 Case</button>}{retryInput && !completed && !['MODEL_BUDGET_EXHAUSTED','WORKFLOW_ACTION_UNAVAILABLE'].includes(nodeErrorCode) && <button type="button" disabled={running} aria-busy={running} onClick={()=>submitFirstNode(retryInput,retryAction,retryImages,retryOriginalInput||retryInput)}><RotateCcw size={15}/><span>{running?'重试中…':'重试原输入'}</span></button>}</div></div>}
         </div>
       </ThreadViewport>
       {page==='chat' && dataSet && <section className="cw-draft-page" aria-label={`${dataSet.name}的草稿数据`}>
@@ -389,6 +425,7 @@ export function CaseWorkbench({accountControl}) {
       </section>}
       <div hidden={!!dataSetId || page!=='chat'} className="cw-composer-area">
         <ThreadPrimitive.ScrollToBottom className="cw-scroll-bottom" aria-label="回到最新消息" title="回到最新消息"><ArrowUp size={18}/></ThreadPrimitive.ScrollToBottom>
+        {!newConversation&&!loading&&!navigationFailure&&!canDiscuss&&<p className="cw-composer-stage" role="status">{state.workflow?.stage==='CONFIRM_DRAFT'?'请查看草稿数据并确认后继续。':state.workflow?.stage==='FILE_EXCHANGE'?'请打开文件交换，完成当前文件操作。':['EVALUATE_RESULT','CONFIRM_RESULT','CASE_FINAL'].includes(state.workflow?.stage)?'请打开结果核对，查看当前结果。':'请查看当前流程，完成当前步骤后继续。'}</p>}
         <div className="cw-composer-frame" onDragOver={event=>{if(Array.from(event.dataTransfer.types).includes('Files'))event.preventDefault();}} onDrop={event=>{if(event.dataTransfer.files.length){event.preventDefault();addImages(event.dataTransfer.files);}}}>
         {quote && <div className="aui-quote-draft"><QuoteReply quoted={quote} toolbarVisible={false}/><button className="cw-icon" type="button" aria-label="移除引用" disabled={inputDisabled} onClick={()=>setState(v=>({...v,quotes:{...v.quotes,[draftKey]:''}}))}><X size={16}/></button></div>}
         <MessageImages images={images} onRemove={index=>setImageDrafts(v=>({...v,[draftKey]:(v[draftKey]||[]).filter((_,i)=>i!==index)}))} onOpen={image=>setModal({type:'image',image})} disabled={inputDisabled||readingImages}/>
@@ -407,8 +444,8 @@ export function CaseWorkbench({accountControl}) {
     </CaseAssistant>
     <div className={`cw-notice ${notice ? 'is-visible' : ''}`} role="status">{notice}</div>
     {modal?.type==='image'&&<Modal title={modal.image.name} className="cw-image-modal" onClose={()=>setModal(null)}><img className="cw-full-image" src={modal.image.dataUrl} alt={modal.image.name}/></Modal>}
-    {modal?.type === 'review-result' && <Modal title="结果核对" className="cw-result-review-modal" onClose={()=>{if(!resultDirty.current||window.confirm('有未保存的结果，确定关闭？'))setModal(null);}}><ResultReview chatId={currentSet.id} caseId={state.selected} readOnly={completed||currentSet.status!=='ACTIVE'} onDirtyChange={dirty=>{resultDirty.current=dirty;}} onChanged={async isCurrent=>{const snapshot=await liveSnapshot(currentSet.id,state.selected);if(isCurrent())applySnapshot(snapshot);}}/></Modal>}
-    {modal?.type === 'exchange' && <Modal title="文件交换" onClose={()=>setModal(null)}><FileExchangePanel chatId={currentSet.id} caseId={state.selected} plan={state.plan} draft={state.generatedData} workflow={state.workflow} readOnly={completed||currentSet.status!=='ACTIVE'} onChanged={async()=>applySnapshot(await liveSnapshot(currentSet.id,state.selected))}/></Modal>}
+    {modal?.type === 'review-result' && <Modal title="结果核对" className="cw-result-review-modal" onClose={()=>{if(!resultDirty.current||window.confirm('有未保存的结果，确定关闭？'))setModal(null);}}><ResultReview chatId={currentSet.id} caseId={state.selected} readOnly={completed||currentSet.status!=='ACTIVE'} onDirtyChange={dirty=>{resultDirty.current=dirty;}} onChanged={async isCurrent=>{const snapshot=await liveSnapshot(currentSet.id,state.selected);if(isCurrent()&&renderedView===viewRequest.current)applySnapshot(snapshot);}}/></Modal>}
+    {modal?.type === 'exchange' && <Modal title="文件交换" onClose={()=>setModal(null)}><FileExchangePanel chatId={currentSet.id} caseId={state.selected} plan={state.plan} draft={state.generatedData} workflow={state.workflow} readOnly={completed||currentSet.status!=='ACTIVE'} onChanged={refreshCurrentCase}/></Modal>}
     {modal?.type === 'workflow' && <Modal title="Case 流程" className="cw-flow-modal" onClose={()=>setModal(null)}><WorkflowDiagram workflow={modal.snapshot?.workflow || state.workflow} caseStatus={modal.snapshot?.case?.status || currentCase.status} plan={modal.snapshot?.plan || state.plan} data={modal.snapshot?.generatedData || state.generatedData} loading={modal.loading} error={modal.error} onRetry={openWorkflow}/></Modal>}
     {modal?.type==='new-project'&&<Modal title="创建项目" className="cw-row-editor" onClose={()=>{if(!creatingCase)setModal(null);}}><NewProjectForm onBusy={setCreatingCase} onCancel={()=>setModal(null)} onCreated={async chatId=>{
       const snapshot=await liveSnapshot(chatId,null);

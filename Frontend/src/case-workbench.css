@@ -353,3 +353,5 @@ html, body {overflow-x: clip;}
 
 .cw-header.is-catalog{display:none;}
 @media(max-width:480px){.cw-header.is-catalog{display:flex;flex:none;}}
+
+.cw-composer-stage{margin:0 0 8px;font-size:12px;line-height:1.5;color:var(--cw-muted)}

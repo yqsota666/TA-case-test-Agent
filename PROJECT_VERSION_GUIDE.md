@@ -1,5 +1,9 @@
 # 项目版本与工作树索引
 
+## Chat 交互修复（2026-10-12，本地5199待验收）
+
+当前5199前端运行 `codex/chat-interaction-fixes`，工作树 `/Users/apple/.codex/worktrees/fixed-workspace-scroll/gf`，从最新整合aa4a96ff连续修复。包含全部已整合平台、筛选及历史方案改动，修复Case导航/旧确认串页、跨Case运行状态、执行阶段无效发送、窄屏焦点，以及独立复审发现的首屏缓存和旧文件刷新竞态。47项前端测试、六尺寸滚动、8组专项、双确认/失败恢复、文件入口及构建通过；本地skill独立复审通过。入口 http://localhost:5199/?theme=liquid ，API3106及数据库不变。说明 `docs/Chat交互修复.md`，证据 `.context/chat-interaction`。没有真实业务写入或模型调用，无push/PR。旧条目的分支/入口为历史记录，以本条及实时Git/进程为准。
+
 ## 最新整合平台（2026-10-12，统一5199入口）
 
 按用户要求新建 `codex/platform-latest`，在 `/Users/apple/.codex/worktrees/fixed-workspace-scroll/gf` 收拢最新平台 e27c8426（含历史方案层次及命名）与搜索筛选、文件交换修复 b6f780d7，合并提交 a15a5b67。当前前端入口 http://localhost:5199/?theme=liquid&page=data&dataTable=customers ，Chrome 已打开；5210临时预览已停止。现有API3106及数据库不变，两个分支无后端差异。47项常规前端测试及构建通过。旧候选入口和旧工作树启动说明仅供历史核对，以本条及实时进程为准。未push或创建PR。
