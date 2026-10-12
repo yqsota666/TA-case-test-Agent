@@ -146,3 +146,26 @@ test('redemption rejects mismatched shares, excessive confirmed volume and nonfi
     const input=redemption();input.record[field]=value;assert.throws(()=>planReturnConfirmation(input),{code});
   }
 });
+
+test('same-package blank TA identity resolves only from its own explicitly confirmed opening, preserving the request',()=>{
+ const input=subscription(),original=opening().application.record;
+ input.application.record.TAAccountID=null;
+ input.application.record.OriginalAppSheetNo=original.AppSheetSerialNo;
+ input.application.record.OriginalAppDate=original.TransactionDate;
+ input.application.packagedOpening={record:original,confirmedTaAccountId:input.record.TAAccountID};
+ assert.equal(planReturnConfirmation(input).outcome,'CONFIRMED');
+ assert.equal(input.application.record.TAAccountID,null);
+ for(const field of ['TransactionAccountID','DistributorCode','BranchCode','AppSheetSerialNo','TransactionDate']){
+  const changed=structuredClone(input);changed.application.packagedOpening.record[field]='WRONG';
+  assert.throws(()=>planReturnConfirmation(changed),{code:'RETURN_CONFIRMATION_MISMATCH'},field);
+ }
+ const unconfirmed=structuredClone(input);unconfirmed.application.packagedOpening.confirmedTaAccountId=null;
+ assert.throws(()=>planReturnConfirmation(unconfirmed),{code:'SALES_ACCOUNT_UNCONFIRMED'});
+ const wrong=structuredClone(input);wrong.record.TAAccountID='OTHERTA';
+ assert.throws(()=>planReturnConfirmation(wrong),{code:'RETURN_CONFIRMATION_MISMATCH'});
+ const missing=structuredClone(input);delete missing.application.packagedOpening;
+ assert.throws(()=>planReturnConfirmation(missing),{code:'RETURN_CONFIRMATION_MISMATCH'});
+ const refused=structuredClone(unconfirmed);Object.assign(refused.record,{ReturnCode:'1001',TAAccountID:null});
+ assert.equal(planReturnConfirmation(refused).outcome,'FAILED');
+ assert.equal(planReturnConfirmation(refused).holdingEffect,null);
+});

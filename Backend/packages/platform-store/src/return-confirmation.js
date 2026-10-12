@@ -192,8 +192,23 @@ export function createReturnConfirmationRepository({ transaction }) {
           continue;
         }
         const source = json(app.record_json);
+        let packagedOpening;
+        if (app.file_type === '03' && !source.TAAccountID?.trim()) {
+          const [[opening]] = await db.execute(`SELECT o.record_json,s.ta_account_id
+            FROM applications o JOIN batch_applications ba ON ba.workspace_id=o.workspace_id
+              AND ba.chat_id=o.chat_id AND ba.application_id=o.id
+            LEFT JOIN sales_return_confirmations c ON c.workspace_id=o.workspace_id
+              AND c.application_id=o.id AND c.outcome='CONFIRMED'
+            LEFT JOIN sales_confirmed_accounts s ON s.workspace_id=o.workspace_id
+              AND s.channel_id=o.channel_id AND s.source_confirmation_id=c.id
+            WHERE o.workspace_id=? AND o.chat_id=? AND o.case_id=? AND o.channel_id=?
+              AND ba.batch_id=? AND o.file_type='01' AND o.business_code='001' AND o.app_no=? FOR UPDATE`,
+          [...keys,parsed.channel_id,parsed.batch_id,source.OriginalAppSheetNo ?? '']);
+          if (!opening) throw error('RETURN_CONFIRMATION_MISMATCH','交易原申请没有对应的同包开户申请');
+          packagedOpening = {record:json(opening.record_json),confirmedTaAccountId:opening.ta_account_id ?? null};
+        }
         const applied = await runGraph({ expectedType: parsed.expected_type,
-          application: { fileType: app.file_type, businessCode: app.business_code, status: app.status, record: source },
+          application: { fileType: app.file_type, businessCode: app.business_code, status: app.status, record: source, packagedOpening },
           record, channel: { taCode: parsed.ta_code, distributorCode: parsed.distributor_code, protocolVersion: parsed.protocol_version },
           apply: async effect => {
             const returnRecordId = await inboundRecord(db, keys, parsed.channel_id, input.parseId, file, localIndex, record, app);

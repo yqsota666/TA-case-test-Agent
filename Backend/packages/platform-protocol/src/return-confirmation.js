@@ -68,8 +68,26 @@ export function planReturnConfirmation({ application, returnType, record, channe
   const confirmationDate = date(record, 'TransactionCfmDate');
   if (confirmationDate < requestDate) fail('RETURN_CONFIRMATION_MISMATCH', '确认日期早于申请日期');
   if (subscription || redemption) {
-    for (const field of ['TAAccountID', 'FundCode', 'ShareClass', ...(subscription || source.CurrencyType ? ['CurrencyType']:[])]) match(source, record, field);
-    if (!/^[A-Za-z0-9]{1,12}$/.test(required(record, 'TAAccountID'))) {
+    for (const field of ['FundCode', 'ShareClass', ...(subscription || source.CurrencyType ? ['CurrencyType']:[])]) match(source, record, field);
+    if (source.TAAccountID?.trim()) match(source, record, 'TAAccountID');
+    else {
+      const opening = application.packagedOpening;
+      const original = opening?.record;
+      if (!original || original.BusinessCode !== '001' ||
+          source.OriginalAppSheetNo !== original.AppSheetSerialNo ||
+          source.OriginalAppDate !== original.TransactionDate || source.TransactionDate !== original.TransactionDate ||
+          ['TransactionAccountID','DistributorCode','BranchCode'].some(field => !source[field] || source[field] !== original[field])) {
+        fail('RETURN_CONFIRMATION_MISMATCH','交易原申请未精确引用同包同账户开户');
+      }
+      if (opening.confirmedTaAccountId && record.TAAccountID && record.TAAccountID !== opening.confirmedTaAccountId) {
+        fail('RETURN_CONFIRMATION_MISMATCH','交易回传TA账号与对应开户02确认不一致');
+      }
+      if (record.ReturnCode === '0000') {
+        if (!opening.confirmedTaAccountId) fail('SALES_ACCOUNT_UNCONFIRMED','须先明确同步对应开户02的成功确认');
+        if (record.TAAccountID !== opening.confirmedTaAccountId) fail('RETURN_CONFIRMATION_MISMATCH','交易回传TA账号与对应开户02确认不一致');
+      }
+    }
+    if ((record.ReturnCode === '0000' || record.TAAccountID) && !/^[A-Za-z0-9]{1,12}$/.test(required(record, 'TAAccountID'))) {
       fail('RETURN_CONFIRMATION_INCOMPLETE', 'TA 账号无效');
     }
     if (subscription && record.ApplicationAmount !== null && record.ApplicationAmount !== undefined) {
