@@ -35,6 +35,18 @@ const apply=async()=>page.getByRole('button',{name:'应用条件',exact:true}).c
 try {
   await page.goto(base+'/test/catalog-query.html?theme=liquid');await total('/ 125 条');
   if(shots)await page.screenshot({path:shots+'/desktop-default.png'});
+  const source=page.getByRole('combobox',{name:'数据来源'});
+  await source.click();await page.keyboard.press('Escape');
+  assert.equal(await source.evaluate(el=>getComputedStyle(el).outlineWidth),'1px','mouse selection must not leave a heavy native focus ring');
+  assert.equal(await source.evaluate(el=>getComputedStyle(el).outlineOffset),'0px','focus stays against the border without a detached second frame');
+  if(shots)await page.screenshot({path:shots+'/source-pointer.png'});
+  await page.getByLabel('快捷搜索').focus();await page.keyboard.press('Shift+Tab');
+  assert.equal(await source.evaluate(el=>el.matches(':focus-visible')),true,'source remains keyboard accessible');
+  assert.equal(await source.evaluate(el=>getComputedStyle(el).outlineWidth),'1px','keyboard focus uses one thin controlled ring');
+  if(shots)await page.screenshot({path:shots+'/source-keyboard.png'});
+  assert.equal(await page.locator('.gc-business-filter > svg').count(),await page.locator('.gc-business-filter').count(),'all facet arrows use icons');
+  await page.getByLabel('快捷搜索').click();
+
   await page.locator('.gc-business-filter').filter({hasText:'项目'}).click();await page.getByRole('checkbox',{name:'合成搜索项目 125',exact:true}).check();await page.getByRole('button',{name:'应用筛选',exact:true}).click();await total('/ 125 条');
   await page.getByRole('button',{name:'清空条件',exact:true}).click();await total('/ 125 条');
   await page.getByRole('button',{name:'下一页',exact:true}).click();await total('101–125');

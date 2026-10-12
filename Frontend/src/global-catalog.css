@@ -12,13 +12,17 @@
 .gc-query-toolbar .gc-search{width:min(420px,100%);flex:0 1 420px;height:38px;border-radius:8px}
 .gc-toolbar-actions{margin-left:auto;display:flex;align-items:center;gap:8px;flex:none}
 .gc-query-controls input,.gc-query-controls select{font:inherit;color:var(--cw-ink);box-sizing:border-box}
-.gc-source-control select{border:1px solid var(--cw-line);background:var(--cw-surface);border-radius:8px;padding:9px 10px;font-size:13px;max-width:240px}
+.gc-source-control{position:relative;flex:none;max-width:240px}
+.gc-source-control select{appearance:none;-webkit-appearance:none;box-sizing:border-box;width:100%;height:38px;border:1px solid var(--cw-line);background:var(--cw-surface);border-radius:8px;padding:0 36px 0 12px;font:inherit;font-size:13px;color:var(--cw-ink);cursor:pointer}
+.gc-source-control>svg{position:absolute;right:12px;top:50%;transform:translateY(-50%);pointer-events:none;color:var(--cw-muted)}
+.cw-shell .gc-source-control select:focus{outline:none;box-shadow:none}
+.cw-shell .gc-source-control select:focus-visible{border-color:var(--cw-accent);outline:1px solid var(--cw-accent);outline-offset:0}
 .cw-shell .gc-toolbar-actions button{display:flex;align-items:center;gap:8px;padding:8px 10px;color:var(--cw-muted)}
 .gc-toolbar-actions b{font-size:11px;min-width:16px;color:var(--cw-accent);font-weight:500}
 .gc-business-filters{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}
 .gc-filter-label{color:var(--cw-muted);font-size:12px;flex:none;margin-right:2px}
-.cw-shell .gc-page .gc-business-filter{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--cw-line);border-radius:7px;padding:7px 10px;background:var(--cw-surface);max-width:280px;min-width:88px;justify-content:space-between}
-.gc-business-filter>span:last-child{color:var(--cw-muted)}
+.cw-shell .gc-page .gc-business-filter{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--cw-line);border-radius:7px;padding:0 12px;height:36px;background:var(--cw-surface);max-width:280px;min-width:88px;justify-content:space-between}
+.gc-business-filter>svg{flex:none;color:var(--cw-muted);margin-left:4px}
 .gc-business-filter strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500;max-width:150px;color:var(--cw-accent)}
 .cw-shell .gc-page .gc-business-filter.is-selected{border-color:var(--cw-accent)}
 .cw-shell .gc-more-filters{padding:8px 10px;color:var(--cw-muted)}

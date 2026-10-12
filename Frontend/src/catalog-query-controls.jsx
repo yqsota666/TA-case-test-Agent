@@ -1,5 +1,5 @@
 import React,{useEffect,useId,useState} from 'react';
-import {Search,X} from './ui-icons.jsx';
+import {Search,X,ChevronDown} from './ui-icons.jsx';
 import {requestCase} from './live-case-api.js';
 import {catalogParams,catalogStorageKey,emptyFilters,initialCatalogQuery,readCatalogState,removeCatalogScope,validCatalogFilters,writeCatalogState} from './catalog-query-state.js';
 import {CatalogDialog} from './catalog-dialog.jsx';
@@ -131,13 +131,13 @@ export function CatalogQueryControls({model,placeholder,sourceControl}) {
   const quick=(quickKeys[model.resource.split(':').pop()]||[]).map(key=>fields.find(field=>field.key===key)).filter(Boolean);
   const active=query.q||query.filters.rules.length>0||query.sort.length>0;
   return <div className="gc-query-controls">
-    <div className="gc-query-toolbar">{sourceControl&&<div className="gc-source-control">{sourceControl}</div>}
+    <div className="gc-query-toolbar">{sourceControl&&<div className="gc-source-control">{sourceControl}<ChevronDown size={14}/></div>}
       <label className="gc-search"><Search size={17}/><input aria-label="快捷搜索" placeholder={placeholder} maxLength={200} value={search} onChange={event=>setSearch(event.target.value)}/>{search&&<button aria-label="清除关键词" onClick={()=>setSearch('')}><X size={14}/></button>}</label>
-      <div className="gc-toolbar-actions"><button onClick={()=>setPanel('sort')}>排序{query.sort.length>0&&<b>{query.sort.length}</b>}</button><button onClick={()=>{setNotice('');setPanel('saved');}}>常用查询 <span aria-hidden="true">⌄</span></button></div>
+      <div className="gc-toolbar-actions"><button onClick={()=>setPanel('sort')}>排序{query.sort.length>0&&<b>{query.sort.length}</b>}</button><button onClick={()=>{setNotice('');setPanel('saved');}}>常用查询 <ChevronDown size={14}/></button></div>
     </div>
     <div className="gc-business-filters" aria-label="常用业务筛选"><span className="gc-filter-label">筛选</span>{quick.map(field=>{
       const rule=fieldRule(query.filters,field.key),value=rule?Array.isArray(rule.value)?rule.value.map(v=>field.options?.find(o=>o.value===v)?.label||v).join('、'):field.options?.find(o=>o.value===rule.value)?.label||rule.value:'';
-      return <button className={`gc-business-filter${rule?' is-selected':''}`} key={field.key} onClick={()=>setPanel(field)} title={value?`${field.label}：${value}`:field.label}><span>{field.label}</span>{value&&<strong>{value}</strong>}<span aria-hidden="true">⌄</span></button>;
+      return <button className={`gc-business-filter${rule?' is-selected':''}`} key={field.key} onClick={()=>setPanel(field)} title={value?`${field.label}：${value}`:field.label}><span>{field.label}</span>{value&&<strong>{value}</strong>}<ChevronDown size={14}/></button>;
     })}<button className="gc-more-filters" onClick={advanced} disabled={!fields.length}>＋ 更多筛选</button></div>
     {active&&<div className="gc-applied-row"><span className="gc-filter-label">已应用</span><div className="gc-filter-chips" aria-label="已应用条件">
       {query.q&&<span className="gc-condition-chip"><span>关键词：{query.q}</span><button aria-label="移除关键词" onClick={()=>apply({...query,q:''})}><X size={12}/></button></span>}
