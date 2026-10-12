@@ -1,5 +1,13 @@
 # 项目版本与工作树索引
 
+## 测试方案持续修改与双确认（2026-10-12，已接入5199）
+
+从实时5199的e0b217a7创建独立codex/editable-test-plan，分开实现后台授权确认acd6bbcb、对话与预期修改8a52bca2、统一方案面板6236d1bf，验收记录9928a8cc。已本地快进接入codex/plan-trigger-fix，5199仍从/Users/apple/Documents/ChatGPT/gf-worktrees/plan-trigger-fix运行；前端热更新，API3106重启。数据库仍为ta_case_agent_chain，031仅新增按方案授权表；迁移前后13类业务记录数量及原Case全部方案摘要哈希一致，未写原Case内容、确认或文件。
+
+当前测试方案通过自然语言或手动持续修改，不再暴露草稿转审阅阶段。面板底部常驻准备数据、预期结果两次点击确认；只修改预期时保留申请定义及数据确认，输入变化重新确认。新确认方案自动核对并准备数据，无第三次确认草稿；失败可重试。旧锁定方案保留原流程，执行历史不重写。
+
+后端488通过、24项默认跳过，前端50通过及构建通过，另3项真实MySQL事务验收通过。真实Sophnet在原Case隔离副本完成一句话修改、双确认、预期修改保留确认及多Case同包01/03 ZIP下载解析；非TA方案、手机/矮窗口与四外观检查通过。没有提交TA或导入回传。旧合成专项失败在基线复现，细节见docs/测试方案持续修改.md；证据与运行记录在功能树.context/editable-plan。无push/PR。
+
 ## 项目与 Case 双击改名（2026-10-12，已接入5199）
 
 按用户“合并到5199”，`codex/sidebar-rename` 的 `9bbdcc49` 与图标修正 `7c00838f` 先与实时平台 `3accdaab` 整合为 `ebe79d1a`，再本地快进接入 `codex/plan-trigger-fix`。工作树仍为 `/Users/apple/Documents/ChatGPT/gf-worktrees/plan-trigger-fix`，5199前端原进程热更新，API3106重启加载同源改名接口，数据库仍为 `ta_case_agent_chain`，无迁移。
