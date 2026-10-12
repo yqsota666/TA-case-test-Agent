@@ -66,3 +66,25 @@ test('case listing is limited to authenticated Workspace and requested Chat', as
   await repository.listCases(token, chatId.toUpperCase());
   assert.deepEqual(calls.filter(call => call.sql.includes('FROM case_chats')).at(-1).values, [31, chatId]);
 });
+
+test('renaming only changes titles within the authenticated workspace and project', async () => {
+  const caseId='aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+  const {repository,calls}=fixture({chat:{id:41,status:'CLOSED'},cases:[{id:51,chat_id:41,status:'PASS'}]});
+  assert.deepEqual(await repository.renameChat(token,chatId,' 新项目 '),{publicId:chatId,title:'新项目'});
+  assert.deepEqual(await repository.renameCase(token,chatId,caseId,' 新Case '),{publicId:caseId,title:'新Case'});
+  const updates=calls.filter(c=>c.sql.startsWith('UPDATE'));
+  assert.deepEqual(updates.map(c=>c.values),[['新项目',31,41],['新Case',31,41,51]]);
+  assert.ok(updates.every(c=>/SET title=\? WHERE workspace_id=\?/.test(c.sql)));
+  assert.deepEqual(calls.find(c=>c.sql.includes('FROM cases k')).values,[31,chatId,caseId]);
+});
+
+test('renaming rejects inaccessible records and invalid titles without updating anything', async () => {
+  const {repository,calls}=fixture();
+  await assert.rejects(repository.renameChat(token,chatId,'名称'),{code:'CHAT_NOT_FOUND'});
+  await assert.rejects(repository.renameCase(token,chatId,chatId,'名称'),{code:'CASE_NOT_FOUND'});
+  for(const title of ['', '  ', '名'.repeat(161), null]){
+    await assert.rejects(repository.renameChat(token,chatId,title),{code:'INVALID_TITLE'});
+    await assert.rejects(repository.renameCase(token,chatId,chatId,title),{code:'INVALID_TITLE'});
+  }
+  assert.equal(calls.some(c=>c.sql.startsWith('UPDATE')),false);
+});

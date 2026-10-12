@@ -5,6 +5,7 @@ import {DetailPanel} from './assistant-ui/detail-panel.jsx';
 import {ArtifactCard} from './assistant-ui/artifact-card.jsx';
 import {ApprovalCard} from './assistant-ui/approval-card.jsx';
 import {ThreadList} from './assistant-ui/thread-list.jsx';
+import {NameButton} from './assistant-ui/name-button.jsx';
 import './assistant-ui/elements.css';
 import {MessageImages,readMessageImages} from './message-images.jsx';
 import {GlobalDataCatalog} from './global-data-catalog.jsx';
@@ -27,7 +28,7 @@ import {discussionAction} from './discussion-actions.js';
 import {MessageBody} from './message-body.jsx';
 import {HistoricalPlan} from './historical-plan.jsx';
 import {ThemePicker} from './theme-picker.jsx';
-import {NewCaseForm,NewProjectForm} from './new-case-form.jsx';
+import {NewCaseForm,NewProjectForm,RenameForm} from './new-case-form.jsx';
 import {PlanDocument, planSummary} from './plan-document.jsx';
 import {MessageSquare, RotateCcw} from './ui-icons.jsx';
 import './node-feedback.css';
@@ -350,15 +351,16 @@ export function CaseWorkbench({accountControl}) {
     <nav className="cw-sets" aria-label="项目与 Case">
       {state.sets.map(set => <div className={`cw-set ${set.status!=='ACTIVE'?'is-sealed':''}`} key={set.id}>
         <div className="cw-set-heading">
-          <button className="cw-set-toggle" aria-expanded={set.expanded} aria-controls={`cases-${set.id}`} onClick={() => toggleSet(set.id)}>
+          <NameButton className="cw-set-toggle" aria-expanded={set.expanded} aria-controls={`cases-${set.id}`} title="双击或按 F2 改名" onClick={() => toggleSet(set.id)} onRename={()=>setModal({type:'rename',projectId:set.id,name:set.name})}>
             <Folder size={18}/><span>{set.name}</span>
-          </button>
+          </NameButton>
           <button className="cw-icon cw-add" aria-label={`在${set.name}中新建 Case`} title="新建 Case" disabled={set.status!=='ACTIVE'} onClick={() => openNewConversation(set.id)}><SquarePen size={18}/></button>
         </div>
         <div id={`cases-${set.id}`} className={`cw-set-children ${set.expanded ? 'is-expanded' : ''}`} inert={!set.expanded}>
           <div className="cw-set-children-inner">
             <ThreadList threads={set.cases.map(item=>({id:item.id,title:item.name,time:''}))}
               activeIndex={!dataSetId&&!newConversation?set.cases.findIndex(item=>item.id===state.selected):-1}
+              onRename={index=>setModal({type:'rename',projectId:set.id,caseId:set.cases[index].id,name:set.cases[index].name})}
               onActiveIndexChange={index=>selectCase(set.cases[index].id)}/>
 
 
@@ -457,6 +459,10 @@ export function CaseWorkbench({accountControl}) {
       await openCatalogCase(chatId,caseId);
       setState(v=>({...v,drafts:{...v.drafts,[caseId]:text}}));
       setImageDrafts(v=>({...v,[caseId]:images}));
+    }}/></Modal>}
+    {modal?.type === 'rename' && <Modal title={modal.caseId?'重命名Case':'重命名项目'} className="cw-row-editor" onClose={()=>{if(!creatingCase)setModal(null);}}><RenameForm target={modal} onBusy={setCreatingCase} onCancel={()=>setModal(null)} onSaved={name=>{
+      setState(value=>({...value,sets:value.sets.map(set=>set.id!==modal.projectId?set:modal.caseId?{...set,cases:set.cases.map(item=>item.id===modal.caseId?{...item,name}:item)}:{...set,name})}));
+      setModal(null);
     }}/></Modal>}
     {modal?.type === 'navigation' && <Modal title="项目" onClose={() => setModal(null)}><div className="cw-mobile-sidebar">{sidebar}</div></Modal>}
     {modal?.type === 'historical-plan' && <DetailPanel title={modal.message.draft?'方案草稿':'测试方案'} onClose={()=>setModal(null)}><HistoricalPlan message={modal.message} messages={messages} currentPlan={state.plan} onOpenCurrent={()=>{setPlanError('');setModal({type:state.workflow?.stage==='CONFIRM_EXPECTATIONS'?'expectations':'result'});}} onResume={()=>{setModal(null);composer.current?.focus();}}/></DetailPanel>}
