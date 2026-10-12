@@ -37,3 +37,13 @@ html[data-theme=liquid] .cw-liquid-home .cw-composer-frame {background:linear-gr
 html[data-theme=liquid] .cw-liquid-home .cw-composer-frame:focus-within {border-color:var(--study-focus);box-shadow:0 0 0 3px rgb(23 108 136 / 9%),0 16px 40px rgb(28 77 105 / 12%);}
 html[data-theme=liquid] .cw-liquid-home .cw-send:not(:disabled) {background:linear-gradient(145deg,#247991,#104e64)!important;color:#fff!important;box-shadow:inset 0 1px 0 rgb(255 255 255 / 22%),0 3px 7px rgb(23 84 110 / 20%);}
 html[data-theme=liquid] .cw-liquid-home .aui-detail {background:#f7fafc;}
+
+html[data-theme=liquid] .cw-shell.cw-liquid-home {
+  --chat-ink:#27272a;
+  --chat-heading:#18181b;
+  --chat-muted:#62666d;
+}
+html[data-theme=liquid] .cw-shell.cw-liquid-home :is(.aui-md,.aui-user-message-content,.cw-composer textarea) {color:var(--chat-ink);}
+html[data-theme=liquid] .cw-shell.cw-liquid-home .aui-md :is(h1,h2,h3,h4,h5,h6,strong) {color:var(--chat-heading);}
+html[data-theme=liquid] .cw-shell.cw-liquid-home .aui-message-meta {color:var(--chat-muted);}
+html[data-theme=liquid] .cw-shell.cw-liquid-home .cw-composer textarea::placeholder {color:var(--chat-muted);}
