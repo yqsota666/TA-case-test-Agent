@@ -13,6 +13,9 @@
 按用户“直接替换”，`codex/history-plan-ui` 的 a2908f2f 已本地快进接入 `codex/platform-integration`，工作树 `/Users/apple/.codex/worktrees/platform-integration/gf`。5199原进程热更新，API3106及数据库不变。历史方案按目标、条件、操作及预期分区，长条件、依据和文件安排展开查看，完整原回复及真实失败提示保留；无法识别的历史内容回退原文。未改动业务内容或确认状态。
 
 实际打开截图同一Case `2fac65c1-688b-45fa-bdff-59b14bf41dd8` 的00:07、44秒、2000元记录，原文一致及5199实际效果已核对。43项常规前端单测及构建通过；额外3项旧SSR失败已在原基线复现，手机视觉验收未完成。证据功能树 `.context/history-plan-ui/5199.jpg`。无模型调用、业务数据写入、push或PR。
+## 搜索筛选界面候选（2026-10-12，本地待验收）
+
+用户继续授权coding，`codex/catalog-filter-design`从统一平台0878e534开发，功能树 `/Users/apple/.codex/worktrees/fixed-workspace-scroll/gf`。候选 http://127.0.0.1:5210/?theme=liquid&page=data&dataTable=customers 代理现有3106，5199不替换。复用适配OpenStatus MIT候选多选组件，搜索/业务筛选/已应用条件分层，高级条件、排序、常用查询独立弹层；保留材质与后端查询契约，无新依赖或后端改动。40项前端测试、构建、真实SQL合成事务浏览器桌面/390px/260px矮窗口通过；本地项目skill自审修复同字段多约束覆盖和样式优先级问题。证据 `.context/catalog-design`，说明 `docs/搜索筛选界面改造.md`。不代表用户已视觉验收，无push/PR或业务数据写入。操作前核对实时Git/进程。
 
 ## 对话意图与草稿恢复接入5199（2026-10-12）
 

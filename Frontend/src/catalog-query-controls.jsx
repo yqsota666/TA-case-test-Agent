@@ -2,6 +2,8 @@ import React,{useEffect,useId,useState} from 'react';
 import {Search,X} from './ui-icons.jsx';
 import {requestCase} from './live-case-api.js';
 import {catalogParams,catalogStorageKey,emptyFilters,initialCatalogQuery,readCatalogState,removeCatalogScope,validCatalogFilters,writeCatalogState} from './catalog-query-state.js';
+import {CatalogDialog} from './catalog-dialog.jsx';
+import {CatalogFacetOptions} from './catalog-facet-options.jsx';
 
 const names={contains:'包含',eq:'等于',ne:'不等于',startsWith:'开头是',notContains:'不包含',in:'属于以下任一项',notIn:'排除以下各项',gt:'大于',gte:'大于或等于',lt:'小于',lte:'小于或等于',between:'介于',empty:'未填写',notEmpty:'已填写'};
 const hiddenFields=new Set(['chatId','caseId','batchId']);
@@ -59,45 +61,93 @@ function describe(rule,fields) {
   const render=value=>f?.options?.find(o=>o.value===value)?.label||value;
   return `${label} ${names[rule.operator]||rule.operator} ${hiddenFields.has(rule.field)?'已选记录':Array.isArray(rule.value)?rule.value.map(render).join('、'):render(rule.value)||''}`;
 }
-function quickCondition(filters,rule) {
-  return filters.combinator==='and'?{...filters,rules:[...filters.rules.filter(item=>item.rules||item.field!==rule.field),rule]}:{combinator:'and',rules:[filters,rule]};
+
+function fieldRule(filters,key) {
+  const matches=filters.combinator==='and'?filters.rules.filter(rule=>rule.field===key):[];
+  return matches.length===1&&['eq','in','between','gte','lte'].includes(matches[0].operator)?matches[0]:undefined;
 }
-function QuickFilter({field,model}) {
-  const [options,setOptions]=useState(field.options||[]),[loading,setLoading]=useState(false),[error,setError]=useState('');
-  const load=async()=>{
-    if(field.options){setOptions(field.options);return;}
-    setLoading(true);setError('');
-    const filters=model.query.filters.combinator==='and'?{...model.query.filters,rules:model.query.filters.rules.filter(rule=>rule.rules||rule.field!==field.key)}:model.query.filters;
-    try{const value=await requestCatalog(model.path,{...model.query,filters},0,field.key);setOptions(value.options||[]);}catch(error){setError(error.message);}finally{setLoading(false);}
+function replaceField(filters,key,rule) {
+  const root=filters.combinator==='and'?filters:{combinator:'and',rules:[filters]};
+  const previous=fieldRule(filters,key);
+  return {...root,rules:[...root.rules.filter(item=>item!==previous),...(rule?[rule]:[])]};
+}
+function FacetEditor({field,model,onClose}) {
+  const existing=fieldRule(model.query.filters,field.key);
+  const [selected,setSelected]=useState(existing?Array.isArray(existing.value)?existing.value:[existing.value]:[]);
+  const [range,setRange]=useState(existing?.operator==='between'?existing.value:existing?.operator==='gte'?[existing.value,'']:existing?.operator==='lte'?['',existing.value]:existing?.operator==='eq'?[existing.value,existing.value]:['','']);
+  const [options,setOptions]=useState(field.options||[]),[loading,setLoading]=useState(!field.options),[error,setError]=useState(''),[retry,setRetry]=useState(0);
+  const isDate=['date','datetime'].includes(field.type);
+  useEffect(()=>{
+    if(isDate||field.options)return;
+    let active=true;setLoading(true);setError('');
+    requestCatalog(model.path,{...model.query,filters:replaceField(model.query.filters,field.key,null)},0,field.key)
+      .then(result=>{if(active)setOptions(result.options||[]);})
+      .catch(error=>{if(active)setError(error.message);})
+      .finally(()=>{if(active)setLoading(false);});
+    return()=>{active=false;};
+  },[retry]);
+  const submit=event=>{
+    event.preventDefault();let rule;
+    if(isDate){if(range[0]&&range[1]&&range[0]>range[1]){setError('开始日期不能晚于结束日期。');return;}if(range.some(Boolean))rule={field:field.key,operator:range.every(Boolean)?'between':range[0]?'gte':'lte',value:range.every(Boolean)?range:range[0]||range[1]};}
+    else if(selected.length)rule={field:field.key,operator:selected.length===1?'eq':'in',value:selected.length===1?selected[0]:selected};
+    model.apply({...model.query,filters:replaceField(model.query.filters,field.key,rule)});onClose();
   };
-  return <details className="gc-quick-filter" onToggle={event=>{if(event.currentTarget.open)load();}}><summary>{field.label}</summary><div>
-    {loading?<span role="status">读取候选项…</span>:error?<><span role="alert">{error}</span><button onClick={load}>重试</button></>:options.length?<select aria-label={`快捷筛选${field.label}`} value="" onChange={event=>{if(!event.target.value)return;model.apply({...model.query,filters:quickCondition(model.query.filters,{field:field.key,operator:'eq',value:event.target.value})});event.target.closest('details').open=false;}}><option value="">选择{field.label}</option>{options.map(option=><option key={option.value} value={option.value}>{option.label||option.value}{option.count===undefined?'':`（${option.count}）`}</option>)}</select>:<span>当前条件下暂无候选项，可在高级筛选中输入。</span>}
-  </div></details>;
+  const merged=[...options,...selected.filter(value=>!options.some(option=>option.value===value)).map(value=>({value,label:value}))];
+  return <CatalogDialog title={`筛选${field.label}`} onClose={onClose}><form onSubmit={submit}>
+    <div className="gc-dialog-body">
+      {isDate?<div className="gc-date-fields">{['开始日期','结束日期'].map((label,index)=><label key={label}>{label}<input aria-label={label} type="date" value={range[index]} onChange={event=>{setRange(range.map((v,i)=>i===index?event.target.value:v));setError('');}}/></label>)}</div>:
+        loading?<p role="status">读取候选项…</p>:<CatalogFacetOptions label={field.label} options={merged} value={selected} onChange={setSelected}/>}
+      {error&&<p role="alert">{error} {!isDate&&<button type="button" onClick={()=>setRetry(v=>v+1)}>重试</button>}</p>}
+      {!isDate&&!loading&&<p className="gc-dialog-hint">可选择多项；候选显示最多50项，其他值可通过高级筛选输入。</p>}
+    </div><footer><button type="button" onClick={()=>{setSelected([]);setRange(['','']);}}>重置选择</button><span/><button type="button" onClick={onClose}>取消</button><button type="submit" className="gc-primary" disabled={!isDate&&loading}>应用筛选</button></footer>
+  </form></CatalogDialog>;
+}
+const quickKeys={
+  files:['fileType','direction','channelName','businessDate','project'],
+  applications:['status','business_date','fund_code','channel_name','project'],
+  customers:['project','caseTitle','channel_name','investor_type'],
+  accounts:['project','caseTitle','channel_name','branch_code'],
+  funds:['fund_code','share_class','project','caseTitle'],
+  holdings:['fund_code','share_class','snapshot_date','project'],
+  distributors:['ta_environment','protocol_version','ta_code'],
+};
+function SortEditor({model,fields,onClose}) {
+  const [sort,setSort]=useState(model.query.sort);
+  const selectable=fields.filter(f=>!f.collection&&!hiddenFields.has(f.key));
+  return <CatalogDialog title="排序" onClose={onClose}><form onSubmit={event=>{event.preventDefault();model.apply({...model.query,sort});onClose();}}><div className="gc-dialog-body gc-sort-list">
+    {!sort.length&&<p className="gc-dialog-hint">当前使用默认顺序。</p>}
+    {sort.map((item,index)=><div key={index}><span>{index+1}</span><select aria-label={`排序字段${index+1}`} value={item.field} onChange={event=>setSort(sort.map((v,i)=>i===index?{...v,field:event.target.value}:v))}>{selectable.map(f=><option key={f.key} value={f.key}>{f.label}</option>)}</select><select aria-label={`排序方向${index+1}`} value={item.direction} onChange={event=>setSort(sort.map((v,i)=>i===index?{...v,direction:event.target.value}:v))}><option value="asc">升序</option><option value="desc">降序</option></select><button type="button" aria-label={`移除排序${index+1}`} onClick={()=>setSort(sort.filter((_,i)=>i!==index))}><X size={14}/></button></div>)}
+    <button type="button" disabled={!selectable.length||sort.length>=3} onClick={()=>setSort([...sort,{field:selectable.find(f=>!sort.some(item=>item.field===f.key))?.key||selectable[0].key,direction:'asc'}])}>＋添加排序</button>
+  </div><footer><button type="button" onClick={()=>setSort([])}>重置排序</button><span/><button type="button" onClick={onClose}>取消</button><button className="gc-primary" type="submit">应用排序</button></footer></form></CatalogDialog>;
 }
 export function CatalogQueryControls({model,placeholder,sourceControl}) {
-  const {query,state,search,setSearch,apply,clear}=model,fields=state.data?.source&&state.data.source!==query.source?[]:state.data?.queryFields||[];
-  const [open,setOpen]=useState(false),[draft,setDraft]=useState(query.filters),[sort,setSort]=useState(query.sort);
-  const [saveOpen,setSaveOpen]=useState(false),[name,setName]=useState(''),[notice,setNotice]=useState('');
+  const {query,state,search,setSearch,apply,clear}=model;
+  const fields=state.data?.source&&state.data.source!==query.source?[]:state.data?.queryFields||[];
+  const [panel,setPanel]=useState(null),[draft,setDraft]=useState(query.filters),[notice,setNotice]=useState(''),[name,setName]=useState('');
   const savedKey=catalogStorageKey(model.resource)+':saved';
   const [saved,setSaved]=useState(()=>{const items=readCatalogState(localStorage,savedKey,{items:[]}).items;return Array.isArray(items)?items.filter(item=>item?.id&&typeof item.name==='string'&&typeof item.query?.q==='string'&&validCatalogFilters(item.query.filters)&&Array.isArray(item.query.sort)).slice(-20):[];});
-  useEffect(()=>{setDraft(query.filters);setSort(query.sort);},[query]);
-  const persist=items=>{if(writeCatalogState(localStorage,savedKey,{items})){setSaved(items);setNotice('');return true;}setNotice('浏览器无法保存查询，请检查存储设置。');return false;};
-  return <div className="gc-query-controls"><div className="gc-query-toolbar">
-    {sourceControl}<label className="gc-search"><Search size={16}/><input aria-label="快捷搜索" placeholder={placeholder} maxLength={200} value={search} onChange={e=>setSearch(e.target.value)}/>{search&&<button aria-label="清除关键词" onClick={()=>setSearch('')}><X size={14}/></button>}</label>
-    <button className="gc-filter-toggle" aria-expanded={open} onClick={()=>setOpen(v=>!v)}>筛选与排序{query.filters.rules.length?`（${query.filters.rules.length}）`:''}</button>
-    <button onClick={()=>setSaveOpen(v=>!v)}>保存查询</button>
-    {saved.length>0&&<><select aria-label="常用查询" value="" onChange={event=>{const item=saved.find(item=>item.id===event.target.value);if(item){apply(item.query);setOpen(false);}}}><option value="">常用查询</option>{saved.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select><details className="gc-saved-manager"><summary>管理</summary>{saved.map(item=><div key={item.id}><span>{item.name}</span><button aria-label={`删除查询${item.name}`} onClick={()=>persist(saved.filter(v=>v.id!==item.id))}>删除</button></div>)}</details></>}
-    {(query.q||query.filters.rules.length>0||query.sort.length>0)&&<button onClick={clear}>清空条件</button>}
-  </div>
-  {saveOpen&&<form className="gc-save-query" onSubmit={e=>{e.preventDefault();const title=name.trim();if(!title)return;if(saved.length>=20&&!saved.some(v=>v.name===title)){setNotice('最多保存20个查询，请先删除不再需要的查询。');return;}const next={...query,q:search.trim()};const item={id:crypto.randomUUID(),name:title,query:next};if(persist([...saved.filter(v=>v.name!==title),item])){apply(next);setSaveOpen(false);setName('');setNotice('已保存到此浏览器的当前账户。');}}}><input aria-label="查询名称" maxLength={40} placeholder="输入常用查询名称" value={name} onChange={e=>setName(e.target.value)} required/><button type="submit">保存到此浏览器</button><button type="button" onClick={()=>setSaveOpen(false)}>取消</button></form>}
-  {notice&&<p role="status" className="gc-query-notice">{notice}</p>}
-  <div className="gc-quick-filters">{['project','caseTitle','channel_name','channelName','DistributorCode','distributorCode','investor_type','status','direction','fileType'].map(key=>fields.find(f=>f.key===key)).filter(Boolean).slice(0,5).map(field=><QuickFilter key={field.key} field={field} model={model}/>)}</div>
-  {query.filters.rules.length>0&&<div className="gc-filter-chips" aria-label="已应用条件">{query.filters.rules.map((rule,index)=><button key={index} title={describe(rule,fields)} aria-label={`移除${describe(rule,fields)}`} onClick={()=>apply({...query,filters:{...query.filters,rules:query.filters.rules.filter((_,i)=>i!==index)}})}>{describe(rule,fields)}<X size={12}/></button>)}</div>}
-  {query.sort.length>0&&<div className="gc-filter-chips" aria-label="已应用排序">{query.sort.map((item,index)=><button key={index} onClick={()=>apply({...query,sort:query.sort.filter((_,i)=>i!==index)})}>{fields.find(f=>f.key===item.field)?.label||item.field}：{item.direction==='asc'?'升序':'降序'}<X size={12}/></button>)}</div>}
-  {open&&<form className="gc-query-panel" onSubmit={e=>{e.preventDefault();apply({...query,filters:draft,sort});setOpen(false);}}>
-    <GroupEditor group={draft} fields={fields} onChange={setDraft} model={model}/>
-    <div className="gc-query-sorts"><span>排序</span>{sort.map((item,index)=><div key={index}><select aria-label={`排序字段${index+1}`} value={item.field} onChange={e=>setSort(sort.map((v,i)=>i===index?{...v,field:e.target.value}:v))}>{fields.filter(f=>!f.collection&&!hiddenFields.has(f.key)).map(f=><option key={f.key} value={f.key}>{f.label}</option>)}</select><select aria-label={`排序方向${index+1}`} value={item.direction} onChange={e=>setSort(sort.map((v,i)=>i===index?{...v,direction:e.target.value}:v))}><option value="asc">升序</option><option value="desc">降序</option></select><button type="button" aria-label={`移除排序${index+1}`} onClick={()=>setSort(sort.filter((_,i)=>i!==index))}><X size={14}/></button></div>)}<button type="button" disabled={!fields.length||sort.length>=3} onClick={()=>setSort([...sort,{field:fields.find(f=>!hiddenFields.has(f.key)&&!f.collection).key,direction:'asc'}])}>＋添加排序</button></div>
-    <footer><button type="button" onClick={()=>{setDraft(query.filters);setSort(query.sort);setOpen(false);}}>取消</button><button type="submit" disabled={state.loading||!fields.length}>应用条件</button></footer>
-  </form>}
+  const persist=items=>{if(writeCatalogState(localStorage,savedKey,{items})){setSaved(items);return true;}setNotice('浏览器无法保存查询，请检查存储设置。');return false;};
+  const advanced=()=>{setDraft(query.filters);setPanel('advanced');};
+  const quick=(quickKeys[model.resource.split(':').pop()]||[]).map(key=>fields.find(field=>field.key===key)).filter(Boolean);
+  const active=query.q||query.filters.rules.length>0||query.sort.length>0;
+  return <div className="gc-query-controls">
+    <div className="gc-query-toolbar">{sourceControl&&<div className="gc-source-control">{sourceControl}</div>}
+      <label className="gc-search"><Search size={17}/><input aria-label="快捷搜索" placeholder={placeholder} maxLength={200} value={search} onChange={event=>setSearch(event.target.value)}/>{search&&<button aria-label="清除关键词" onClick={()=>setSearch('')}><X size={14}/></button>}</label>
+      <div className="gc-toolbar-actions"><button onClick={()=>setPanel('sort')}>排序{query.sort.length>0&&<b>{query.sort.length}</b>}</button><button onClick={()=>{setNotice('');setPanel('saved');}}>常用查询 <span aria-hidden="true">⌄</span></button></div>
+    </div>
+    <div className="gc-business-filters" aria-label="常用业务筛选"><span className="gc-filter-label">筛选</span>{quick.map(field=>{
+      const rule=fieldRule(query.filters,field.key),value=rule?Array.isArray(rule.value)?rule.value.map(v=>field.options?.find(o=>o.value===v)?.label||v).join('、'):field.options?.find(o=>o.value===rule.value)?.label||rule.value:'';
+      return <button className={`gc-business-filter${rule?' is-selected':''}`} key={field.key} onClick={()=>setPanel(field)} title={value?`${field.label}：${value}`:field.label}><span>{field.label}</span>{value&&<strong>{value}</strong>}<span aria-hidden="true">⌄</span></button>;
+    })}<button className="gc-more-filters" onClick={advanced} disabled={!fields.length}>＋ 更多筛选</button></div>
+    {active&&<div className="gc-applied-row"><span className="gc-filter-label">已应用</span><div className="gc-filter-chips" aria-label="已应用条件">
+      {query.q&&<span className="gc-condition-chip"><span>关键词：{query.q}</span><button aria-label="移除关键词" onClick={()=>apply({...query,q:''})}><X size={12}/></button></span>}
+      {query.filters.rules.length>1&&query.filters.combinator==='or'&&<span className="gc-filter-relation">任一满足</span>}
+      {query.filters.rules.map((rule,index)=><span className="gc-condition-chip" key={index}><button title={describe(rule,fields)} aria-label={`编辑${describe(rule,fields)}`} onClick={advanced}>{describe(rule,fields)}</button><button aria-label={`移除${describe(rule,fields)}`} onClick={()=>apply({...query,filters:{...query.filters,rules:query.filters.rules.filter((_,i)=>i!==index)}})}><X size={12}/></button></span>)}
+      {query.sort.map((item,index)=><span className="gc-condition-chip" key={`sort${index}`}><button onClick={()=>setPanel('sort')}>{fields.find(f=>f.key===item.field)?.label||item.field}：{item.direction==='asc'?'升序':'降序'}</button><button aria-label={`移除排序${index+1}`} onClick={()=>apply({...query,sort:query.sort.filter((_,i)=>i!==index)})}><X size={12}/></button></span>)}
+    </div><button className="gc-clear-filters" onClick={clear}>清空条件</button></div>}
+    {panel&&typeof panel==='object'&&<FacetEditor key={panel.key} field={panel} model={model} onClose={()=>setPanel(null)}/>}
+    {panel==='advanced'&&<CatalogDialog title="高级筛选" wide onClose={()=>setPanel(null)}><form onSubmit={event=>{event.preventDefault();apply({...query,filters:draft});setPanel(null);}}><div className="gc-dialog-body"><p className="gc-dialog-hint">编辑后点击“应用条件”更新结果。</p><GroupEditor group={draft} fields={fields} onChange={setDraft} model={model}/></div><footer><button type="button" onClick={()=>setDraft(emptyFilters())}>重置条件</button><span/><button type="button" onClick={()=>setPanel(null)}>取消</button><button className="gc-primary" type="submit" disabled={state.loading||!fields.length}>应用条件</button></footer></form></CatalogDialog>}
+    {panel==='sort'&&<SortEditor model={model} fields={fields} onClose={()=>setPanel(null)}/>}
+    {panel==='saved'&&<CatalogDialog title="常用查询" onClose={()=>setPanel(null)}><div className="gc-dialog-body"><p className="gc-dialog-hint">保存在此浏览器，供当前账户使用。</p><div className="gc-saved-list">{saved.map(item=><div key={item.id}><button onClick={()=>{apply(item.query);setPanel(null);}}>{item.name}</button><button aria-label={`删除查询${item.name}`} onClick={()=>persist(saved.filter(v=>v.id!==item.id))}><X size={14}/></button></div>)}{!saved.length&&<p className="gc-dialog-hint">还没有保存的查询。</p>}</div><form className="gc-save-query" onSubmit={event=>{event.preventDefault();const title=name.trim();if(!title)return;if(saved.length>=20&&!saved.some(v=>v.name===title)){setNotice('最多保存20个查询，请先删除不再需要的查询。');return;}const next={...query,q:search.trim()};if(persist([...saved.filter(v=>v.name!==title),{id:crypto.randomUUID(),name:title,query:next}])){apply(next);setName('');setNotice('当前查询已保存。');}}}><label>保存当前查询<input aria-label="查询名称" maxLength={40} placeholder="查询名称" value={name} onChange={event=>setName(event.target.value)} required/></label><button className="gc-primary" type="submit">保存查询</button></form>{notice&&<p role="status" className="gc-query-notice">{notice}</p>}</div><footer><span/><button onClick={()=>setPanel(null)}>完成</button></footer></CatalogDialog>}
   </div>;
 }
