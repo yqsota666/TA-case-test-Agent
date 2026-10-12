@@ -1,5 +1,12 @@
 # 项目版本与工作树索引
 
+## 空白对话引导与四外观补全（2026-10-12，已接入5199）
+
+按用户“合并到5199”，已将codex/chat-palette-options的394c3c34本地快进接入codex/plan-trigger-fix，保留实时平台1d73dbb1的方案编辑及产物详情页面。5199仍从/Users/apple/Documents/ChatGPT/gf-worktrees/plan-trigger-fix运行，原前端热更新；本次无后端差异、重启或数据库迁移。
+
+包含空白Case机器人与提示语修复（真实NOT_STARTED数据对象不再误隐藏引导）、四外观在登录/注册及全页面的专属颜色、聊天深灰文字和回到最新消息按钮修复。5199合成浏览器验收覆盖四外观及桌面/手机/矮窗口、创建空白Case与发送隐藏；54项前端测试、构建通过，保留既有大包警告。未写真实业务数据、调用模型、push或创建PR。说明docs/空白对话引导修复.md；证据.context/empty-guidance。本条覆盖候选尚未接入的旧说明；合并前产品提交1d73dbb1。
+
+
 ## 聊天产物详情页面布局（2026-10-12，已接入5199）
 
 从实时1c4e2e50建立codex/chat-artifact-cards独立树/Users/apple/.codex/worktrees/chat-artifact-cards/gf。c0f8d145统一当前/历史入口层级，bd43a138调整卡片打开后的方案、准备数据、文件和结果页面，已本地快进接入codex/plan-trigger-fix。5199仍从/Users/apple/Documents/ChatGPT/gf-worktrees/plan-trigger-fix运行，原前端进程热更新；API3106与ta_case_agent_chain不变，无后端代码改动或迁移。
