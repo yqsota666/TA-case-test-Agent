@@ -1,5 +1,11 @@
 # 项目版本与工作树索引
 
+## Agent九文件与同包回传修复（2026-10-12，已接入5199）
+
+按用户“合并到5199，然后使用本地的review skill check一下现在的5199”，codex/agent-ta-full-flow的fbb6850a、3fc47e4b、33780e84与实时95a357a8在独立树整合为ee09cfe0，再本地快进接入codex/plan-trigger-fix。5199继续从/Users/apple/Documents/ChatGPT/gf-worktrees/plan-trigger-fix运行，前端热更新、API3106重启，数据库仍ta_case_agent_chain，无迁移。现存227通道67显式配置同步为九文件及业务日期目录，其他通道及历史ZIP不改。
+
+包含九文件配套、合成身份证候选、较大结构化方案输出、申请预期通道引用及同包03空TA账号的02/04确认关联修复。按本地senior-staff-engineer skill检查完整接入差异与关联路径，未发现新增阻断/重要缺陷。后端496通过/27可选跳过、前端55通过及构建通过、串行MySQL合成事务7项通过；实际Chrome5199连接、销售商九文件与日期目录预览通过。13类业务表接入前后数量和全内容摘要相同。前轮已有真实Sophnet及合成回传验证，本轮未再调用模型、修改原Case或向真实TA提交。详见docs/5199-Agent接入审查.md；证据功能树.context/agent-ta-rollout。无push/PR，后续先核对实时Git/进程。
+
 ## 空白对话引导与四外观补全（2026-10-12，已接入5199）
 
 按用户“合并到5199”，已将codex/chat-palette-options的394c3c34本地快进接入codex/plan-trigger-fix，保留实时平台1d73dbb1的方案编辑及产物详情页面。5199仍从/Users/apple/Documents/ChatGPT/gf-worktrees/plan-trigger-fix运行，原前端热更新；本次无后端差异、重启或数据库迁移。
