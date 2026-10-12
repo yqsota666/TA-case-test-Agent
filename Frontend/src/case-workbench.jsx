@@ -17,6 +17,7 @@ import {ArrowUp, ChevronRight, Folder, Menu, SquarePen, Workflow, Table2, File, 
 import './case-workbench.css';
 import './workflow-actions.css';
 import {FileExchangePanel} from './file-exchange.jsx';
+import {showExchangeEntry} from './exchange-entry.js';
 import {ResultReview} from './result-review.jsx';
 import './generated-draft.css';
 import {WorkflowDiagram} from './workflow-diagram.jsx';
@@ -345,6 +346,7 @@ export function CaseWorkbench({accountControl}) {
       <header className={`cw-header ${page!=='chat'?'is-catalog':''}`}>
         <button className="cw-icon cw-menu" aria-label="打开侧边栏" onClick={() => setModal({type: 'navigation'})}><Menu size={21}/></button>
         {page==='chat' && state.workflow && !newConversation && <button className="cw-live-flow cw-icon" title="查看当前流程" aria-label="查看当前流程" onClick={openWorkflow}><Workflow size={18} strokeWidth={1.6}/></button>}
+        {page==='chat' && !newConversation && !messages.some(message=>message.result) && showExchangeEntry(state.plan,state.generatedData) && <button className="cw-icon" title="查看文件交换" aria-label="查看文件交换" onClick={()=>setModal({type:'exchange'})}><FileArchive size={18}/></button>}
         <h1 hidden={newConversation || page!=='chat'} title={`${dataSet?.name || currentSet.name} / ${dataSet ? '草稿数据' : currentCase.name}`}><span>{dataSet?.name || currentSet.name}</span><span className="cw-slash"> / </span>{dataSet ? '草稿数据' : currentCase.name}</h1>
       </header>
       <ThreadViewport ref={scroller} hidden={!!dataSetId || page!=='chat'} className="cw-conversation" aria-label={newConversation ? '新对话' : `${currentCase.name}的对话`}
@@ -361,6 +363,7 @@ export function CaseWorkbench({accountControl}) {
             <MessageImages images={message.images} onOpen={image=>setModal({type:'image',image})}/>
             {message.kind==='PROPOSE_PLAN' && !message.result && <ArtifactCard title={message.draft?'历史方案草稿':'历史测试方案'} meta="查看原回复" onClick={()=>setModal({type:'historical-plan',message})}/>}
             {message.result && <ArtifactCard title={state.plan?.status==='DRAFT'?'方案草稿':'测试方案'} meta={state.plan?.status==='LOCKED'?'已确认':'查看与修改'} onClick={()=>{setPlanError('');setModal({type:state.workflow?.stage==='CONFIRM_EXPECTATIONS'?'expectations':'result'});}}/>}
+            {message.result && showExchangeEntry(state.plan,state.generatedData) && <ArtifactCard title="文件交换" meta="申请文件与 TA 回传" onClick={()=>setModal({type:'exchange'})}/>}
 
           </ChatMessage>;}}</ThreadMessages>
           {state.plan?.status==='DRAFT'&&!state.plan.proposal.contract&&!messages.some(m=>m.result) && <ArtifactCard title="方案草稿" meta="查看已有内容" onClick={()=>setModal({type:'result'})}/>}
@@ -369,9 +372,6 @@ export function CaseWorkbench({accountControl}) {
             <span className="cw-result-icon" aria-hidden="true"><Table2 size={18}/></span><span className="cw-result-copy"><span className="cw-result-title">草稿数据</span><span className="cw-result-summary">{state.generatedData.reviewStatus==='CONFIRMED'?'已确认':'查看数据'}</span></span><span className="cw-result-action">查看详情<ChevronRight size={14}/></span>
           </button>}
           {!newConversation && ['EVALUATE_RESULT','CONFIRM_RESULT','CASE_FINAL'].includes(state.workflow?.stage) && <button type="button" className="cw-result" onClick={()=>setModal({type:'review-result'})}><span className="cw-result-icon" aria-hidden="true"><FileText size={18}/></span><span className="cw-result-copy"><span className="cw-result-title">结果核对</span></span><span className="cw-result-action">查看详情<ChevronRight size={14}/></span></button>}
-          {!newConversation && state.plan?.proposal?.contract && state.plan?.proposal?.exchangePlan?.status==='READY' && <button type="button" className="cw-result" onClick={()=>setModal({type:'exchange'})}>
-            <span className="cw-result-icon" aria-hidden="true"><FileArchive size={18}/></span><span className="cw-result-copy"><span className="cw-result-title">文件交换</span><span className="cw-result-summary">申请文件与 TA 回传</span></span><span className="cw-result-action">查看详情<ChevronRight size={14}/></span>
-          </button>}
           {!newConversation && state.workflow?.waiting?.includes('PROPOSE_PLAN') && messages.length>0 && <button type="button" className="cw-primary-button" disabled={inputDisabled || running || !!state.pending} onClick={()=>submitFirstNode(quotedInput(draft.trim()||'请根据已有讨论整理为审阅方案',quote),'PROPOSE_PLAN',images,draft.trim()||'请根据已有讨论整理为审阅方案')}>整理为审阅方案</button>}
           {!loading && !newConversation && currentSet.id && showProjectLifecycle(currentSet.status,currentCase.status) && <ProjectLifecycleCard chatId={currentSet.id} caseId={state.selected} onChanged={async()=>applySnapshot(await liveSnapshot(currentSet.id,state.selected))} onNavigate={async target=>{if(target.casePublicId)await openCatalogCase(target.chatPublicId,target.casePublicId);else {applySnapshot(await liveSnapshot(target.chatPublicId,null));openNewConversation(target.chatPublicId);}}}/>}
           {!newConversation && (loading||running||!!state.pending) && !nodeError && <p className="cw-reply-status" role="status">{loading?'连接讨论服务…':(state.pending?.kind||activeAction)==='PROPOSE_PLAN'?'正在整理方案…':'正在回复…'}</p>}
