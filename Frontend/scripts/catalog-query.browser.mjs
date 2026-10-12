@@ -21,7 +21,7 @@ await page.route('**/live-api/**',async route=>{
   }catch(error){await route.fulfill({status:error.status||500,contentType:'application/json',body:JSON.stringify({error:error.code,message:error.message})});}
 });
 const total=async text=>{await page.locator('.gc-pagination').filter({hasText:text}).waitFor();await page.waitForFunction(()=>!document.querySelector('.gc-table-scroll')?.getAttribute('aria-busy')||document.querySelector('.gc-table-scroll')?.getAttribute('aria-busy')==='false');};
-const open=async()=>{await page.getByRole('button',{name:'＋ 更多筛选',exact:true}).click();await page.getByRole('dialog',{name:'高级筛选',exact:true}).waitFor();};
+const open=async()=>{await page.getByRole('button',{name:'＋ 更多筛选',exact:true}).click();await page.getByRole('dialog',{name:'高级筛选',exact:true}).waitFor();if(shots)await page.screenshot({path:shots+'/advanced-empty.png'});};
 const add=async(field,operator,value,group=page.locator('.gc-query-group').first())=>{
   await group.locator(':scope > .gc-query-add').getByRole('button',{name:'＋添加条件',exact:true}).click();
   const row=group.locator(':scope > .gc-query-rule').last();
@@ -31,7 +31,7 @@ const add=async(field,operator,value,group=page.locator('.gc-query-group').first
   else if(value!==undefined)await row.locator('input,select').last().fill(value);
   return row;
 };
-const apply=async()=>page.getByRole('button',{name:'应用条件',exact:true}).click();
+const apply=async()=>{if(shots)await page.screenshot({path:shots+'/advanced-rules.png'});await page.getByRole('button',{name:'应用条件',exact:true}).click();};
 try {
   await page.goto(base+'/test/catalog-query.html?theme=liquid');await total('/ 125 条');
   if(shots)await page.screenshot({path:shots+'/desktop-default.png'});
@@ -60,7 +60,7 @@ try {
   await page.getByRole('button',{name:'清空条件',exact:true}).click();await total('/ 125 条');await page.getByLabel('快捷搜索').fill('%_');await total('/ 1 条');
   await page.getByRole('button',{name:'申请记录',exact:true}).click();await total('/ 3 条');
   await open();await add('ApplicationAmount','gte','10');await page.getByRole('button',{name:'＋添加分组',exact:true}).first().click();
-  const nested=page.locator('.gc-query-group').nth(1);await nested.locator('legend select').selectOption('or');await add('TransactionAccountID','eq','00000000000000001',nested);await add('ApplicationAmount','lt','5',nested);await apply();await total('/ 1 条');
+  const nested=page.locator('.gc-query-group').nth(1);await nested.getByLabel('第2层匹配方式').selectOption('or');await add('TransactionAccountID','eq','00000000000000001',nested);await add('ApplicationAmount','lt','5',nested);await apply();await total('/ 1 条');
   await open();await page.locator('.gc-query-group').first().locator(':scope > .gc-query-rule').first().locator('input').fill('not-a-number');await apply();await page.getByRole('alert').filter({hasText:'有效数字'}).waitFor();
   await page.getByRole('button',{name:'清空条件',exact:true}).click();await total('/ 3 条');
   await page.getByRole('button',{name:'账户',exact:true}).click();await total('/ 2 条');await page.getByLabel('数据来源').selectOption('formal');await total('0 条');assert.ok(await page.locator('thead th').count()>3);
@@ -73,6 +73,8 @@ try {
   await page.getByRole('button',{name:'清空条件',exact:true}).click();await total('/ 3 条');
   for(const [width,height] of [[1440,900],[390,844],[844,260]]) {
     await page.setViewportSize({width,height});await open();
+    await add('ApplicationAmount','gt','1');
+    assert.ok(await page.locator('.gc-dialog-body').evaluate(el=>el.scrollWidth<=el.clientWidth),'advanced rules must fit the dialog width');
     const frame=await page.evaluate(()=>({width:innerWidth,height:innerHeight,scrollWidth:document.documentElement.scrollWidth,scrollHeight:document.documentElement.scrollHeight}));
     assert.equal(frame.scrollWidth,width);assert.equal(frame.scrollHeight,height);
     if(shots)await page.screenshot({path:`${shots}/${width}-${height}.png`});

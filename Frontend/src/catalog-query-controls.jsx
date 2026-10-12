@@ -5,6 +5,10 @@ import {catalogParams,catalogStorageKey,emptyFilters,initialCatalogQuery,readCat
 import {CatalogDialog} from './catalog-dialog.jsx';
 import {CatalogFacetOptions} from './catalog-facet-options.jsx';
 
+function QuerySelect({children,...props}) {
+  return <span className="gc-select"><select {...props}>{children}</select>{!props.multiple&&<ChevronDown size={14}/>}</span>;
+}
+
 const names={contains:'包含',eq:'等于',ne:'不等于',startsWith:'开头是',notContains:'不包含',in:'属于以下任一项',notIn:'排除以下各项',gt:'大于',gte:'大于或等于',lt:'小于',lte:'小于或等于',between:'介于',empty:'未填写',notEmpty:'已填写'};
 const hiddenFields=new Set(['chatId','caseId','batchId']);
 const requestCatalog=(path,query,offset=0,optionsField)=>requestCase(`${path}/search`,{...Object.fromEntries(catalogParams(query,offset)),...(optionsField?{optionsField}:{})});
@@ -31,9 +35,9 @@ function ValueEditor({field,rule,onChange,model}) {
   if(['empty','notEmpty'].includes(rule.operator))return null;
   const multi=['in','notIn'].includes(rule.operator);
   if(field.options) {
-    return <select aria-label={`${field.label}的值`} multiple={multi} value={multi?(Array.isArray(rule.value)?rule.value:[]):rule.value||''} onChange={event=>onChange(multi?Array.from(event.target.selectedOptions,o=>o.value):event.target.value)}>
+    return <QuerySelect aria-label={`${field.label}的值`} multiple={multi} value={multi?(Array.isArray(rule.value)?rule.value:[]):rule.value||''} onChange={event=>onChange(multi?Array.from(event.target.selectedOptions,o=>o.value):event.target.value)}>
       {!multi&&<option value="">请选择</option>}{field.options.map(option=><option key={option.value} value={option.value}>{option.label}</option>)}
-    </select>;
+    </QuerySelect>;
   }
   const loadSuggestions=async()=>{
     if(field.type!=='text'||field.collection||suggestions.length)return;
@@ -46,10 +50,10 @@ function ValueEditor({field,rule,onChange,model}) {
 function GroupEditor({group,fields,onChange,model,depth=0}) {
   const selectable=fields.filter(f=>!hiddenFields.has(f.key));
   const replace=(index,value)=>onChange({...group,rules:group.rules.map((rule,i)=>i===index?value:rule)});
-  return <fieldset className="gc-query-group"><legend><select aria-label={`第${depth+1}层匹配方式`} value={group.combinator} onChange={e=>onChange({...group,combinator:e.target.value})}><option value="and">全部满足</option><option value="or">任一满足</option></select></legend>
+  return <fieldset className="gc-query-group"><legend>{depth?'条件分组':'筛选条件'}</legend><label className="gc-group-match"><span>匹配方式</span><QuerySelect aria-label={`第${depth+1}层匹配方式`} value={group.combinator} onChange={e=>onChange({...group,combinator:e.target.value})}><option value="and">全部满足</option><option value="or">任一满足</option></QuerySelect></label>
     {group.rules.map((rule,index)=><div className="gc-query-rule" key={index}>{rule.rules?<GroupEditor group={rule} fields={fields} onChange={value=>replace(index,value)} model={model} depth={depth+1}/>:<>
-      <select aria-label="筛选字段" value={rule.field} onChange={e=>{const f=fields.find(f=>f.key===e.target.value);replace(index,{field:f.key,operator:f.operators[0],value:''});}}>{hiddenFields.has(rule.field)&&<option value={rule.field}>{rule.field==='caseId'?'关联 Case':rule.field==='batchId'?'关联批次':'关联项目'}</option>}{selectable.map(f=><option key={f.key} value={f.key}>{f.label}</option>)}</select>
-      {fields.find(f=>f.key===rule.field)?(()=>{const f=fields.find(f=>f.key===rule.field);return <><select aria-label={`${f.label}的条件`} value={rule.operator} onChange={e=>replace(index,{...rule,operator:e.target.value,value:['between','in','notIn'].includes(e.target.value)?[]:''})}>{f.operators.map(op=><option key={op} value={op}>{names[op]}</option>)}</select><ValueEditor field={f} rule={rule} model={model} onChange={value=>replace(index,{...rule,value})}/></>;})():<span role="alert">字段已不可用，请移除此条件</span>}
+      <QuerySelect aria-label="筛选字段" value={rule.field} onChange={e=>{const f=fields.find(f=>f.key===e.target.value);replace(index,{field:f.key,operator:f.operators[0],value:''});}}>{hiddenFields.has(rule.field)&&<option value={rule.field}>{rule.field==='caseId'?'关联 Case':rule.field==='batchId'?'关联批次':'关联项目'}</option>}{selectable.map(f=><option key={f.key} value={f.key}>{f.label}</option>)}</QuerySelect>
+      {fields.find(f=>f.key===rule.field)?(()=>{const f=fields.find(f=>f.key===rule.field);return <><QuerySelect aria-label={`${f.label}的条件`} value={rule.operator} onChange={e=>replace(index,{...rule,operator:e.target.value,value:['between','in','notIn'].includes(e.target.value)?[]:''})}>{f.operators.map(op=><option key={op} value={op}>{names[op]}</option>)}</QuerySelect><ValueEditor field={f} rule={rule} model={model} onChange={value=>replace(index,{...rule,value})}/></>;})():<span role="alert">字段已不可用，请移除此条件</span>}
     </>}<button type="button" aria-label={rule.rules?'移除分组':'移除条件'} onClick={()=>onChange({...group,rules:group.rules.filter((_,i)=>i!==index)})}><X size={14}/></button></div>)}
     <div className="gc-query-add"><button type="button" disabled={!selectable.length||group.rules.length>=30} onClick={()=>onChange({...group,rules:[...group.rules,{field:selectable[0].key,operator:selectable[0].operators[0],value:''}]})}>＋添加条件</button>{depth<2&&<button type="button" onClick={()=>onChange({...group,rules:[...group.rules,emptyFilters()]})}>＋添加分组</button>}</div>
   </fieldset>;
@@ -116,7 +120,7 @@ function SortEditor({model,fields,onClose}) {
   const selectable=fields.filter(f=>!f.collection&&!hiddenFields.has(f.key));
   return <CatalogDialog title="排序" onClose={onClose}><form onSubmit={event=>{event.preventDefault();model.apply({...model.query,sort});onClose();}}><div className="gc-dialog-body gc-sort-list">
     {!sort.length&&<p className="gc-dialog-hint">当前使用默认顺序。</p>}
-    {sort.map((item,index)=><div key={index}><span>{index+1}</span><select aria-label={`排序字段${index+1}`} value={item.field} onChange={event=>setSort(sort.map((v,i)=>i===index?{...v,field:event.target.value}:v))}>{selectable.map(f=><option key={f.key} value={f.key}>{f.label}</option>)}</select><select aria-label={`排序方向${index+1}`} value={item.direction} onChange={event=>setSort(sort.map((v,i)=>i===index?{...v,direction:event.target.value}:v))}><option value="asc">升序</option><option value="desc">降序</option></select><button type="button" aria-label={`移除排序${index+1}`} onClick={()=>setSort(sort.filter((_,i)=>i!==index))}><X size={14}/></button></div>)}
+    {sort.map((item,index)=><div key={index}><span>{index+1}</span><QuerySelect aria-label={`排序字段${index+1}`} value={item.field} onChange={event=>setSort(sort.map((v,i)=>i===index?{...v,field:event.target.value}:v))}>{selectable.map(f=><option key={f.key} value={f.key}>{f.label}</option>)}</QuerySelect><QuerySelect aria-label={`排序方向${index+1}`} value={item.direction} onChange={event=>setSort(sort.map((v,i)=>i===index?{...v,direction:event.target.value}:v))}><option value="asc">升序</option><option value="desc">降序</option></QuerySelect><button type="button" aria-label={`移除排序${index+1}`} onClick={()=>setSort(sort.filter((_,i)=>i!==index))}><X size={14}/></button></div>)}
     <button type="button" disabled={!selectable.length||sort.length>=3} onClick={()=>setSort([...sort,{field:selectable.find(f=>!sort.some(item=>item.field===f.key))?.key||selectable[0].key,direction:'asc'}])}>＋添加排序</button>
   </div><footer><button type="button" onClick={()=>setSort([])}>重置排序</button><span/><button type="button" onClick={onClose}>取消</button><button className="gc-primary" type="submit">应用排序</button></footer></form></CatalogDialog>;
 }
