@@ -14,7 +14,7 @@ import {ProjectLifecycleCard} from './project-lifecycle.jsx';
 import {showProjectLifecycle} from './project-lifecycle.js';
 import {accountStorageKey} from './account-storage.js';
 import React, {useEffect, useLayoutEffect, useRef, useState} from 'react';
-import {ArrowUp, ChevronRight, Folder, Menu, SquarePen, Workflow, Table2, File, FileText, FileArchive, ArrowLeft, X} from './ui-icons.jsx';
+import {ChevronRight, Folder, Menu, SquarePen, Workflow, Table2, File, FileText, FileArchive, ArrowLeft, X} from './ui-icons.jsx';
 import './case-workbench.css';
 import './workflow-actions.css';
 import {FileExchangePanel} from './file-exchange.jsx';
@@ -33,7 +33,7 @@ import {PlanDocument, planSummary} from './plan-document.jsx';
 import {RotateCcw} from './ui-icons.jsx';
 import {ReplyFeedback} from './reply-feedback.jsx';
 import {useSidebarResize} from './sidebar-resize.jsx';
-import {ThreadPrimitive} from '@assistant-ui/react';
+import {ScrollToLatest} from './assistant-ui/scroll-to-latest.jsx';
 import {CaseAssistant} from './case-assistant.jsx';
 import {Thread, ThreadViewport, ThreadMessages, ChatMessage, Composer} from './assistant-ui/chat-kit.jsx';
 import './case-assistant.css';
@@ -389,7 +389,7 @@ export function CaseWorkbench({accountControl}) {
         {page==='chat' && !newConversation && !messages.some(message=>message.result) && showExchangeEntry(state.plan,state.generatedData) && <button className="cw-icon" title="查看文件交换" aria-label="查看文件交换" onClick={()=>setModal({type:'exchange'})}><FileArchive size={18}/></button>}
         <h1 hidden={newConversation || page!=='chat'} title={`${dataSet?.name || currentSet.name} / ${dataSet ? '草稿数据' : currentCase.name}`}><span>{dataSet?.name || currentSet.name}</span><span className="cw-slash"> / </span>{dataSet ? '草稿数据' : currentCase.name}</h1>
       </header>
-      <ThreadViewport ref={scroller} hidden={!!dataSetId || page!=='chat'} className="cw-conversation" aria-label={newConversation ? '新对话' : `${currentCase.name}的对话`}
+      <ThreadViewport ref={scroller} tabIndex={-1} hidden={!!dataSetId || page!=='chat'} className="cw-conversation" aria-label={newConversation ? '新对话' : `${currentCase.name}的对话`}
         onScroll={event => {if (!dataSetId && !newConversation) positions.current[state.selected] = event.currentTarget.scrollTop;}}>
         <div className={`cw-messages ${showEmptyGuidance ? 'cw-empty-conversation' : ''}`}>
           {showEmptyGuidance && <div className="cw-empty-guidance"><h2>想测试什么业务或规则？</h2><p>描述测试目标、已知条件和预期结果。<br/>还没想完整，也可以先说个大概。</p></div>}
@@ -427,7 +427,7 @@ export function CaseWorkbench({accountControl}) {
         </> : <p>尚未生成。</p>}
       </section>}
       <div hidden={!!dataSetId || page!=='chat'} className="cw-composer-area">
-        <ThreadPrimitive.ScrollToBottom className="cw-scroll-bottom" aria-label="回到最新消息" title="回到最新消息"><ArrowUp size={18}/></ThreadPrimitive.ScrollToBottom>
+        <ScrollToLatest viewportRef={scroller} active={!dataSetId&&page==='chat'&&!newConversation&&!loading} caseKey={state.selected}/>
         {!newConversation&&!loading&&!navigationFailure&&!canDiscuss&&<p className="cw-composer-stage" role="status">{state.workflow?.stage==='CONFIRM_DRAFT'?'请查看草稿数据并确认后继续。':state.workflow?.stage==='FILE_EXCHANGE'?'请打开文件交换，完成当前文件操作。':['EVALUATE_RESULT','CONFIRM_RESULT','CASE_FINAL'].includes(state.workflow?.stage)?'请打开结果核对，查看当前结果。':'请查看当前流程，完成当前步骤后继续。'}</p>}
         <div className="cw-composer-frame" onDragOver={event=>{if(Array.from(event.dataTransfer.types).includes('Files'))event.preventDefault();}} onDrop={event=>{if(event.dataTransfer.files.length){event.preventDefault();addImages(event.dataTransfer.files);}}}>
         {quote && <div className="aui-quote-draft"><QuoteReply quoted={quote} toolbarVisible={false}/><button className="cw-icon" type="button" aria-label="移除引用" disabled={inputDisabled} onClick={()=>setState(v=>({...v,quotes:{...v.quotes,[draftKey]:''}}))}><X size={16}/></button></div>}
