@@ -71,6 +71,22 @@ test('submitting a revision invalidates the pending Plan before confirmation can
   assert.ok(calls.some(call => call.sql.includes('USER_REVISED_PLAN') && call.values.at(-1) === 7));
 });
 
+test('asking about next steps keeps the pending proposal and completes without downgrading it',async()=>{
+ const {repository,caseRow,sop,calls}=fixture({caseRow:{id:51,status:'SOP_PENDING'}});
+ await repository.beginCaseDiscussionTurn(...scope,{expectedRevision:0,userInput:'下一步是什么？',preservePlan:true});
+ assert.equal(caseRow.status,'SOP_PENDING');assert.equal(sop.status,'PENDING_CONFIRMATION');
+ await assert.rejects(repository.confirmSopProposal(...scope,1,'DATA'),{code:'DISCUSSION_IN_PROGRESS'});
+ await repository.finishCaseDiscussionTurn(...scope,{turnNumber:1,assistantReply:'请在测试方案中审阅准备数据，再点击确认准备数据。',promptVersion:'followup-discussion-draft-adaptive-v7'});
+ assert.equal((await repository.readCaseDiscussion(...scope)).pending,null);
+ assert.equal(caseRow.status,'SOP_PENDING');assert.equal(sop.status,'PENDING_CONFIRMATION');
+ assert.ok(!calls.some(c=>c.sql.includes('USER_REVISED_PLAN')));
+});
+
+test('a proposal cannot bypass invalidation by claiming read-only preservation',async()=>{
+ const {repository}=fixture({caseRow:{id:51,status:'SOP_PENDING'}});
+ await assert.rejects(repository.beginCaseDiscussionTurn(...scope,{expectedRevision:0,userInput:'重新整理',kind:'PROPOSE_PLAN',preservePlan:true}),{code:'INVALID_DISCUSSION_TURN'});
+});
+
 test('a pending response blocks a new Plan; abandoning it permits another turn', async () => {
   const { repository } = fixture();
   await repository.beginCaseDiscussionTurn(...scope, { expectedRevision: 0, userInput: '先讨论' });

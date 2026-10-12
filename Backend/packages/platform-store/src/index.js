@@ -257,6 +257,11 @@ export function createCaseRepository({ transaction }) {
       if (caseRow.status !== 'SOP_PENDING') {
         throw storeError('INVALID_CASE_STATE', 409, 'Case 尚无待确认的 Plan');
       }
+      const [[pendingTurn]] = await db.execute(`SELECT turn_number,status FROM case_discussion_turns
+        WHERE workspace_id=? AND chat_id=? AND case_id=?
+        ORDER BY turn_number DESC LIMIT 1 FOR UPDATE`,
+      [auth.workspace_id,chat.id,caseRow.id]);
+      if(pendingTurn?.status==='PENDING')throw storeError('DISCUSSION_IN_PROGRESS',409,'本轮回复尚未完成，请等待后再确认方案');
       const [[latest]] = await db.execute(`SELECT id,version_number,plan_json,status
         FROM case_sop_versions WHERE workspace_id=? AND chat_id=? AND case_id=?
         ORDER BY version_number DESC LIMIT 1 FOR UPDATE`,
@@ -359,14 +364,14 @@ export function createCaseRepository({ transaction }) {
   }
 
   async function beginCaseDiscussionTurn(token, chatPublicId, casePublicId,
-    { expectedRevision, userInput, kind = 'DISCUSS', images=[], imageAnalysis='' }) {
+    { expectedRevision, userInput, kind = 'DISCUSS', images=[], imageAnalysis='', preservePlan=false }) {
     const checkedImages=validateDiscussionImages(images);
     if(checkedImages.length&&(typeof imageAnalysis!=='string'||!imageAnalysis.trim()||imageAnalysis.length>6000))throw storeError('INVALID_DISCUSSION_IMAGES',400,'图片解析内容无效');
     chatPublicId = requiredUuid(chatPublicId, 'Chat');
     casePublicId = requiredUuid(casePublicId, 'Case');
     if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0 || expectedRevision >= 0xffffffff ||
         typeof userInput !== 'string' || !userInput.trim() || userInput.length > 4000 ||
-        !['DISCUSS', 'PROPOSE_PLAN'].includes(kind)) {
+        !['DISCUSS', 'PROPOSE_PLAN'].includes(kind) || typeof preservePlan!=='boolean' || preservePlan && kind!=='DISCUSS') {
       throw storeError('INVALID_DISCUSSION_TURN', 400, '讨论输入或版本无效');
     }
     return transaction(async db => {
@@ -392,7 +397,7 @@ export function createCaseRepository({ transaction }) {
       if (latestTurn?.status === 'PENDING') {
         throw storeError('DISCUSSION_IN_PROGRESS', 409, '上一轮讨论尚未完成');
       }
-      if (caseRow.status === 'SOP_PENDING') {
+      if (caseRow.status === 'SOP_PENDING' && !preservePlan) {
         const [[latestSop]] = await db.execute(`SELECT id,status FROM case_sop_versions
           WHERE workspace_id=? AND chat_id=? AND case_id=?
           ORDER BY version_number DESC LIMIT 1 FOR UPDATE`,
@@ -440,7 +445,7 @@ export function createCaseRepository({ transaction }) {
         WHERE workspace_id=? AND chat_id=? AND public_id=? FOR UPDATE`,
       [auth.workspace_id, chat.id, casePublicId]);
       if (!caseRow) throw storeError('CASE_NOT_FOUND', 404, 'Case 不存在');
-      if (caseRow.status !== 'DISCUSSING') {
+      if (!['DISCUSSING','SOP_PENDING'].includes(caseRow.status)) {
         throw storeError('INVALID_CASE_STATE', 409, '当前 Case 不能完成讨论');
       }
       const [[turn]] = await db.execute(`SELECT status,turn_kind FROM case_discussion_turns

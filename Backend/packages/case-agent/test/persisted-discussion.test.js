@@ -251,6 +251,41 @@ test('streamed discussion carries verified saved-plan context through validation
 });
 
 const routeMessage=(intent,nextAction=null,needsClarification=false)=>({tool_calls:[{function:{name:'route_action',arguments:JSON.stringify({intent,nextAction,needsClarification,reason:'依据本轮语义和上下文'})}}]});
+test('next-step inquiry sees the existing reviewable plan instead of turning it into a draft',async()=>{
+ const {repository,rounds}=fixture();let status='PENDING_CONFIRMATION',calls=0;
+ const begin=repository.beginCaseDiscussionTurn;
+ repository.getLatestSopProposal=async()=>({status,proposal:plan});
+ repository.beginCaseDiscussionTurn=async(...args)=>{if(!args[3].preservePlan)status='DRAFT';return begin(...args);};
+ const service=createPersistedDiscussionService({repository,routeComplete:async request=>{
+  assert.ok(JSON.parse(request.user).allowedActions.includes('INSPECT_PLAN'));return routeMessage('INSPECT_PLAN');
+ },readContext:async()=>({stage:'CONFIRM_PLAN_DATA',plan:{status},exchange:{status:'READY'}}),complete:async request=>{
+  calls++;assert.match(request.system,/系统已核实当前Case存在方案/);
+  const context=JSON.parse(request.user);assert.equal(context.currentCase.plan.status,'PENDING_CONFIRMATION');
+  return '方案已可审阅，请打开测试方案查看准备数据，并点击确认准备数据。';
+ }});
+ await service.respond({...scope,userInput:'下一步是什么？'});
+ assert.equal(calls,1);assert.equal(status,'PENDING_CONFIRMATION');assert.equal(rounds[0].preservePlan,true);
+});
+
+test('a condition change still invalidates the reviewable plan before answering',async()=>{
+ const {repository,rounds}=fixture();
+ const service=createPersistedDiscussionService({repository,routeComplete:async()=>routeMessage('DISCUSS'),complete:async()=>firstReply});
+ await service.respond({...scope,userInput:'把金额改成3000，先别整理'});
+ assert.equal(rounds[0].preservePlan,false);
+});
+
+test('retrying a failed read-only inquiry preserves the plan without routing or beginning another turn',async()=>{
+ const {repository,rounds}=fixture();let routed=0,attempts=0;
+ repository.getLatestSopProposal=async()=>({status:'PENDING_CONFIRMATION',proposal:plan});
+ const service=createPersistedDiscussionService({repository,routeComplete:async()=>{routed++;return routeMessage('INSPECT_PLAN');},complete:async()=>{
+  if(++attempts===1)throw Object.assign(new Error('temporary failure'),{code:'MODEL_UNAVAILABLE'});
+  return '请打开测试方案审阅准备数据，并点击确认准备数据。';
+ }});
+ await assert.rejects(service.respond({...scope,userInput:'下一步是什么？'}),{code:'MODEL_UNAVAILABLE'});
+ assert.equal(rounds[0].preservePlan,true);assert.equal(rounds[0].status,'PENDING');
+ await service.respond({...scope,userInput:'下一步是什么？'});
+ assert.equal(rounds.length,1);assert.equal(routed,1);assert.equal(rounds[0].status,'COMPLETE');
+});
 test('ordinary chat routes to an actual proposal and keeps compound modifications in the generation input',async()=>{
  const {repository,rounds}=fixture();let routed,generated;
  const service=createPersistedDiscussionService({repository,routeComplete:async request=>{routed=JSON.parse(request.user);return routeMessage('PROPOSE_PLAN');},complete:async request=>{

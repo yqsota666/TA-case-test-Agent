@@ -25,7 +25,7 @@ export function createPersistedDiscussionService({ repository, complete, visionC
     },...options});
   }
 
-  async function discuss({ token, chatPublicId, casePublicId, userInput, images=[], onDelta, onReset, signal, expectedRevision, offerPlan=false, analyzedImages, needsClarification=false }) {
+  async function discuss({ token, chatPublicId, casePublicId, userInput, images=[], onDelta, onReset, signal, expectedRevision, offerPlan=false, analyzedImages, needsClarification=false, preservePlan=false }) {
     signal?.throwIfAborted();
     images=validateDiscussionImages(images);
     userInput=userInput?.trim() || (images.length?IMAGE_ONLY_INPUT:userInput);
@@ -45,7 +45,7 @@ export function createPersistedDiscussionService({ repository, complete, visionC
     if(admit)await admit({token,chatPublicId,casePublicId,text:imageDiscussionContent(input,imageAnalysis)});
     signal?.throwIfAborted();
     const pending = history.pending ?? await repository.beginCaseDiscussionTurn(
-      token, chatPublicId, casePublicId, { expectedRevision: history.revision, userInput: input, images, imageAnalysis });
+      token, chatPublicId, casePublicId, { expectedRevision: history.revision, userInput: input, images, imageAnalysis, preservePlan });
     const channels=readChannels ? (await readChannels(token)).channels : undefined;
     const existingPlan=await repository.getLatestSopProposal?.(token,chatPublicId,casePublicId);
     const snapshot=await readContext?.(token,{chatPublicId,casePublicId});
@@ -162,8 +162,8 @@ export function createPersistedDiscussionService({ repository, complete, visionC
     if(!routeComplete)return await discuss(input);
     const analyzedImages=await analyzeDiscussionImages(visionComplete,input.images);
     input={...input,analyzedImages};
-    const decision=await decideDiscussionAction(routeComplete,{allowedActions:['DISCUSS','PROPOSE_PLAN'],pendingNextAction:history.nextAction??null,existingPlan:latest?{status:latest.status,proposal:latest.proposal}:null,turns:history.turns.map(t=>({role:t.role,content:imageDiscussionContent(t.content,t.imageAnalysis)})),userInput:imageDiscussionContent(input.userInput,analyzedImages)},{signal});
-    return await (decision.intent==='PROPOSE_PLAN'?propose({...input,expectedRevision:history.revision}):discuss({...input,expectedRevision:history.revision,offerPlan:decision.nextAction==='PROPOSE_PLAN',needsClarification:decision.needsClarification}));
+    const decision=await decideDiscussionAction(routeComplete,{allowedActions:['DISCUSS','INSPECT_PLAN','PROPOSE_PLAN'],pendingNextAction:history.nextAction??null,existingPlan:latest?{status:latest.status,proposal:latest.proposal}:null,turns:history.turns.map(t=>({role:t.role,content:imageDiscussionContent(t.content,t.imageAnalysis)})),userInput:imageDiscussionContent(input.userInput,analyzedImages)},{signal});
+    return await (decision.intent==='PROPOSE_PLAN'?propose({...input,expectedRevision:history.revision}):discuss({...input,expectedRevision:history.revision,offerPlan:decision.nextAction==='PROPOSE_PLAN',needsClarification:decision.needsClarification,preservePlan:decision.intent==='INSPECT_PLAN'}));
   }
   async function exclusive(input,action){
     const key=JSON.stringify([input.chatPublicId,input.casePublicId]);

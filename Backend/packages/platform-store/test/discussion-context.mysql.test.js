@@ -34,7 +34,14 @@ test('MySQL discussion snapshots are read-only, scoped, and reflect intent-drive
   await db.execute(`INSERT INTO case_plan_section_confirmations(workspace_id,chat_id,case_id,version_number,section,actor_user_id) VALUES (?,?,?,1,'DATA',?)`,[...keys,actor.user_id]);
   const pending=await read(token,scope);
   assert.equal(pending.stage,'CONFIRM_EXPECTATIONS');assert.equal(pending.confirmations.expectations,false);
-  await business.beginCaseDiscussionTurn(token,chat.publicId,item.publicId,{expectedRevision:0,userInput:'还需要改哪些条件？'});
+  await business.beginCaseDiscussionTurn(token,chat.publicId,item.publicId,{expectedRevision:0,userInput:'下一步是什么？',preservePlan:true});
+  await assert.rejects(business.confirmSopProposal(token,chat.publicId,item.publicId,1,'EXPECTATIONS'),{code:'DISCUSSION_IN_PROGRESS'});
+  const during=await read(token,scope);
+  assert.equal(during.stage,'CONFIRM_EXPECTATIONS');assert.equal(during.plan.status,'PENDING_CONFIRMATION');
+  assert.equal(during.confirmations.preparation,true);
+  await business.finishCaseDiscussionTurn(token,chat.publicId,item.publicId,{turnNumber:1,assistantReply:'准备数据已确认，请审阅预期结果并点击确认预期。',promptVersion:'followup-discussion-draft-adaptive-v7'});
+  assert.deepEqual(await read(token,scope),during);
+  await business.beginCaseDiscussionTurn(token,chat.publicId,item.publicId,{expectedRevision:1,userInput:'需要修改条件'});
   const current=await read(token,scope);
   assert.equal(current.stage,'DISCUSSION');assert.equal(current.plan.status,'DRAFT');
   assert.equal(current.draft.generated,false);assert.equal(current.artifacts.items.length,0);
