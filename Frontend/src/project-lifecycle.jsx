@@ -1,5 +1,6 @@
 import React,{useEffect,useId,useRef,useState} from 'react';
-import {Archive,ChevronRight,RotateCcw,X} from './ui-icons.jsx';
+import {ArtifactCard} from './assistant-ui/artifact-card.jsx';
+import {ChevronRight,RotateCcw,X} from './ui-icons.jsx';
 import {requestCase} from './live-case-api.js';
 import {lifecycleView,lifecycleCommand,caseStatusLabel} from './project-lifecycle.js';
 import './project-lifecycle.css';
@@ -7,7 +8,7 @@ import './project-lifecycle.css';
 export function ProjectLifecycleCard({chatId,caseId,request=requestCase,onChanged,onNavigate}) {
   const [open,setOpen]=useState(false);
   if(!chatId)return null;
-  return <><button type="button" className="cw-result" onClick={()=>setOpen(true)}><span className="cw-result-icon"><Archive size={20}/></span><span className="cw-result-copy"><span className="cw-result-title">项目与复测</span></span><span className="cw-result-action">查看详情<ChevronRight size={16}/></span></button>
+  return <><ArtifactCard title="项目与复测" kind="project" action="查看项目" onClick={()=>setOpen(true)}/>
     {open&&<ProjectLifecycleDialog key={chatId} {...{chatId,caseId,request,onChanged,onNavigate}} onClose={()=>setOpen(false)}/>}</>;
 }
 export function ProjectLifecycleDialog({chatId,caseId,request=requestCase,onChanged,onNavigate,onClose}) {

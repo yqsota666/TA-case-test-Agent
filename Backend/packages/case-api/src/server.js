@@ -83,11 +83,12 @@ const executeData = async ({ token, chatPublicId, casePublicId, versionNumber, s
   const issues=dataExchangeRequirementIssues(plan.proposal);
   if(issues.length)throw Object.assign(new Error(issues.join('；')),{code:'DATA_EXCHANGE_REQUIRED',status:409});
   const existing = await repository.generatedData(token, chatPublicId, casePublicId);
-  if (existing.status === 'VALIDATED') return { ...existing, replayed: true };
   specification ??= plan.proposal.contract?.dataSpecification ?? await deriveDataSpecification(completeData, plan.proposal);
-  return repository.executeGeneratedData(token, chatPublicId, casePublicId,
+  const data=existing.status==='VALIDATED'?{...existing,replayed:true}:await repository.executeGeneratedData(token, chatPublicId, casePublicId,
     versionNumber, specification, (db, scope, data) =>
       createDataGenerationGraph({ db, scope, specification: data }).invoke({}));
+  if(plan.dataApprovalMode==='PLAN_CONFIRMED')return repository.confirmGeneratedData(token,chatPublicId,casePublicId,data.revision,{planVersionNumber:versionNumber});
+  return data;
 };
 const confirmPlan = createConfirmPlanWithData({ repository,
   confirm: ({ token, chatPublicId, casePublicId, versionNumber, section }) =>

@@ -1,3 +1,5 @@
+import {validPlanContract} from '../../platform-protocol/src/plan-contract.js';
+import {samePlanBusinessInputs} from '../../platform-protocol/src/plan-business-inputs.js';
 import {displayPlanProposal} from './plan-proposal.js';
 import {decideDiscussionAction} from './discussion-action.js';
 import { withDiscussionChannels } from './draft-preparation-policy.js';
@@ -94,21 +96,22 @@ export function createPersistedDiscussionService({ repository, complete, visionC
     const contextualComplete=channels ? withDiscussionChannels(complete,channels) : complete;
     const latest=await repository.getLatestSopProposal?.(token,chatPublicId,casePublicId);
     const checkpoint=history.pending?latest:null;
-    const currentProposal=latest?.proposal?Object.fromEntries(['objective','preconditions','scenarios'].map(key=>[key,latest.proposal[key]])):undefined;
+    const currentProposal=latest?.proposal?Object.fromEntries(['objective','preconditions','scenarios','exchangePlan','openQuestions'].filter(key=>Object.hasOwn(latest.proposal,key)).map(key=>[key,latest.proposal[key]])):undefined;
+    const currentProposalHistoryOffset=latest?.sourceTurnNumber==null?history.turns.length:Math.max(0,history.turns.findIndex(t=>t.role==='assistant'&&t.sourceTurnNumber===latest.sourceTurnNumber)+1);
     const priorTurns=history.turns.map(t=>({...t,content:t.role==='assistant'&&t.kind==='PROPOSE_PLAN'?
       HISTORICAL_PLAN_CONTEXT:imageDiscussionContent(t.content,t.imageAnalysis)}));
     const result=checkpoint?.status==='DRAFT' && checkpoint.sourceTurnNumber===pending.turnNumber && !checkpoint.proposal.contract?
       {proposal:checkpoint.proposal,reply:displayPlanProposal(checkpoint.proposal),phase:'PROPOSAL_PENDING',promptVersion:'plan-proposal-draft-v12'}:
-      await proposeDiscussionPlan(graphFor(history,{signal,channels,currentProposal}), { priorTurns, userInput: modelInput });
+      await proposeDiscussionPlan(graphFor(history,{signal,channels,currentProposal,currentProposalHistoryOffset}), { priorTurns, userInput: modelInput });
     signal?.throwIfAborted();
     await repository.checkpointCasePlanProposal?.(token,chatPublicId,casePublicId,{turnNumber:pending.turnNumber,assistantReply:result.reply,promptVersion:'plan-review-draft-v1',proposal:result.proposal});
     let draft=result.proposal.exchangePlan.status==='UNPLANNED';
-    let draftMessage=draft?'文件安排还有待明确，已保存现有草稿。可以直接补充或修改条件。':'';
+    let draftMessage=draft?'测试方案已保存，文件安排还需完善。可以直接补充或修改条件。':'';
     if(!draft){
       try {
         const derive=request=>contextualComplete({...request,...(signal?{signal}:{})});
         const turns=[...priorTurns,{role:'user',content:modelInput}];
-        try{result.proposal=await definePlanContract(derive,result.proposal,turns);}
+        try{const preserved=samePlanBusinessInputs(latest?.proposal,result.proposal)&&validPlanContract(latest?.proposal?.contract,latest.proposal)?latest.proposal.contract:null;result.proposal=await definePlanContract(derive,result.proposal,turns,preserved?.dataSpecification,preserved);}
         catch(error){
           if(error.stage!=='PLAN_EXCHANGE')throw error;
           const repaired=await proposeDiscussionPlan(graphFor(history,{signal,channels,proposalRepair:{proposal:result.proposal,validationIssues:error.validationIssues}}),{priorTurns:turns.slice(0,-1),userInput:modelInput});
@@ -116,18 +119,18 @@ export function createPersistedDiscussionService({ repository, complete, visionC
           signal?.throwIfAborted();
           await repository.checkpointCasePlanProposal?.(token,chatPublicId,casePublicId,{turnNumber:pending.turnNumber,assistantReply:result.reply,promptVersion:'plan-review-draft-v1',proposal:result.proposal});
           if(result.proposal.exchangePlan.status==='UNPLANNED'){
-            draft=true;draftMessage='文件安排还有待明确，已保存现有草稿。可以直接补充或修改条件。';
+            draft=true;draftMessage='测试方案已保存，文件安排还需完善。可以直接补充或修改条件。';
           }else result.proposal=await definePlanContract(derive,result.proposal,turns,error.preparedData);
         }
       }catch(error){
         if(signal?.aborted || !['DATA_SPEC_INVALID','INVALID_PLAN_CONTRACT','MODEL_TIMEOUT','MODEL_UNAVAILABLE','MODEL_RUN_LIMIT'].includes(error.code))throw error;
         console.warn(JSON.stringify({event:'plan_draft_retained',code:error.code,stage:error.stage??'CONTRACT',...(error.validationIssues?{validationIssues:error.validationIssues}:{})}));
         draft=true;
-        draftMessage=error.code==='MODEL_UNAVAILABLE'||error.code==='MODEL_TIMEOUT'?'模型服务暂时未能完成整理，已有草稿已保存，请重试整理。':'执行结构尚未通过校验，已有草稿已保存。无需补充技术字段，可以重试整理或修改业务条件。';
+        draftMessage=error.code==='MODEL_UNAVAILABLE'||error.code==='MODEL_TIMEOUT'?'模型服务暂时未能完成整理，已有方案内容已保存，可以重试。':'方案尚未通过校验，已有内容已保存。可以重试完善方案或修改业务条件。';
       }
     }
     if(!draft && (result.proposal.openQuestions.length || result.proposal.contract.dataSpecification.missing.length || result.proposal.contract.missing.length)){
-      draft=true;draftMessage='方案草稿已保存，还有业务条件需要明确。请打开草稿查看，或直接补充修改。';
+      draft=true;draftMessage='测试方案已保存，还有业务条件需要明确。请打开方案查看，或直接补充修改。';
       result.reply+='\n'+[...result.proposal.contract.dataSpecification.missing,...result.proposal.contract.missing].map(q=>'待明确：'+q).join('\n');
     }
     if(draft){result.phase='DRAFT_PENDING';result.reply=draftMessage+'\n'+result.reply;result.promptVersion='plan-review-draft-v1';}
@@ -167,7 +170,7 @@ export function createPersistedDiscussionService({ repository, complete, visionC
     const analyzedImages=await analyzeDiscussionImages(visionComplete,input.images);
     input={...input,analyzedImages};
     const decision=await decideDiscussionAction(routeComplete,{allowedActions:['DISCUSS','INSPECT_PLAN','PROPOSE_PLAN'],pendingNextAction:history.nextAction??null,existingPlan:latest?{status:latest.status,proposal:latest.proposal}:null,turns:history.turns.map(t=>({role:t.role,content:imageDiscussionContent(t.content,t.imageAnalysis)})),userInput:imageDiscussionContent(input.userInput,analyzedImages)},{signal});
-    return await (decision.intent==='PROPOSE_PLAN'?propose({...input,expectedRevision:history.revision}):discuss({...input,expectedRevision:history.revision,offerPlan:decision.nextAction==='PROPOSE_PLAN',needsClarification:decision.needsClarification,preservePlan:decision.intent==='INSPECT_PLAN'}));
+    return await (decision.intent==='PROPOSE_PLAN'?propose({...input,expectedRevision:history.revision}):discuss({...input,expectedRevision:history.revision,offerPlan:decision.nextAction==='PROPOSE_PLAN',needsClarification:decision.needsClarification,preservePlan:decision.intent==='INSPECT_PLAN'||Boolean(latest)}));
   }
   async function exclusive(input,action){
     const key=JSON.stringify([input.chatPublicId,input.casePublicId]);

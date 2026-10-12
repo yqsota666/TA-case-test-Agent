@@ -6,7 +6,7 @@ export function ExpectedText({text=''}) {
   const content=<ul className="cw-review-points">{parts.map((part,i)=><li key={i}>{part}</li>)}</ul>;
   return text.length>320?<><p className="cw-review-cell-text">{text.slice(0,140)}…</p><details className="cw-review-detail"><summary>展开完整预期<ChevronRight size={13}/></summary>{content}</details></>:content;
 }
-export function PlanComparison({plan,editable,onSaveContent}) {
+export function PlanComparison({plan,sourceScenarios=plan.scenarios,editable,onSaveContent}) {
   const [editing,setEditing]=useState(null);
   const clauses=value=>(value||'').split(/[，；;。\n]/).map(s=>s.trim()).filter(Boolean);
   const shared=key=>plan.scenarios.length>1?clauses(plan.scenarios[0][key]).filter(c=>plan.scenarios.every(s=>clauses(s[key]).includes(c))):[];
@@ -17,10 +17,10 @@ export function PlanComparison({plan,editable,onSaveContent}) {
   return <>
     {sharedContent.length>0&&<p className="cw-review-baseline">{sharedContent.join('；')}</p>}
     {common.length>0&&<details className="cw-review-common"><summary>{plan.scenarios.length>1?'共同条件与操作':'基础条件'}<ChevronRight size={15}/></summary><ul>{common.map((s,i)=><li key={i}>{s}</li>)}</ul></details>}
-    {plan.scenarios.length===1?<section className="cw-single-test"><h3>{plan.scenarios[0].title||'测试内容'}</h3><dl>{plan.scenarios[0].setup&&<><dt>条件</dt><dd>{plan.scenarios[0].setup}</dd></>}{plan.scenarios[0].action&&<><dt>操作</dt><dd>{plan.scenarios[0].action}</dd></>}<dt>预期结果</dt><dd><ExpectedText text={plan.scenarios[0].expected}/></dd></dl>{plan.scenarios[0].evidence&&<details className="cw-review-detail"><summary>核对依据<ChevronRight size={13}/></summary><p>{plan.scenarios[0].evidence}</p></details>}{editable&&<button type="button" className="cw-row-edit" onClick={()=>setEditing({index:0,item:plan.scenarios[0]})}>修改测试内容</button>}</section>:<div className="cw-review-table-wrap" tabIndex={0} aria-label="测试方案表格">
+    {plan.scenarios.length===1?<section className="cw-single-test"><h3>{plan.scenarios[0].title||'测试内容'}</h3><section className="cw-test-outcome"><h4>预期结果</h4><ExpectedText text={plan.scenarios[0].expected}/></section><div className="cw-test-context">{[['setup','准备条件'],['action','操作安排'],['evidence','核对依据']].map(([key,label])=>plan.scenarios[0][key]&&<details key={key} className="cw-review-detail" open={key!=='evidence'&&plan.scenarios[0][key].length<=160}><summary>{label}<ChevronRight size={13}/></summary><p>{plan.scenarios[0][key]}</p></details>)}</div>{editable&&<button type="button" className="cw-row-edit" onClick={()=>setEditing({index:0,item:sourceScenarios[0]})}>修改测试内容</button>}</section>:<div className="cw-review-table-wrap" tabIndex={0} aria-label="测试方案表格">
       <table className="cw-review-table"><caption className="cw-sr-only">各情况的条件、操作与预期</caption><thead><tr><th scope="col">情况</th><th scope="col">条件与操作</th><th scope="col">预期结果</th></tr></thead><tbody>
         {plan.scenarios.map((item,index)=>{const setup=difference(item,'setup',commonSetup),action=difference(item,'action',commonAction);return <tr key={index}>
-          <th scope="row">{item.title||`情况 ${index+1}`}{editable&&<div className="cw-review-edit"><button type="button" onClick={()=>setEditing({index,item})} aria-label={`修改${item.title||`情况 ${index+1}`}`}>修改</button></div>}</th>
+          <th scope="row">{item.title||`情况 ${index+1}`}{editable&&<div className="cw-review-edit"><button type="button" onClick={()=>setEditing({index,item:sourceScenarios[index]})} aria-label={`修改${item.title||`情况 ${index+1}`}`}>修改</button></div>}</th>
           <td data-label="条件与操作">{setup&&<p className="cw-review-cell-text">{setup}</p>}{action&&<p className="cw-review-cell-text">{action}</p>}{!setup&&!action&&<span>同共同条件与操作</span>}</td>
           <td data-label="预期结果"><ExpectedText text={item.expected}/>{(item.evidence||commonSetup.length||commonAction.length)&&<details className="cw-review-detail"><summary>完整条件与核对依据<ChevronRight size={13}/></summary><dl>{item.setup&&<><dt>条件</dt><dd>{item.setup}</dd></>}{item.action&&<><dt>操作</dt><dd>{item.action}</dd></>}{item.evidence&&<><dt>核对依据</dt><dd>{item.evidence}</dd></>}</dl></details>}</td>
         </tr>;})}

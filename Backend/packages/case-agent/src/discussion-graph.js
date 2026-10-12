@@ -45,7 +45,7 @@ function validatePriorTurns(priorTurns) {
   }
 }
 
-export function createDiscussionGraph({ complete, onDelta, onReset, signal, discussionContext={}, proposalRepair, currentProposal }) {
+export function createDiscussionGraph({ complete, onDelta, onReset, signal, discussionContext={}, proposalRepair, currentProposal, currentProposalHistoryOffset=0 }) {
   if (typeof complete !== 'function') throw new TypeError('complete must be a function');
   const graph = new StateGraph(DiscussionState);
   graph.addNode('ask_testing_intent', async ({ userInput }) => ({
@@ -76,7 +76,9 @@ export function createDiscussionGraph({ complete, onDelta, onReset, signal, disc
         parsed=parsePlanProposal(reply);
         ownershipIssues=planPlatformOwnershipIssues(parsed);
         if(ownershipIssues.length)throw Object.assign(new Error(ownershipIssues.join('；')),{code:'MODEL_OUTPUT_FORMAT'});
-        proposal=guardExchangeTimeEvidence(parsed,[...priorTurns.filter(turn=>turn.role==='user').map(turn=>turn.content),userInput]);
+        const inheritedTimes=currentProposal?.exchangePlan?.status==='READY'?[currentProposal.exchangePlan.steps.map(step=>`${step.fileType}文件${step.direction==='SEND'?'申请':'回传'}日期采用${step.businessTime.value}`).join('；')]:[];
+        const humanTurns=turns=>turns.filter(turn=>turn.role==='user').map(turn=>turn.content);
+        proposal=guardExchangeTimeEvidence(parsed,[...humanTurns(priorTurns.slice(0,currentProposalHistoryOffset)),...inheritedTimes,...humanTurns(priorTurns.slice(currentProposalHistoryOffset)),userInput]);
         const draftDates=parsed.preconditions.some(value=>/模拟.*(?:日期|日)|(?:日期|日).*模拟/.test(value)) || [...priorTurns.filter(turn=>turn.role==='user').map(turn=>turn.content),userInput].some(value=>/日期.{0,12}模拟|模拟.{0,12}日期/.test(value));
         if(attempt===0 && draftDates && parsed.exchangePlan.status==='READY' && proposal.exchangePlan.status==='UNPLANNED'){previous=reply;continue;}
         break;

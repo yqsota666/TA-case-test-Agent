@@ -1,5 +1,6 @@
 import {validateDiscussionImages} from '../../platform-protocol/src/discussion-images.js';
 import {dataExchangeRequirementIssues} from '../../platform-protocol/src/data-exchange-requirements.js';
+import {carryPlanDataApproval,preparedDataMatches} from './plan-data-approval.js';
 import {readPredecessorContext} from './predecessor-context.js';
 import { isDeepStrictEqual } from 'node:util';
 import { validPlanContract } from '../../platform-protocol/src/plan-contract.js';
@@ -221,6 +222,7 @@ export function createCaseRepository({ transaction }) {
         (workspace_id,chat_id,case_id,version_number,plan_json,status,source_turn_number)
         VALUES (?,?,?,?,?,?,?)`,
       [auth.workspace_id, chat.id, caseRow.id, versionNumber, planJson, draft?'DRAFT':'PENDING_CONFIRMATION', options.expectedVersion !== undefined ? latest.source_turn_number : null]);
+      if(!draft)await carryPlanDataApproval(db,[auth.workspace_id,chat.id,caseRow.id],latest?.version_number,versionNumber,proposal);
       if (!draft && caseRow.status === 'DISCUSSING') {
         await db.execute(`UPDATE cases SET status='SOP_PENDING'
           WHERE workspace_id=? AND chat_id=? AND id=?`,
@@ -250,7 +252,8 @@ export function createCaseRepository({ transaction }) {
         WHERE workspace_id=? AND chat_id=? AND public_id=?`,
       [auth.workspace_id, chat.id, casePublicId]);
       if (!caseRow) throw storeError('CASE_NOT_FOUND', 404, 'Case 不存在');
-      const [[latest]] = await db.execute(`SELECT version_number,plan_json,status,locked_at,source_turn_number
+      const [[latest]] = await db.execute(`SELECT version_number,plan_json,status,locked_at,source_turn_number,
+        EXISTS(SELECT 1 FROM case_plan_data_authorizations a WHERE a.workspace_id=case_sop_versions.workspace_id AND a.chat_id=case_sop_versions.chat_id AND a.case_id=case_sop_versions.case_id AND a.version_number=case_sop_versions.version_number) AS auto_prepare_data
         FROM case_sop_versions WHERE workspace_id=? AND chat_id=? AND case_id=?
         ORDER BY version_number DESC LIMIT 1`,
       [auth.workspace_id, chat.id, caseRow.id]);
@@ -258,7 +261,7 @@ export function createCaseRepository({ transaction }) {
       const [confirmations] = await db.execute(`SELECT section,confirmed_at AS confirmedAt FROM case_plan_section_confirmations
         WHERE workspace_id=? AND chat_id=? AND case_id=? AND version_number=? ORDER BY section`,
       [auth.workspace_id,chat.id,caseRow.id,latest.version_number]);
-      return { confirmations, versionNumber: latest.version_number, status: latest.status,
+      return { ...(Number(latest.auto_prepare_data)?{dataApprovalMode:'PLAN_CONFIRMED'}:{}),confirmations, versionNumber: latest.version_number, status: latest.status,
         proposal: typeof latest.plan_json === 'string' ? JSON.parse(latest.plan_json) : latest.plan_json,
         lockedAt: latest.locked_at, sourceTurnNumber: latest.source_turn_number };
     });
@@ -329,6 +332,7 @@ export function createCaseRepository({ transaction }) {
         (workspace_id,chat_id,case_id,version_number,section,actor_user_id) VALUES (?,?,?,?,?,?)`,
       [...keys,section,auth.user_id]);
       if (section==='DATA') return {versionNumber,status:'PENDING_CONFIRMATION',phase:'AWAITING_EXPECTATIONS'};
+      await db.execute(`INSERT INTO case_plan_data_authorizations (workspace_id,chat_id,case_id,version_number,actor_user_id) VALUES (?,?,?,?,?)`,[...keys,auth.user_id]);
       await db.execute(`UPDATE case_sop_versions SET status='LOCKED',locked_at=UTC_TIMESTAMP(3)
         WHERE workspace_id=? AND chat_id=? AND case_id=? AND id=?`,
       [auth.workspace_id, chat.id, caseRow.id, latest.id]);
@@ -569,6 +573,7 @@ export function createCaseRepository({ transaction }) {
       }
       if(!checkpoint)await db.execute(`UPDATE case_discussion_turns SET assistant_text=?,prompt_version=?,status='COMPLETE',finished_at=UTC_TIMESTAMP(3) WHERE workspace_id=? AND chat_id=? AND case_id=? AND turn_number=?`,[assistantReply,promptVersion,auth.workspace_id,chat.id,caseRow.id,turnNumber]);
       if(!draft){
+        await carryPlanDataApproval(db,[auth.workspace_id,chat.id,caseRow.id],versionNumber-1,versionNumber,proposal);
         await db.execute(`UPDATE cases SET status='SOP_PENDING'
           WHERE workspace_id=? AND chat_id=? AND id=?`,
         [auth.workspace_id, chat.id, caseRow.id]);
@@ -812,7 +817,7 @@ export function createCaseRepository({ transaction }) {
     });
   }
 
-  async function confirmGeneratedData(token, chatPublicId, casePublicId, revision) {
+  async function confirmGeneratedData(token, chatPublicId, casePublicId, revision, options={}) {
     chatPublicId = requiredUuid(chatPublicId, 'Chat');
     casePublicId = requiredUuid(casePublicId, 'Case');
     if (!Number.isSafeInteger(revision) || revision < 0) {
@@ -832,12 +837,27 @@ export function createCaseRepository({ transaction }) {
         throw storeError('INVALID_CASE_STATE', 409, '当前 Case 不能确认数据');
       }
       const keys = [auth.workspace_id,chat.id,caseRow.id];
-      const [[execution]] = await db.execute(`SELECT sop_version_id FROM case_data_executions
-        WHERE workspace_id=? AND chat_id=? AND case_id=? FOR UPDATE`, keys);
+      const [[execution]] = await db.execute(`SELECT e.sop_version_id,v.version_number,a.version_number AS authorized_version
+        FROM case_data_executions e
+        JOIN case_sop_versions v ON v.workspace_id=e.workspace_id AND v.chat_id=e.chat_id AND v.case_id=e.case_id AND v.id=e.sop_version_id
+        LEFT JOIN case_plan_data_authorizations a ON a.workspace_id=v.workspace_id AND a.chat_id=v.chat_id AND a.case_id=v.case_id AND a.version_number=v.version_number
+        WHERE e.workspace_id=? AND e.chat_id=? AND e.case_id=? FOR UPDATE`, keys);
       if (!execution) throw storeError('DATA_NOT_STARTED', 409, '数据尚未生成');
+      const planAuthorized=execution.authorized_version!==null && execution.authorized_version!==undefined;
+      if(options.planVersionNumber!==undefined || planAuthorized){
+        const [[approved]]=await db.execute(`SELECT v.id,v.plan_json FROM case_sop_versions v
+          JOIN case_plan_data_authorizations a ON a.workspace_id=v.workspace_id AND a.chat_id=v.chat_id AND a.case_id=v.case_id AND a.version_number=v.version_number
+          WHERE v.workspace_id=? AND v.chat_id=? AND v.case_id=? AND v.version_number=? AND v.status='LOCKED' FOR UPDATE`,[...keys,options.planVersionNumber??Number(execution.version_number)]);
+        const plan=approved && (typeof approved.plan_json==='string'?JSON.parse(approved.plan_json):approved.plan_json);
+        const data=await readGeneratedData(db,keys,true);
+        if(!approved || String(approved.id)!==String(execution.sop_version_id) || !plan?.contract || !preparedDataMatches(data,plan.contract.dataSpecification))throw storeError('PLAN_DATA_MISMATCH',409,'生成数据与已确认方案不一致，请重试准备数据或核对失败原因');
+      }
       const [[prior]] = await db.execute(`SELECT revision FROM case_data_confirmations
         WHERE workspace_id=? AND chat_id=? AND case_id=? FOR UPDATE`, keys);
-      if (prior) throw storeError('DATA_ALREADY_CONFIRMED', 409, '数据已经确认');
+      if (prior) {
+        if(options.planVersionNumber!==undefined && Number(prior.revision)===revision)return readGeneratedData(db,keys,true);
+        throw storeError('DATA_ALREADY_CONFIRMED', 409, '数据已经确认');
+      }
       const [[latest]] = await db.execute(`SELECT COALESCE(MAX(revision),0) AS revision
         FROM case_data_edit_events WHERE workspace_id=? AND chat_id=? AND case_id=? FOR UPDATE`, keys);
       if (Number(latest.revision) !== revision) {
@@ -849,10 +869,10 @@ export function createCaseRepository({ transaction }) {
       if (caseRow.status !== 'EXECUTING') {
         await db.execute(`UPDATE cases SET status='EXECUTING'
           WHERE workspace_id=? AND chat_id=? AND id=?`, keys);
-        await db.execute(`INSERT INTO case_state_events
+      await db.execute(`INSERT INTO case_state_events
           (workspace_id,chat_id,case_id,from_status,to_status,actor_user_id,reason)
-          VALUES (?,?,?,?,?,?,'USER_CONFIRMED_DATA')`,
-        [...keys,caseRow.status,'EXECUTING',auth.user_id]);
+          VALUES (?,?,?,?,?,?,?)`,
+        [...keys,caseRow.status,'EXECUTING',auth.user_id,planAuthorized?'CONFIRMED_PLAN_DATA_PREPARED':'USER_CONFIRMED_DATA']);
       }
       return readGeneratedData(db, keys, true);
     });

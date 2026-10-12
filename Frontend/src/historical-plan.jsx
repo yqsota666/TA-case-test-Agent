@@ -27,8 +27,8 @@ export function HistoricalPlan({message,messages=[],currentPlan,onOpenCurrent,on
   const date=new Date(message.createdAt),duration=formatDuration(message.durationMs);
   return <div className="cw-history-plan">
     <div className="cw-history-meta">{Number.isFinite(date.getTime())&&<time dateTime={date.toISOString()}>{date.toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false})}</time>}{duration&&<span>用时 {duration}</span>}</div>
-    <div className="cw-history-status"><p>{status.failed?'这份历史草稿未通过校验。':message.draft?'这是一份历史草稿。':'这是一份历史方案。'}{status.hasLaterPlan&&currentPlan?'后续已整理新的方案。':'仅供回看。'}</p>
-      {status.hasLaterPlan&&currentPlan?<button type="button" onClick={onOpenCurrent}>{currentPlan.status==='DRAFT'?'查看当前草稿':'查看后续方案'}<ChevronRight size={15}/></button>:message.draft&&<button type="button" onClick={onResume}>回到对话继续整理<ChevronRight size={15}/></button>}
+    <div className="cw-history-status"><p>{status.failed?'这份历史方案未通过校验。':message.draft?'这份历史方案当时尚未准备完成。':'这是一份历史方案。'}{status.hasLaterPlan&&currentPlan?'后续已整理新的方案。':'仅供回看。'}</p>
+      {status.hasLaterPlan&&currentPlan?<button type="button" onClick={onOpenCurrent}>查看当前方案<ChevronRight size={15}/></button>:message.draft&&<button type="button" onClick={onResume}>回到对话继续修改<ChevronRight size={15}/></button>}
     </div>
     {parsed&&!status.failed&&parsed.notes.map((note,i)=><p className="cw-history-note" key={i}>{note}</p>)}
     {parsed?<>

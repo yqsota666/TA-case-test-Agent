@@ -1,8 +1,11 @@
+import {RecordDetails} from './assistant-ui/record-details.jsx';
+import {DetailTabs,DetailTabPanel} from './assistant-ui/detail-tabs.jsx';
 import {QuoteReply} from './assistant-ui/quote-reply.jsx';
 import {quotedInput} from './assistant-ui/quoted-input.js';
 import {CanvasSplit} from './assistant-ui/canvas-split.jsx';
 import {DetailPanel} from './assistant-ui/detail-panel.jsx';
 import {ArtifactCard} from './assistant-ui/artifact-card.jsx';
+import {planArtifactMeta} from './chat-artifact-state.js';
 import {ApprovalCard} from './assistant-ui/approval-card.jsx';
 import {ThreadList} from './assistant-ui/thread-list.jsx';
 import {NameButton} from './assistant-ui/name-button.jsx';
@@ -14,7 +17,7 @@ import {ProjectLifecycleCard} from './project-lifecycle.jsx';
 import {showProjectLifecycle} from './project-lifecycle.js';
 import {accountStorageKey} from './account-storage.js';
 import React, {useEffect, useLayoutEffect, useRef, useState} from 'react';
-import {ChevronRight, Folder, Menu, SquarePen, Workflow, Table2, File, FileText, FileArchive, ArrowLeft, X} from './ui-icons.jsx';
+import {Folder, Menu, SquarePen, Workflow, Table2, File, FileText, FileArchive, ArrowLeft, X} from './ui-icons.jsx';
 import './case-workbench.css';
 import './workflow-actions.css';
 import {FileExchangePanel} from './file-exchange.jsx';
@@ -22,7 +25,8 @@ import {showExchangeEntry} from './exchange-entry.js';
 import {ResultReview} from './result-review.jsx';
 import './generated-draft.css';
 import {WorkflowDiagram} from './workflow-diagram.jsx';
-import {ExpectationReview} from './expectation-review.jsx';
+import './expectation-review.css';
+import {planApproval} from './plan-approval.js';
 import {liveSnapshot,requestCase,requestCaseStream,casePath} from './live-case-api.js';
 import {discussionAction} from './discussion-actions.js';
 import {MessageBody} from './message-body.jsx';
@@ -122,7 +126,8 @@ export function CaseWorkbench({accountControl}) {
   const [retryOriginalInput,setRetryOriginalInput]=useState('');
   const canDiscuss=newConversation||(!state.workflow?false:state.workflow.waiting?.includes('DISCUSS'));
   const recoveredPending=!newConversation&&!loading&&!running&&!!state.pending&&!nodeError;
-  const inputDisabled=loading||!!navigationFailure||!canDiscuss||running||!!state.pending||((completed||projectReadOnly)&&!newConversation);
+  const inputDisabled=loading||!!navigationFailure||!canDiscuss||running||planBusy||!!state.pending||((completed||projectReadOnly)&&!newConversation);
+  const approval=planApproval(state.plan,state.workflow);
   const addImages=async files=>{if(inputDisabled||readingImages)return;const request=viewRequest.current;setReadingImages(true);try{const added=await readMessageImages(files,images);if(request===viewRequest.current)setImageDrafts(v=>({...v,[draftKey]:[...(v[draftKey]||[]),...added]}));}catch(e){setNotice(e.message);}finally{setReadingImages(false);}};
   const savedMessages = newConversation ? [] : state.messages[state.selected] || [];
   const messages = streamReply?.caseId===state.selected && streamReply.text ? [...savedMessages,{id:'streaming-assistant',role:'assistant',text:streamReply.text,continuation:streamReply.failed?'回复中断，完整结果尚未同步。':undefined}] : savedMessages;
@@ -289,28 +294,42 @@ export function CaseWorkbench({accountControl}) {
     const request=viewRequest.current;
     const {contract,...proposal}=state.plan.proposal;
     const next={...proposal,scenarios:proposal.scenarios.map((value,i)=>i===index?item:value)};
-    await requestCase(casePath(currentSet.id,state.selected)+'/plan/content',{versionNumber:state.plan.versionNumber,proposal:next});
-    const snapshot=await liveSnapshot(currentSet.id,state.selected);
-    if(request===viewRequest.current){applySnapshot(snapshot);setModal({type:'result'});}
+    setPlanBusy(true);setPlanError('');
+    try {
+      await requestCase(casePath(currentSet.id,state.selected)+'/plan/content',{versionNumber:state.plan.versionNumber,proposal:next});
+      const snapshot=await liveSnapshot(currentSet.id,state.selected);
+      if(request===viewRequest.current){applySnapshot(snapshot);setModal({type:'result'});}
+    } finally {if(request===viewRequest.current)setPlanBusy(false);}
+  };
+  const savePreparedData=async changes=>{
+    const request=viewRequest.current;
+    setPlanBusy(true);setPlanError('');
+    try {
+      await requestCase(casePath(currentSet.id,state.selected)+'/plan/data',{versionNumber:state.plan.versionNumber,dataSpecification:state.plan.proposal.contract.dataSpecification,...changes});
+      const snapshot=await liveSnapshot(currentSet.id,state.selected);
+      if(request===viewRequest.current)applySnapshot(snapshot);
+    } finally {if(request===viewRequest.current)setPlanBusy(false);}
   };
   const confirmPlan = async section => {
     const request=viewRequest.current;
     setPlanBusy(true);setPlanError('');
     try {
       const path=casePath(currentSet.id,state.selected);
-      await requestCase(path+'/plan/confirm',{versionNumber:state.plan.versionNumber,section});
+      await requestCase(path+(section==='RETRY_DATA'?'/data/execute':'/plan/confirm'),{versionNumber:state.plan.versionNumber,...(section==='RETRY_DATA'?{}:{section})});
       const snapshot=await liveSnapshot(currentSet.id,state.selected);
       if(request!==viewRequest.current)return;
       applySnapshot(snapshot);
-      if(section==='DATA' && snapshot.workflow?.stage==='CONFIRM_EXPECTATIONS')setModal({type:'expectations'});
+      if(section==='DATA' && snapshot.workflow?.stage==='CONFIRM_EXPECTATIONS')setModal({type:'result'});
       else if(section==='DATA')setPlanError('方案已更新，请重新审阅准备数据。');
       else setModal(null);
-    } catch(error) {if(request===viewRequest.current)setPlanError(error.message);} finally {if(request===viewRequest.current)setPlanBusy(false);}
+    } catch(error) {
+      if(request===viewRequest.current){
+        setPlanError(error.message);
+        try {const snapshot=await liveSnapshot(currentSet.id,state.selected);if(request===viewRequest.current)applySnapshot(snapshot);}catch{}
+      }
+    } finally {if(request===viewRequest.current)setPlanBusy(false);}
   };
-  const openGeneratedData = () => {
-    const url=new URL(window.location.href);url.searchParams.set('draftTable','customers');
-    window.history.replaceState(null,'',url);setDataSetId(currentSet.id);setModal(null);
-  };
+  const openGeneratedData = () => setModal({type:'generated-data'});
   const confirmDraft = async () => {
     const request=viewRequest.current;
     setPlanBusy(true);setPlanError('');
@@ -377,7 +396,7 @@ export function CaseWorkbench({accountControl}) {
     const snapshot=await liveSnapshot(currentSet.id,state.selected);
     if(renderedView===viewRequest.current)applySnapshot(snapshot);
   };
-  return <CanvasSplit className={`cw-shell ${page==='chat'?'cw-liquid-home':''} ${page==='chat'&&['result','expectations','historical-plan'].includes(modal?.type)?'has-detail':''} ${page!=='chat'?'cw-catalog-view':''}`} style={sidebarResize.style}>
+  return <CanvasSplit className={`cw-shell ${page==='chat'?'cw-liquid-home':''} ${page==='chat'&&['result','historical-plan','exchange','generated-data','review-result'].includes(modal?.type)?'has-detail':''} ${page!=='chat'?'cw-catalog-view':''}`} style={sidebarResize.style}>
     <a className="cw-skip" href="#cw-main">跳到对话</a>
     <aside id="cw-sidebar" className="cw-sidebar">{sidebar}{sidebarResize.separator}</aside>
     <CaseAssistant key={draftKey} messages={messages} draft={draft} loading={loading} running={running || !!state.pending}
@@ -399,19 +418,17 @@ export function CaseWorkbench({accountControl}) {
               text: runtimeMessage.content.filter(part => part.type === 'text').map(part => part.text).join('\n'),
             };
             if (!message.text && !message.result && !message.continuation && !message.images?.length) return null;
-            return <ChatMessage message={message} onQuote={inputDisabled?undefined:text=>{setState(v=>({...v,quotes:{...v.quotes,[draftKey]:text}}));composer.current?.focus();}} text={message.result && state.plan ? (state.plan.status==='DRAFT'?message.text.split('\n')[0]:planSummary(state.plan.proposal,state.plan.status)) : message.kind==='PROPOSE_PLAN'?(message.draft?'原方案草稿保留在详情中。':'已整理测试方案。原回复保留在详情中。'):message.text}>
+            return <ChatMessage message={message} onQuote={inputDisabled?undefined:text=>{setState(v=>({...v,quotes:{...v.quotes,[draftKey]:text}}));composer.current?.focus();}} text={message.result && state.plan ? planSummary(state.plan.proposal,state.plan.status) : message.kind==='PROPOSE_PLAN'?'当时的方案内容保留在详情中。':message.text}>
             <MessageImages images={message.images} onOpen={image=>setModal({type:'image',image})}/>
-            {message.kind==='PROPOSE_PLAN' && !message.result && <ArtifactCard title={message.draft?'方案草稿':'测试方案'} meta="查看详情" onClick={()=>setModal({type:'historical-plan',message})}/>}
-            {message.result && <ArtifactCard title={state.plan?.status==='DRAFT'?'方案草稿':'测试方案'} meta={state.plan?.status==='LOCKED'?'已确认':'查看与修改'} onClick={()=>{setPlanError('');setModal({type:state.workflow?.stage==='CONFIRM_EXPECTATIONS'?'expectations':'result'});}}/>}
-            {message.result && showExchangeEntry(state.plan,state.generatedData) && <ArtifactCard title="文件交换" meta="申请文件与 TA 回传" onClick={()=>setModal({type:'exchange'})}/>}
+            {message.kind==='PROPOSE_PLAN' && !message.result && <ArtifactCard title="测试方案" variant="history" meta="历史内容" action="查看历史" onClick={()=>setModal({type:'historical-plan',message})}/>}
+            {message.result && <ArtifactCard title="测试方案" meta={planArtifactMeta(state.plan,state.workflow)} variant={approval?.section?'primary':'secondary'} action="查看方案" onClick={()=>{setPlanError('');setModal({type:'result'});}}/>}
+            {message.result && showExchangeEntry(state.plan,state.generatedData) && <ArtifactCard title="文件交换" kind="files" meta="申请文件与 TA 回传" variant={state.workflow?.stage==='FILE_EXCHANGE'?'primary':'secondary'} action="打开文件" onClick={()=>setModal({type:'exchange'})}/>}
 
           </ChatMessage>;}}</ThreadMessages>
-          {state.plan?.status==='DRAFT'&&!state.plan.proposal.contract&&!messages.some(m=>m.result) && <ArtifactCard title="方案草稿" meta="查看已有内容" onClick={()=>setModal({type:'result'})}/>}
-          {state.workflow?.stage==='CONFIRM_EXPECTATIONS' && state.plan && <div className="cw-expect-handoff"><p>准备数据已确认。接下来核对各测试项的预期结果。</p><button type="button" className="cw-result" onClick={()=>{setPlanError('');setModal({type:'expectations'});}}><span className="cw-result-icon"><FileText size={18}/></span><span><span className="cw-result-title">预期结果</span><span className="cw-result-summary">查看与修改</span></span><span className="cw-result-action">查看详情<ChevronRight size={14}/></span></button></div>}
-          {!newConversation && state.generatedData?.status==='VALIDATED' && <button type="button" className="cw-result" onClick={openGeneratedData}>
-            <span className="cw-result-icon" aria-hidden="true"><Table2 size={18}/></span><span className="cw-result-copy"><span className="cw-result-title">草稿数据</span><span className="cw-result-summary">{state.generatedData.reviewStatus==='CONFIRMED'?'已确认':'查看数据'}</span></span><span className="cw-result-action">查看详情<ChevronRight size={14}/></span>
-          </button>}
-          {!newConversation && ['EVALUATE_RESULT','CONFIRM_RESULT','CASE_FINAL'].includes(state.workflow?.stage) && <button type="button" className="cw-result" onClick={()=>setModal({type:'review-result'})}><span className="cw-result-icon" aria-hidden="true"><FileText size={18}/></span><span className="cw-result-copy"><span className="cw-result-title">结果核对</span></span><span className="cw-result-action">查看详情<ChevronRight size={14}/></span></button>}
+          {state.plan&&!messages.some(m=>m.result) && <ArtifactCard title="测试方案" meta={planArtifactMeta(state.plan,state.workflow)} variant={approval?.section?'primary':'secondary'} action="查看方案" onClick={()=>{setPlanError('');setModal({type:'result'});}}/>}
+          {state.workflow?.stage==='CONFIRM_EXPECTATIONS' && state.plan && <div className="cw-expect-handoff"><p>准备数据已确认。请在测试方案中核对并确认预期结果。</p></div>}
+          {!newConversation && state.generatedData?.status==='VALIDATED' && <ArtifactCard title="准备数据" kind="data" meta={state.generatedData.reviewStatus==='CONFIRMED'?'已准备':'待审阅'} action="查看数据" onClick={openGeneratedData}/>}
+          {!newConversation && ['EVALUATE_RESULT','CONFIRM_RESULT','CASE_FINAL'].includes(state.workflow?.stage) && <ArtifactCard title="结果核对" kind="result" variant={state.workflow.stage==='CASE_FINAL'?'secondary':'primary'} meta={state.workflow.stage==='CONFIRM_RESULT'?'待确认结果':state.workflow.stage==='CASE_FINAL'?'查看已保存结果':'待核对实际结果'} action="查看结果" onClick={()=>setModal({type:'review-result'})}/>}
           {!loading && !newConversation && currentSet.id && showProjectLifecycle(currentSet.status,currentCase.status) && <ProjectLifecycleCard chatId={currentSet.id} caseId={state.selected} onChanged={refreshCurrentCase} onNavigate={async target=>{if(renderedView!==viewRequest.current)return;if(target.casePublicId)await openCatalogCase(target.chatPublicId,target.casePublicId);else {const snapshot=await liveSnapshot(target.chatPublicId,null);if(renderedView!==viewRequest.current)return;applySnapshot(snapshot);openNewConversation(target.chatPublicId);}}}/>}
           {!newConversation && (loading||running) && !nodeError && <p className="cw-reply-status" role="status">{loading?'连接讨论服务…':(state.pending?.kind||activeAction)==='PROPOSE_PLAN'?'正在整理方案…':'正在回复…'}</p>}
           {recoveredPending && <ReplyFeedback role="status" title="上次回复未完成" message="可以重新尝试发送原输入。"><button type="button" disabled={completed||projectReadOnly} onClick={()=>submitFirstNode(state.pending.userInput,state.pending.kind||retryAction,state.pending.images||[],state.pending.userInput)}><RotateCcw size={15}/><span>重新尝试</span></button></ReplyFeedback>}
@@ -420,15 +437,15 @@ export function CaseWorkbench({accountControl}) {
           {nodeError && <ReplyFeedback title={navigationFailure?'暂时无法加载':'本次回复未完成'} message={nodeError}>{navigationFailure&&<button type="button" disabled={loading} onClick={()=>navigationFailure.initial?loadInitial():navigateCase(navigationFailure.chatId,navigationFailure.caseId)}>重新加载</button>}{retryInput && !completed && !['MODEL_BUDGET_EXHAUSTED','WORKFLOW_ACTION_UNAVAILABLE'].includes(nodeErrorCode) && <button type="button" disabled={running} aria-busy={running} onClick={()=>submitFirstNode(retryInput,retryAction,retryImages,retryOriginalInput||retryInput)}><RotateCcw size={15}/><span>{running?'重试中…':'重新尝试'}</span></button>}</ReplyFeedback>}
         </div>
       </ThreadViewport>
-      {page==='chat' && dataSet && <section className="cw-draft-page" aria-label={`${dataSet.name}的草稿数据`}>
-        <h2>草稿数据</h2>{dataSet.id===currentSet.id && state.generatedData?.status==='VALIDATED' ? <>
+      {page==='chat' && dataSet && <section className="cw-draft-page" aria-label={`${dataSet.name}的准备数据`}>
+        <h2>准备数据</h2>{dataSet.id===currentSet.id && state.generatedData?.status==='VALIDATED' ? <>
           <GeneratedData data={state.generatedData}/>
-          {state.workflow?.stage==='CONFIRM_DRAFT' && <footer className="cw-plan-confirm-footer">{planError&&<p role="alert">{planError}</p>}<button type="button" className="cw-primary-button" disabled={planBusy||running} onClick={confirmDraft}>{planBusy?'确认中…':'确认草稿'}</button></footer>}
+          {state.workflow?.stage==='CONFIRM_DRAFT' && state.plan?.dataApprovalMode!=='PLAN_CONFIRMED' && <footer className="cw-plan-confirm-footer">{planError&&<p role="alert">{planError}</p>}<button type="button" className="cw-primary-button" disabled={planBusy||running} onClick={confirmDraft}>{planBusy?'确认中…':'确认草稿'}</button></footer>}
         </> : <p>尚未生成。</p>}
       </section>}
       <div hidden={!!dataSetId || page!=='chat'} className="cw-composer-area">
         <ScrollToLatest viewportRef={scroller} active={!dataSetId&&page==='chat'&&!newConversation&&!loading} caseKey={state.selected}/>
-        {!newConversation&&!loading&&!navigationFailure&&!canDiscuss&&<p className="cw-composer-stage" role="status">{state.workflow?.stage==='CONFIRM_DRAFT'?'请查看草稿数据并确认后继续。':state.workflow?.stage==='FILE_EXCHANGE'?'请打开文件交换，完成当前文件操作。':['EVALUATE_RESULT','CONFIRM_RESULT','CASE_FINAL'].includes(state.workflow?.stage)?'请打开结果核对，查看当前结果。':'请查看当前流程，完成当前步骤后继续。'}</p>}
+        {!newConversation&&!loading&&!navigationFailure&&!canDiscuss&&<p className="cw-composer-stage" role="status">{state.workflow?.stage==='CONFIRM_DRAFT'?(state.plan?.dataApprovalMode==='PLAN_CONFIRMED'?'数据尚未准备完成，请打开测试方案重试。':'请查看草稿数据并确认后继续。'):state.workflow?.stage==='FILE_EXCHANGE'?'请打开文件交换，完成当前文件操作。':['EVALUATE_RESULT','CONFIRM_RESULT','CASE_FINAL'].includes(state.workflow?.stage)?'请打开结果核对，查看当前结果。':'请查看当前流程，完成当前步骤后继续。'}</p>}
         <div className="cw-composer-frame" onDragOver={event=>{if(Array.from(event.dataTransfer.types).includes('Files'))event.preventDefault();}} onDrop={event=>{if(event.dataTransfer.files.length){event.preventDefault();addImages(event.dataTransfer.files);}}}>
         {quote && <div className="aui-quote-draft"><QuoteReply quoted={quote} toolbarVisible={false}/><button className="cw-icon" type="button" aria-label="移除引用" disabled={inputDisabled} onClick={()=>setState(v=>({...v,quotes:{...v.quotes,[draftKey]:''}}))}><X size={16}/></button></div>}
         <MessageImages images={images} onRemove={index=>setImageDrafts(v=>({...v,[draftKey]:(v[draftKey]||[]).filter((_,i)=>i!==index)}))} onOpen={image=>setModal({type:'image',image})} disabled={inputDisabled||readingImages}/>
@@ -447,8 +464,8 @@ export function CaseWorkbench({accountControl}) {
     </CaseAssistant>
     <div className={`cw-notice ${notice ? 'is-visible' : ''}`} role="status">{notice}</div>
     {modal?.type==='image'&&<Modal title={modal.image.name} className="cw-image-modal" onClose={()=>setModal(null)}><img className="cw-full-image" src={modal.image.dataUrl} alt={modal.image.name}/></Modal>}
-    {modal?.type === 'review-result' && <Modal title="结果核对" className="cw-result-review-modal" onClose={()=>{if(!resultDirty.current||window.confirm('有未保存的结果，确定关闭？'))setModal(null);}}><ResultReview chatId={currentSet.id} caseId={state.selected} readOnly={completed||currentSet.status!=='ACTIVE'} onDirtyChange={dirty=>{resultDirty.current=dirty;}} onChanged={async isCurrent=>{const snapshot=await liveSnapshot(currentSet.id,state.selected);if(isCurrent()&&renderedView===viewRequest.current)applySnapshot(snapshot);}}/></Modal>}
-    {modal?.type === 'exchange' && <Modal title="文件交换" onClose={()=>setModal(null)}><FileExchangePanel chatId={currentSet.id} caseId={state.selected} plan={state.plan} draft={state.generatedData} workflow={state.workflow} readOnly={completed||currentSet.status!=='ACTIVE'} onChanged={refreshCurrentCase}/></Modal>}
+    {modal?.type === 'review-result' && <DetailPanel title="结果核对" kind="result" closeLabel="关闭结果核对" onClose={()=>{if(!resultDirty.current||window.confirm('有未保存的结果，确定关闭？'))setModal(null);}}><ResultReview chatId={currentSet.id} caseId={state.selected} readOnly={completed||currentSet.status!=='ACTIVE'} onDirtyChange={dirty=>{resultDirty.current=dirty;}} onChanged={async isCurrent=>{const snapshot=await liveSnapshot(currentSet.id,state.selected);if(isCurrent()&&renderedView===viewRequest.current)applySnapshot(snapshot);}}/></DetailPanel>}
+    {modal?.type === 'exchange' && <DetailPanel title="文件交换" kind="files" closeLabel="关闭文件交换" onClose={()=>setModal(null)}><FileExchangePanel chatId={currentSet.id} caseId={state.selected} plan={state.plan} draft={state.generatedData} workflow={state.workflow} readOnly={completed||currentSet.status!=='ACTIVE'} onChanged={refreshCurrentCase}/></DetailPanel>}
     {modal?.type === 'workflow' && <Modal title="Case 流程" className="cw-flow-modal" onClose={()=>setModal(null)}><WorkflowDiagram workflow={modal.snapshot?.workflow || state.workflow} caseStatus={modal.snapshot?.case?.status || currentCase.status} plan={modal.snapshot?.plan || state.plan} data={modal.snapshot?.generatedData || state.generatedData} loading={modal.loading} error={modal.error} onRetry={openWorkflow}/></Modal>}
     {modal?.type==='new-project'&&<Modal title="创建项目" className="cw-row-editor" onClose={()=>{if(!creatingCase)setModal(null);}}><NewProjectForm onBusy={setCreatingCase} onCancel={()=>setModal(null)} onCreated={async chatId=>{
       const snapshot=await liveSnapshot(chatId,null);
@@ -467,34 +484,29 @@ export function CaseWorkbench({accountControl}) {
       setModal(null);
     }}/></Modal>}
     {modal?.type === 'navigation' && <Modal title="项目" onClose={() => setModal(null)}><div className="cw-mobile-sidebar">{sidebar}</div></Modal>}
-    {modal?.type === 'historical-plan' && <DetailPanel title={modal.message.draft?'方案草稿':'测试方案'} onClose={()=>setModal(null)}><HistoricalPlan message={modal.message} messages={messages} currentPlan={state.plan} onOpenCurrent={()=>{setPlanError('');setModal({type:state.workflow?.stage==='CONFIRM_EXPECTATIONS'?'expectations':'result'});}} onResume={()=>{setModal(null);composer.current?.focus();}}/></DetailPanel>}
-    {modal?.type === 'expectations' && state.plan && <DetailPanel title="确认预期结果" onClose={()=>setModal(null)}><ExpectationReview key={state.selected+state.plan.versionNumber} plan={state.plan} busy={planBusy||running} error={planError} onConfirm={()=>confirmPlan('EXPECTATIONS')} onSaveContent={savePlanContent}/></DetailPanel>}
+    {modal?.type === 'generated-data' && <DetailPanel title="准备数据" kind="data" closeLabel="关闭准备数据" onClose={()=>setModal(null)}><GeneratedData data={state.generatedData} inPanel/>{state.workflow?.stage==='CONFIRM_DRAFT'&&state.plan?.dataApprovalMode!=='PLAN_CONFIRMED'&&<footer className="cw-plan-confirm-footer">{planError&&<p role="alert">{planError}</p>}<button type="button" className="cw-primary-button" disabled={planBusy||running} onClick={confirmDraft}>确认草稿</button></footer>}</DetailPanel>}
+    {modal?.type === 'historical-plan'  && <DetailPanel title="测试方案" onClose={()=>setModal(null)}><HistoricalPlan message={modal.message} messages={messages} currentPlan={state.plan} onOpenCurrent={()=>{setPlanError('');setModal({type:'result'});}} onResume={()=>{setModal(null);composer.current?.focus();}}/></DetailPanel>}
     {modal?.type === 'result' && <DetailPanel title="测试方案" onClose={() => setModal(null)}>
-      {state.plan && <PlanDocument key={state.selected+state.plan.versionNumber} proposal={state.plan.proposal} taskProgress={state.workflow?.tasks} locked={state.plan.status==='LOCKED'} onSaveOperations={async applications=>{
-        const request=viewRequest.current;
-        await requestCase(casePath(currentSet.id,state.selected)+'/plan/data',{versionNumber:state.plan.versionNumber,dataSpecification:state.plan.proposal.contract.dataSpecification,applications});
-        const snapshot=await liveSnapshot(currentSet.id,state.selected);if(request===viewRequest.current)applySnapshot(snapshot);
-      }} onSaveContent={savePlanContent} editable={['PENDING_CONFIRMATION','DRAFT'].includes(state.plan.status)&&!running&&!planBusy} onSave={async dataSpecification=>{
-        const request=viewRequest.current;
-        await requestCase(casePath(currentSet.id,state.selected)+'/plan/data',{versionNumber:state.plan.versionNumber,dataSpecification});
-        const snapshot=await liveSnapshot(currentSet.id,state.selected);if(request===viewRequest.current)applySnapshot(snapshot);
-      }} dataApproval={state.workflow?.stage==='CONFIRM_PLAN_DATA'&&<footer className="cw-plan-confirm-footer">{planError&&<p role="alert">{planError}</p>}<button type="button" className="cw-primary-button" disabled={planBusy||running} onClick={()=>confirmPlan('DATA')}>{planBusy?'确认中…':'确认准备数据'}</button></footer>}/>}
+      {state.plan && <PlanDocument key={state.selected+state.plan.versionNumber} proposal={state.plan.proposal} taskProgress={state.workflow?.tasks} locked={state.plan.status==='LOCKED'} onSaveOperations={applications=>savePreparedData({applications})} onSaveContent={savePlanContent} editable={['PENDING_CONFIRMATION','DRAFT'].includes(state.plan.status)&&!loading&&!navigationFailure&&!running&&!planBusy&&!state.pending&&!completed&&!projectReadOnly} onSave={dataSpecification=>savePreparedData({dataSpecification})} dataApproval={approval&&<footer className="cw-plan-confirm-footer"><p role="status">{approval.message}</p>{planError&&<p role="alert">{planError}</p>}{approval.section&&<button type="button" className="cw-primary-button" disabled={loading||!!navigationFailure||planBusy||running||!!state.pending||completed||projectReadOnly} onClick={()=>confirmPlan(approval.section)}>{planBusy?'处理中…':approval.label}</button>}</footer>}/>}
     </DetailPanel>}
   </CanvasSplit>;
 }
 
-function GeneratedData({data}) {
+function GeneratedData({data,inPanel=false}) {
+  const [panelTable,setPanelTable]=useState('customers');
+  const tabsId=React.useId();
   const tables=[
     ['customers','客户',['姓名','客户类型','模拟余额'],data.customers.map(row=>[row.name,row.investor_type==='1'?'个人':'机构',row.simulated_balance])],
     ['accounts','账户',['客户','交易账户','分支'],data.accounts.map(row=>[data.customers.find(c=>String(c.id)===String(row.customer_id))?.name,row.account_no,row.branch_code])],
     ['funds','基金',['基金代码','基金名称','份额类别','净值'],data.funds.map(row=>[row.fund_code,row.fund_name,row.share_class,row.nav])],
     ['holdings','模拟持有',['交易账户','基金代码','份额类别','模拟份额'],data.holdings.map(row=>[data.accounts.find(a=>String(a.id)===String(row.account_id))?.account_no,row.fund_code,row.share_class,row.total_volume])],
   ];
-  const selected=new URLSearchParams(window.location.search).get('draftTable') || 'customers';
-  const [key,name,columns,rows]=tables.find(table=>table[0]===selected) || tables[0];
+  const selected=inPanel?panelTable:new URLSearchParams(window.location.search).get('draftTable') || 'customers';
+  const active=tables.find(table=>table[0]===selected)||tables[0],key=active[0];
   const href=id=>{const url=new URL(window.location.href);url.searchParams.set('draftTable',id);url.hash='';return url.pathname+url.search;};
+  const contents=([_,name,columns,rows])=><><p className="cw-detail-note">{data.businessApplied?'请在数据页面查看对应的正式账户与持仓；这里保留本次准备记录。':'本次准备的数据，用于构造测试申请；正式账户和持仓以已确认回传为准。'}</p><section aria-label={name}><h3>{name}</h3>{!rows.length?<p className="cw-detail-empty">无需准备{name}记录。</p>:rows.length===1?<RecordDetails items={columns.map((label,i)=>[label,rows[0][i]])}/>:<div className="cw-plan-comparison" tabIndex={0} role="region" aria-label={`${name}准备数据列表`}><table><caption className="cw-sr-only">{name}</caption><thead><tr>{columns.map(column=><th scope="col" key={column}>{column}</th>)}</tr></thead><tbody>{rows.map((row,index)=><tr key={index}>{row.map((cell,j)=><td key={j}>{cell}</td>)}</tr>)}</tbody></table></div>}</section></>;
   return <div className="cw-generated-data">
-    <nav className="cw-data-pages" aria-label="草稿数据页面">{tables.map(([id,label])=><a key={id} href={href(id)} aria-current={key===id?'page':undefined}>{label}</a>)}</nav>
-    <section aria-label={name}><h3>{name}</h3><div className="cw-plan-comparison"><table><caption className="cw-sr-only">{name}</caption><thead><tr>{columns.map(column=><th scope="col" key={column}>{column}</th>)}</tr></thead><tbody>{rows.map((row,index)=><tr key={index}>{row.map((cell,j)=><td key={j}>{cell}</td>)}</tr>)}</tbody></table></div></section>
+    <div className="cw-generated-data-nav">{inPanel?<DetailTabs id={tabsId} label="准备数据分区" items={tables.map(([id,label])=>[id,label])} value={key} onChange={setPanelTable}/>:<nav className="cw-data-pages" aria-label="准备数据页面">{tables.map(([id,label])=><a key={id} href={href(id)} aria-current={key===id?'page':undefined}>{label}</a>)}</nav>}</div>
+    {inPanel?tables.map(table=><DetailTabPanel key={table[0]} id={tabsId} value={key} tab={table[0]} className="cw-generated-data-body">{contents(table)}</DetailTabPanel>):<div className="cw-generated-data-body">{contents(active)}</div>}
   </div>;
 }

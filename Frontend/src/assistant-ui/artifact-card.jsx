@@ -1,24 +1,14 @@
-import React from "react";
-import { ArrowUpRightIcon, FileTextIcon } from "lucide-react";
-import { cn } from "./element-utils.js";
-import { mono, paper, ShimmerLabel } from "./element-utils.js";
-export function ArtifactCard({ title, meta, generating = false, words = 0, className, ...props }) {
-    return (<button type="button" data-slot="artifact-card" className={cn(paper, "group flex w-full max-w-xs cursor-pointer items-center gap-3 rounded-[20px] p-3.5 transition-transform duration-150 hover:-translate-y-px active:scale-[0.98]", className)} {...props}>
-      <span className="bg-foreground/[0.05] text-foreground/45 flex size-9 shrink-0 items-center justify-center rounded-xl">
-        <FileTextIcon className={cn("size-4", generating && "animate-pulse motion-reduce:animate-none")}/>
-      </span>
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-[13.5px] font-medium">{title}</p>
-        {generating ? (<p className={cn(mono, "text-foreground/40 flex items-center gap-1")}>
-            <ShimmerLabel className="relative inline-block leading-none">
-              整理中
-            </ShimmerLabel>
-            <span>·</span>
-            <span className="tabular-nums"></span>
-          </p>) : (<p className={cn(mono, "fade-in blur-in-[2px] animate-in text-foreground/40 duration-300 motion-reduce:animate-none")}>
-            {meta}
-          </p>)}
-      </div>
-      <ArrowUpRightIcon className="text-foreground/35 size-3.5 opacity-0 transition-opacity group-hover:opacity-100"/>
-    </button>);
+import React from 'react';
+import {Archive,ArrowLeftRight,ClipboardCheck,FileText,Table2} from '../ui-icons.jsx';
+import {cn} from './element-utils.js';
+import './artifact-card.css';
+
+const icons={plan:FileText,data:Table2,files:ArrowLeftRight,result:ClipboardCheck,project:Archive};
+export function ArtifactCard({title,meta,action='查看方案',kind='plan',variant='secondary',generating=false,disabled=false,className,...props}) {
+  const Icon=icons[kind]??FileText;
+  return <button {...props} type="button" data-slot="artifact-card" data-variant={variant} className={cn('cw-artifact',className)} disabled={disabled||generating} aria-busy={generating||undefined}>
+    <span className="cw-artifact-icon" aria-hidden="true"><Icon size={20}/></span>
+    <span className="cw-artifact-copy"><span className="cw-artifact-title">{title}</span>{(generating||meta)&&<span className="cw-artifact-meta">{generating?'整理中…':meta}</span>}</span>
+    <span className="cw-artifact-action">{generating?'请稍候':action}</span>
+  </button>;
 }
