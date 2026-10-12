@@ -4,7 +4,7 @@ import {requestCase,casePath} from './live-case-api.js';
 import {artifactReadError} from './artifact-read-error.js';
 import './result-review.css';
 const fieldNames={status:'处理结果',returnCode:'返回码',transactionAccountId:'交易账户',fundCode:'基金代码',shareClass:'份额类别',confirmedAmount:'确认金额',confirmedVolume:'确认份额',taAccountId:'TA账户',branchCode:'分支',totalVolume:'总份额',availableVolume:'可用份额',frozenVolume:'冻结份额',snapshotDate:'持仓日期'};
-const checkLabel=c=>c.field==='status'?({'01':'开户结果','03':'申购结果'}[c.source?.fileType]??fieldNames.status):(fieldNames[c.field]??'预期结果');
+const checkLabel=c=>c.field==='status'?({'01':'开户结果','03':'交易结果'}[c.source?.fileType]??fieldNames.status):(fieldNames[c.field]??'预期结果');
 const show=value=>({CONFIRMED:'成功确认',FAILED:'失败',PASS:'通过',FAIL:'未通过',REVIEW:'待核对',WAITING:'等待回传',MATCH:'一致',DIFFERENT:'不一致',UNCLEAR:'待补充'}[value]??value??'—');
 const clean=value=>String(value??'').replaceAll('CONFIRMED','成功确认').replaceAll('FAILED','失败');
 export function ResultReview({chatId,caseId,onChanged,onDirtyChange,readOnly}){

@@ -77,7 +77,7 @@ export function FileExchangePanel({chatId,caseId,plan,draft,workflow,readOnly,on
         const rows=exchangeReviewRows(entry?.result,requests,data.confirmation.confirmations??[],entry?.parseId);
         const selectedRows=rows.filter(row=>selected[entry?.parseId]?.includes(row.index)&&row.matched&&!row.applied);
         return <div className="cw-exchange-return" key={`${step.batchPublicId}-${step.expectedType}`}>
-          <div className="cw-exchange-heading"><strong>{step.expectedType==='02'?'开户回传（02）':'申购回传（04）'}</strong><span className="cw-exchange-muted">{delivered?'已记录交付':'待交给 TA'}</span></div>
+          <div className="cw-exchange-heading"><strong>{step.expectedType==='02'?'开户回传（02）':'交易回传（04）'}</strong><span className="cw-exchange-muted">{delivered?'已记录交付':'待交给 TA'}</span></div>
           <p className="cw-exchange-source">{step.outboundFiles.join('、')}</p>
           <div className="cw-exchange-actions">{!delivered&&<button type="button" className="cw-exchange-button" disabled={busy||readOnly} onClick={()=>perform(()=>requestCase(path+'/return-confirmation/delivery',{batchPublicId:step.batchPublicId}))}>确认已交给 TA</button>}
           </div>
