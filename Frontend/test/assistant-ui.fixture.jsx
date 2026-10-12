@@ -68,7 +68,7 @@ window.fetch = async (url, options = {}) => {
   if (endpoint === 'discussion') return response({turns: histories[caseId] || [], pending:pending?.caseId===caseId?pending:null});
   if(endpoint==='plan/confirm'){const body=JSON.parse(options.body);if(body.versionNumber!==fixturePlan.versionNumber)return response({message:'方案已更新'},409);if(body.section==='DATA'&&stage==='CONFIRM_PLAN_DATA')stage='CONFIRM_EXPECTATIONS';else if(body.section==='EXPECTATIONS'&&stage==='CONFIRM_EXPECTATIONS'){stage='PREPARE_DATA';fixturePlan.status='LOCKED';}else return response({message:'确认顺序不正确'},409);return response({});}
   if(endpoint==='plan')return response(mode==='plan'?fixturePlan:null);
-  if(endpoint==='data')return response(exchange&&exchange!=='unconfirmed'?{reviewStatus:'CONFIRMED'}:null);
+  if(endpoint==='data')return response(exchange&&exchange!=='unconfirmed'?{status:'VALIDATED',reviewStatus:'CONFIRMED'}:{status:'NOT_STARTED',reviewStatus:'NOT_STARTED',revision:0,customers:[],accounts:[],funds:[],holdings:[]});
   if (endpoint === 'workflow') return response({stage, waiting: ['DISCUSS']});
   return response({message: '该合成验收页未提供此业务接口'}, 404);
 };
