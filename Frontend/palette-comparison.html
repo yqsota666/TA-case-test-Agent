@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Chat 配色比较</title>
+<style>
+*{box-sizing:border-box}body{margin:0;color:#27272a;font:14px/1.5 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;background:#fff}header{min-height:64px;padding:12px 20px;display:flex;align-items:center;gap:16px;border-bottom:1px solid #ddd;flex-wrap:wrap}nav{display:flex;gap:8px;flex-wrap:wrap}button{font:inherit;cursor:pointer;border:1px solid #d9dde2;border-radius:8px;padding:8px 14px;color:inherit;background:#fff;min-height:40px}button[aria-pressed=true]{background:#27272a;color:#fff}button:focus-visible,a:focus-visible{outline:2px solid #25677d;outline-offset:3px}small{color:#62666d}a{color:#25677d}iframe{width:100%;height:calc(100dvh - 112px);border:0;display:block}#note{padding:8px 20px;min-height:48px;background:#f6f6f6}@media(max-width:650px){iframe{height:calc(100dvh - 200px)}}
+</style></head>
+<body><header><strong>Chat 配色比较</strong><nav aria-label="配色方案"><button data-palette="neutral" aria-pressed="true">A · 灰白 / 蓝</button><button data-palette="warm" aria-pressed="false">B · 暖灰 / 青绿</button><button data-palette="contrast" aria-pressed="false">C · 深灰侧栏</button></nav><small>同一组合成内容，切换比较</small></header><div id="note">浅灰导航、近白阅读区，炭灰正文。 <a id="live" href="/?theme=liquid&palette=neutral" target="_blank" rel="noopener">在平台中查看</a></div><iframe title="Chat 配色预览" src="/test/assistant-ui.html?theme=liquid&palette=neutral&caseId=readonly"></iframe>
+<script type="module">
+const descriptions={neutral:'浅灰导航、近白阅读区，炭灰正文。',warm:'暖灰导航、纸白阅读区，暖黑正文与青绿操作。',contrast:'深灰导航、白色阅读区，深灰正文与蓝色操作。'};
+for(const button of document.querySelectorAll('button'))button.addEventListener('click',()=>{const palette=button.dataset.palette;for(const item of document.querySelectorAll('button'))item.setAttribute('aria-pressed',String(item===button));document.querySelector('iframe').src=`/test/assistant-ui.html?theme=liquid&palette=${palette}&caseId=readonly`;document.querySelector('#note').firstChild.textContent=descriptions[palette]+' ';document.querySelector('#live').href=`/?theme=liquid&palette=${palette}`;});
+</script></body></html>
