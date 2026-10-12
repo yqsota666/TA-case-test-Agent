@@ -68,3 +68,32 @@ test('proposal repairs an omitted synthetic date label once without asking the u
  assert.match(calls[1].messages.at(-1).content,/模拟日期必须明确标/);
  assert.equal(result.proposal.exchangePlan.status,'READY');
 });
+
+
+test('business field changes retain existing dates while explicit timing changes still invalidate them',()=>{
+ const messages=['03业务日期20261006，04回传日期20261007'];
+ for(const change of ['03申购金额改为2100.00元，04确认份额改成2100.00份，其余条件保持不变','把申购金额改为2100.00元，预期确认金额和份额对应改成2100.00元、2100.00份，其余条件保持不变','03字段ApplicationAmount改成250.00']) {
+  assert.equal(guardExchangeTimeEvidence(proposal,[...messages,change]).exchangePlan.status,'READY',change);
+ }
+ for(const change of ['03金额改为250元，业务日期取消','03日期改到明天，金额250元','03字段TransactionDate改成20261008','03日期取消，其余金额保持原值']) {
+  assert.equal(guardExchangeTimeEvidence(proposal,[...messages,change]).exchangePlan.status,'UNPLANNED',change);
+ }
+});
+
+test('proposal inherits current file dates but never overrides a later user cancellation',async()=>{
+ const plain={...proposal,preconditions:[]};
+ const makeGraph=()=>createDiscussionGraph({currentProposal:plain,complete:async()=>JSON.stringify(plain)});
+ const updated=await proposeDiscussionPlan(makeGraph(),{priorTurns:[],userInput:'把申购金额改为2100.00元，其余条件保持不变'});
+ assert.equal(updated.proposal.exchangePlan.status,'READY');
+ const cancelled=await proposeDiscussionPlan(makeGraph(),{priorTurns:[],userInput:'03日期取消，先给方案'});
+ assert.equal(cancelled.proposal.exchangePlan.status,'UNPLANNED');
+});
+
+
+test('current plan timing supersedes older discussion but later human timing still wins',async()=>{
+ const plain={...proposal,preconditions:[]};
+ const history=[{role:'user',content:'03日期取消'},{role:'assistant',content:'已重新整理当前方案'}];
+ const graph=()=>createDiscussionGraph({currentProposal:plain,currentProposalHistoryOffset:2,complete:async()=>JSON.stringify(plain)});
+ assert.equal((await proposeDiscussionPlan(graph(),{priorTurns:history,userInput:'修改金额，其余不变'})).proposal.exchangePlan.status,'READY');
+ assert.equal((await proposeDiscussionPlan(graph(),{priorTurns:[...history,{role:'user',content:'03日期待定'},{role:'assistant',content:'继续讨论'}],userInput:'给出方案'})).proposal.exchangePlan.status,'UNPLANNED');
+});

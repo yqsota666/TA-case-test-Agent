@@ -167,6 +167,9 @@ export function guardExchangeTimeEvidence(proposal, userMessages) {
   const missing = proposal.exchangePlan.steps.filter(step => {
     const relevant = clause => {
       const scope=timingScope(clause,step),mentioned=mentionsTime(clause,step.businessTime);
+      // Editing a business field does not replace that file's agreed date.
+      if(!mentioned && /金额|份额|净值|费率|姓名|名称|证件|账号|代码|字段|[A-Za-z][A-Za-z0-9_]*/.test(clause) &&
+        !/日期|业务日|时间|时点|改期|延期|推迟|提前|延后|T(?:日|\s*[+\-＋－]\d)|明天|后天|次日|今天|本周|下周|月底|月初|待定|待确认|[A-Za-z]*(?:Date|Time)|\d{4}(?:[-/年]|\d{4})/.test(clause))return false;
       // References identify another application; they do not revise this file's business date.
       if(/原申请(?:日期|单号)|申请单号/.test(clause) && /引用|关联|系统(?:生成|分配)|独立由系统/.test(clause) && !mentioned && !timeRevision.test(clause) && !/改期|取消.*(?:日期|时间)/.test(clause))return false;
       // Batching instructions reject redundant rounds, not the agreed dates.

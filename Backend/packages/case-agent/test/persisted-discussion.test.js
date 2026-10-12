@@ -314,7 +314,7 @@ test('regeneration carries current business content and ordinary discussion with
    assert.ok(request.messages.some(t=>t.content==='原始业务要求，03日期20261006，04日期20261007'));
    assert.ok(request.messages.some(t=>t.content==='普通讨论里的业务说明仍应承接'));
    const input=JSON.parse(request.messages.at(-1).content);
-   assert.equal(input.userInput,'请整理当前方案');assert.deepEqual(input.currentProposal,{objective:latest.objective,preconditions:latest.preconditions,scenarios:latest.scenarios});
+   assert.equal(input.userInput,'请整理当前方案');assert.deepEqual(input.currentProposal,{objective:latest.objective,preconditions:latest.preconditions,scenarios:latest.scenarios,exchangePlan:latest.exchangePlan,openQuestions:latest.openQuestions});
    return JSON.stringify(plan);
   }
   if(request.system.includes('四张公共数据表'))return JSON.stringify(planContract(plan).dataSpecification);

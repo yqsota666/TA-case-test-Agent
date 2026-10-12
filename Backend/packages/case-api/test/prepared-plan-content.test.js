@@ -20,3 +20,21 @@ test('locked or stale edits do not call a model or save; genuine review question
  await revisePreparedPlanContent({...args,repository:{getLatestSopProposal:async()=>current,readCaseDiscussion:async()=>({turns:[]}),saveSopProposal:async(...args)=>{saved=args[3];}},complete:async()=>JSON.stringify(++calls===1?{questions:['两项规则互相矛盾，请选择保留哪项。']}:{assumptions:[],applications:[],expectations:[],missing:[]})});
  assert.equal(saved.openQuestions.length,1);
 });
+
+
+test('expectation-only edits retain exact preparation definitions; input edits still rebuild them',async()=>{
+ const contract={version:2,protocolVersion:'22',dataSpecification:data,applications:[],assumptions:['原合成业务假设'],expectations:[],businessExpectations:[{scenarioIndex:0,expectedQuote:proposal.scenarios[0].expected}],missing:[]};
+ const savedPlan={...proposal,contract};
+ for(const inputsChanged of [false,true]){
+  const edited=structuredClone(proposal);edited.scenarios[0].expected='按用户提供的说明核对结果';
+  if(inputsChanged)edited.scenarios[0].setup='另一组输入';
+  let saved,calls=0;
+  await revisePreparedPlanContent({...args,body:{versionNumber:3,proposal:edited},repository:{getLatestSopProposal:async()=>({...current,proposal:savedPlan}),readCaseDiscussion:async()=>({turns:[]}),saveSopProposal:async(...args)=>{saved=args[3];}},complete:async request=>{
+   if(++calls===1)return JSON.stringify({questions:[]});
+   const context=JSON.parse(request.user);assert.equal(Boolean(context.currentPreparation),!inputsChanged);
+   return JSON.stringify({applications:[],assumptions:['模型重写的假设'],expectations:[],missing:[]});
+  }});
+  assert.deepEqual(saved.contract.assumptions,inputsChanged?['模型重写的假设']:contract.assumptions);
+  assert.equal(saved.contract.businessExpectations[0].expectedQuote,edited.scenarios[0].expected);
+ }
+});

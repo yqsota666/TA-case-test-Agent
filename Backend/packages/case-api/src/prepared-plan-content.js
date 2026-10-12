@@ -1,3 +1,5 @@
+import {samePlanBusinessInputs} from '../../platform-protocol/src/plan-business-inputs.js';
+import {validPlanContract} from '../../platform-protocol/src/plan-contract.js';
 import {PlanProposalSchema,parsePlanProposal} from '../../case-agent/src/plan-proposal.js';
 import {definePlanContract} from '../../case-agent/src/plan-contract.js';
 const fail=(code,status,message)=>Object.assign(new Error(message),{code,status});
@@ -17,7 +19,7 @@ export async function revisePreparedPlanContent({repository,complete,admit,token
   if(!review || Object.keys(review).join(',')!=='questions' || !Array.isArray(review.questions) || review.questions.length>50 || review.questions.some(q=>typeof q!=='string'||!q.trim()||q.length>500))throw fail('PLAN_REVIEW_INVALID',422,'方案审阅未完成，请重试保存');
   let proposal={...normalized,openQuestions:[...new Set(review.questions)]};
   if(proposal.exchangePlan.status!=='UNPLANNED'){
-    try{proposal=await definePlanContract(complete,proposal,history.turns,current.proposal.contract?.dataSpecification);}
+    try{const preserved=samePlanBusinessInputs(current.proposal,proposal)&&validPlanContract(current.proposal.contract,current.proposal)?current.proposal.contract:null;proposal=await definePlanContract(complete,proposal,history.turns,current.proposal.contract?.dataSpecification,preserved);}
     catch(error){if(!['DATA_SPEC_INVALID','INVALID_PLAN_CONTRACT'].includes(error.code))throw error;}
   }
   await repository.saveSopProposal(token,chatPublicId,casePublicId,proposal,{expectedVersion:body.versionNumber});
