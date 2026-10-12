@@ -1,5 +1,13 @@
 # 项目版本与工作树索引
 
+## 5199独立审查与旧演练清理（2026-10-12）
+
+从实时baa58b02建立codex/review-5199-cleanup独立树。按用户确认仅删除当前5199账户16个旧演练Case及9项目，保留test01两个Case、空白c1和AgentZIP，共3项目4Case；恢复备份仅本机保存，实际删除/恢复回滚验证通过，保留和其他账户数据摘要一致，API已核对。
+
+pr-review-iterate与senior-staff-engineer两轮独立审查：第一轮1项P2，a35f9269将03结果/04回传由误写申购改成通用交易文案；第二轮can-merge，无新增建议。496后端通过/27可选跳过，55前端通过、构建及申购/赎回/混合组件浏览器检查通过。旧聊天脚本查找已更名按钮在原基线也失败，未计为通过。无真实模型或外部TA调用。详见docs/5199审查与旧演练清理.md。
+
+验证后快进接入5199原plan-trigger-fix工作树，前端热更新，API3106及ta_case_agent_chain不变，无后端重启/迁移。用户此次明确授权上传GitHub，使用独立codex/review-5199-cleanup分支；不自动创建PR或合并main。
+
 ## 侧栏展开状态修复（2026-10-12，已接入5199）
 
 按用户反馈点击Case导致所有项目展开，从实时a24228ae建立独立codex/sidebar-expansion-fix，07970639按项目id保留用户展开状态，避免快照默认expanded:true覆盖当前偏好。已本地快进接入codex/plan-trigger-fix，5199前端热更新，API3106及数据库不变。
