@@ -65,9 +65,9 @@ for (const code of ['005','227','926']) test(`MySQL: ${code} persists full chann
    const zip=buildApplicationPackage(originals);assert.equal(zip.fileNames.length,3);
    const delivery=await exchange.readDeliveryPackage(token,{chatPublicId:chat.publicId,batchPublicId:apps[0].batchPublicId});
    assert.equal(delivery.fileName,'20260817.zip');
-   assert.equal(delivery.manifest.length,code==='227'?7:6);
+   assert.equal(delivery.manifest.length,code==='227'?9:6);
    assert.equal(delivery.manifest.find(f=>f.fileType==='OFI').fileName,
-     `${code}/20260817/OFI_${code}_27_20260817${code==='005'?'-DLJJ':''}.TXT`);
+     `${code==='227'?'':code+'/'}20260817/OFI_${code}_27_20260817${code==='005'?'-DLJJ':''}.TXT`);
    if(process.env.DELIVERY_ARTIFACT_DIRECTORY){
     const directory=join(process.env.DELIVERY_ARTIFACT_DIRECTORY,code);mkdirSync(directory,{recursive:true});
     writeFileSync(join(directory,delivery.fileName),delivery.rawBytes);
@@ -81,7 +81,7 @@ for (const code of ['005','227','926']) test(`MySQL: ${code} persists full chann
    assert.equal(delivery.manifest.find(f=>f.fileType==='X1').recordCount,accounts);
    assert.equal(delivery.manifest.find(f=>f.fileType==='X3').recordCount,0);
    const changedProfile={...(await exchange.readDeliveryProfile(token,{channelId})).profile,
-     aml:false,includeEmptyR1:false,indexSuffixes:{OFI:'-PROFILE',OFX:''},directoryLayout:'date'};
+     aml:false,includeEmptyR1:false,includeEmpty43:false,indexSuffixes:{OFI:'-PROFILE',OFX:''},directoryLayout:'date'};
    await catalog.saveDistributor(token,{id:channelId,input:{...input,channel_name:'格式更新合成',delivery_profile:changedProfile}});
    assert.equal((await catalog.listTable(token,{table:'distributors'})).rows[0].delivery_profile.indexSuffixes.OFI,'-PROFILE');
    const unchanged=await exchange.readDeliveryPackage(token,{chatPublicId:chat.publicId,batchPublicId:apps[0].batchPublicId});

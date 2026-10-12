@@ -6,10 +6,15 @@
     "sender": "",
     "recipient": "",
     "fieldNamesCase": "canonical",
-    "trailingCrlf": true
+    "trailingCrlf": true,
+    "includeEmpty43": true,
+    "directoryLayout": "date"
   },
   "22:005:27": {
     "dataSequence": false,
-    "indexSuffixes": { "OFI": "-DLJJ", "OFX": "" }
+    "indexSuffixes": {
+      "OFI": "-DLJJ",
+      "OFX": ""
+    }
   }
 }

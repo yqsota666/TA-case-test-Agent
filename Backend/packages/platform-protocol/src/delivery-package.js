@@ -1,9 +1,10 @@
 import crypto from 'node:crypto';
+import {buildEmptyContractCompanions} from './empty-contract-companions.js';
 import {buildDataFile, buildIndexFile, dataFileName, parseDataFile, parseIndexFile} from './codec.js';
 import {fieldsForFile,profileForVersion,canonicalProtocolVersion} from './profiles.js';
 import {zipProtocolFiles} from './application-package.js';
 
-const allowed = ['aml', 'includeEmptyR1', 'dataSequence', 'summaryNo', 'sender', 'recipient',
+const allowed = ['aml', 'includeEmptyR1', 'includeEmpty43', 'dataSequence', 'summaryNo', 'sender', 'recipient',
   'fieldNamesCase', 'trailingCrlf', 'directoryLayout', 'indexSuffixes'];
 export function normalizeDeliveryProfile(input = {}, version = '22') {
   version = canonicalProtocolVersion(version);
@@ -12,10 +13,10 @@ export function normalizeDeliveryProfile(input = {}, version = '22') {
   }
   const defaults = profileForVersion(version).deliveryDefaults;
   const profile = {...defaults,...input,indexSuffixes:{...defaults.indexSuffixes,...input.indexSuffixes}};
-  for (const k of ['aml', 'includeEmptyR1', 'dataSequence', 'trailingCrlf']) {
+  for (const k of ['aml', 'includeEmptyR1', 'includeEmpty43', 'dataSequence', 'trailingCrlf']) {
     if (typeof profile[k] !== 'boolean') throw new Error('交付配置开关无效');
   }
-  if (!['21', '22'].includes(version) || (version !== '22' && (profile.aml || profile.includeEmptyR1))) {
+  if (!['21', '22'].includes(version) || (version !== '22' && (profile.aml || profile.includeEmptyR1 || profile.includeEmpty43))) {
     throw new Error('当前协议版本不支持该配套文件配置');
   }
   if (!['upper', 'canonical'].includes(profile.fieldNamesCase) ||
@@ -27,7 +28,7 @@ export function normalizeDeliveryProfile(input = {}, version = '22') {
     if (typeof profile[k] !== 'string' || !/^[A-Za-z0-9 ]{0,8}$/.test(profile[k])) throw new Error('交付配置收发方无效');
   }
   if (input.indexSuffixes !== undefined && (!input.indexSuffixes || typeof input.indexSuffixes !== 'object' ||
-      Array.isArray(input.indexSuffixes) || Object.keys(input.indexSuffixes).some(k => !['OFI', 'OFX'].includes(k)))) {
+      Array.isArray(input.indexSuffixes) || Object.keys(input.indexSuffixes).some(k => !['OFI', 'OFX', 'OFG'].includes(k)))) {
     throw new Error('索引后缀配置无效');
   }
   if (Object.values(profile.indexSuffixes).some(s => typeof s !== 'string' || !/^(?:-[A-Za-z0-9]{1,16})?$/.test(s))) {
@@ -108,6 +109,10 @@ export function buildDeliveryPackage(files, inputProfile = {}) {
     const parsed = parseIndexFile(rawBytes);
     if (parsed.fileNames.some(n => !data.some(f => f.fileName === n))) throw new Error('交付索引引用了缺失文件');
     indexes.push({fileName: `${kind}_${wire.creator}_${wire.receiver}_${wire.date}${profile.indexSuffixes[kind]}.TXT`, rawBytes, fileType: kind, recordCount: members.length});
+  }
+  if (profile.includeEmpty43) {
+    const companions = buildEmptyContractCompanions(wire, profile);
+    data.push(companions.data); indexes.push(companions.index);
   }
   const members = [...indexes, ...data];
   const directory = profile.directoryLayout === 'flat' ? '' : profile.directoryLayout === 'date' ? `${wire.date}/` : `${wire.creator}/${wire.date}/`;

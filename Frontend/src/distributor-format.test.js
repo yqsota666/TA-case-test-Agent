@@ -20,3 +20,12 @@ test('protocol version labels use human readable versions without guessing unsup
  const {protocolVersionLabel}=await import('./distributor-format.js');
  assert.equal(protocolVersionLabel('22'),'2.2');assert.equal(protocolVersionLabel('21'),'2.1');assert.equal(protocolVersionLabel('20'),'20');
 });
+
+test('accepted channel profile previews OFG and empty 43 inside its date directory',()=>{
+ const nine={...profile,includeEmpty43:true,directoryLayout:'date',indexSuffixes:{OFI:'',OFX:'',OFG:'-CUSTOM'}};
+ const files=deliveryFilePreview({distributor_code:'227',ta_code:'27'},nine);
+ assert.equal(files.length,9);assert.ok(files.every(f=>f.fileName.startsWith('{业务日期}/')));
+ assert.equal(files.find(f=>f.type==='OFG').fileName,'{业务日期}/OFG_227_27_{业务日期}-CUSTOM.TXT');
+ assert.equal(files.find(f=>f.type==='43').fileName,'{业务日期}/OFD_227_27_{业务日期}_43.TXT');
+ assert.equal(deliveryFormatSummary(nine),'01/03/R1 + OFX/X1/X3 + OFG/43 · 无序号');
+});

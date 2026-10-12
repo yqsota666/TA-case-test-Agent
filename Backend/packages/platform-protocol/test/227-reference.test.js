@@ -11,7 +11,7 @@ import {channelDeliveryProfile} from '../../platform-store/src/delivery-profile.
 
 const fixture=new URL('./fixtures/227-reference-20241119/',import.meta.url);
 const manifest=JSON.parse(readFileSync(new URL('manifest.json',fixture),'utf8'));
-const profile=channelDeliveryProfile({protocol_version:'22',distributor_code:'227',ta_code:'27'});
+const profile={...channelDeliveryProfile({protocol_version:'22',distributor_code:'227',ta_code:'27'}),includeEmpty43:false,directoryLayout:'distributor/date'};
 const wire={creator:'227',receiver:'27',date:'20260817',version:'22'};
 function originals(){return ['01','03'].map(fileType=>({fileName:`OFD_227_27_${wire.date}_${fileType}.TXT`,
  rawBytes:buildDataFile({...wire,fileType,records:[],summaryNo:profile.summaryNo,sender:profile.sender,recipient:profile.recipient,fieldNamesCase:profile.fieldNamesCase,trailingCrlf:profile.trailingCrlf})}));}

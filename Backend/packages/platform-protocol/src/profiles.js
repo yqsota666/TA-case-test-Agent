@@ -9,14 +9,14 @@ const V22_DEFINITIONS = { ...V22_EXTRA_FILE_DEFINITIONS, ...FILE_DEFINITIONS };
 export const PROTOCOL_PROFILES = {
   '21': {
     version: '21', label: '2.1', fields: V21_DEFINITIONS,
-    deliveryDefaults: {aml:false,includeEmptyR1:false,dataSequence:true,sender:'SYSTEM',recipient:'SYSTEM',fieldNamesCase:'upper',trailingCrlf:false,directoryLayout:'distributor/date',indexSuffixes:{OFI:'',OFX:''}},
+    deliveryDefaults: {aml:false,includeEmptyR1:false,includeEmpty43:false,dataSequence:true,sender:'SYSTEM',recipient:'SYSTEM',fieldNamesCase:'upper',trailingCrlf:false,directoryLayout:'distributor/date',indexSuffixes:{OFI:'',OFX:'',OFG:''}},
     dataHeaderWidths: [8, 4, 9, 9, 8, 3, 2, 8, 8, 3],
     indexHeaderWidths: [8, 4, 9, 9, 8, 3],
     recordCountWidth: 8
   },
   '22': {
     version: '22', label: '2.2', fields: V22_DEFINITIONS,
-    deliveryDefaults: {aml:true,includeEmptyR1:false,dataSequence:true,sender:'SYSTEM',recipient:'SYSTEM',fieldNamesCase:'upper',trailingCrlf:false,directoryLayout:'distributor/date',indexSuffixes:{OFI:'',OFX:''}},
+    deliveryDefaults: {aml:true,includeEmptyR1:false,includeEmpty43:false,dataSequence:true,sender:'SYSTEM',recipient:'SYSTEM',fieldNamesCase:'upper',trailingCrlf:false,directoryLayout:'distributor/date',indexSuffixes:{OFI:'',OFX:'',OFG:''}},
     dataHeaderWidths: [8, 8, 20, 20, 8, 8, 8, 8, 8, 8],
     indexHeaderWidths: [8, 8, 20, 20, 8, 8],
     recordCountWidth: 16
