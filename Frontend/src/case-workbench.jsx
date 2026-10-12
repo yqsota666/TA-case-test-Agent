@@ -144,7 +144,7 @@ export function CaseWorkbench({accountControl}) {
     setNewProjectId(snapshot.project?.id || snapshot.projects?.find(project=>project.id===new URLSearchParams(location.search).get('chatId'))?.id || snapshot.projects?.[0]?.id || '');
     if(['customers','accounts','funds','holdings'].includes(new URLSearchParams(window.location.search).get('draftTable')))setDataSetId(snapshot.project?.id || null);
     setState(value => ({...value, selected:id || null,
-      sets:snapshot.projects || [],
+      sets:(snapshot.projects || []).map(project=>({...project,expanded:value.sets.find(previous=>previous.id===project.id)?.expanded ?? project.expanded})),
       workflow:snapshot.workflow || null,
       generatedData:snapshot.generatedData || null,
       drafts: id ? value.drafts : {...value.drafts, 'new:':value.drafts['new:'] || snapshot.requirement},

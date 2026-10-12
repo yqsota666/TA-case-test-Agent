@@ -40,7 +40,8 @@ if(exchange){
 window.fetch = async (url, options = {}) => {
   if (!String(url).startsWith('/live-api')) throw new Error('验收页不连接外部接口');
   const path = String(url).slice('/live-api'.length);
-  if (path === '/chats') return response({chats: [{public_id: 'fixture-project', title: '合成组件验收', status: 'ACTIVE'}]});
+  if (path === '/chats') return response({chats: [{public_id: 'fixture-project', title: '合成组件验收', status: 'ACTIVE'},...(mode==='sidebar'?[{public_id:'fixture-other',title:'另一个合成项目',status:'ACTIVE'}]:[])]});
+  if (path === '/chats/fixture-other/cases') return response({cases:[{public_id:'other-empty',title:'另一个空白Case',status:'DISCUSSING'}]});
   if (path === '/chats/fixture-project/cases') {
     if (options.method === 'POST') {
       const publicId = `new-fixture-${cases.length}`;
