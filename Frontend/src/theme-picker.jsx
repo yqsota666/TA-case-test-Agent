@@ -11,7 +11,7 @@ const ThemeContext = createContext(null);
 export const useTheme = () => useContext(ThemeContext);
 function requestedAppearance() {
   const palette = new URLSearchParams(location.search).get('palette');
-  return valid(palette) ? palette : 'liquid';
+  return valid(palette) ? palette : 'contrast';
 }
 function applyAppearance(value) {
   document.documentElement.dataset.theme = 'liquid';
@@ -30,8 +30,7 @@ export function ThemeProvider({children}) {
     setAppearance(value);
     const url = new URL(location.href);
     url.searchParams.set('theme', 'liquid');
-    if (value === 'liquid') url.searchParams.delete('palette');
-    else url.searchParams.set('palette', value);
+    url.searchParams.set('palette', value);
     history.replaceState(history.state, '', url);
   };
   useEffect(() => {

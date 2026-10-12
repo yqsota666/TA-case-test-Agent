@@ -310,7 +310,9 @@ test('regeneration carries current business content and ordinary discussion with
  ]});
  const service=createPersistedDiscussionService({repository,complete:async request=>{
   if(request.messages){
-   assert.ok(!request.messages[1].content.includes('旧契约'));assert.equal(request.messages[3].content,'普通讨论里的业务说明仍应承接');
+   assert.ok(request.messages.every(t=>!t.content.includes('旧契约')&&!t.content.includes('历史方案已保留')));
+   assert.ok(request.messages.some(t=>t.content==='原始业务要求，03日期20261006，04日期20261007'));
+   assert.ok(request.messages.some(t=>t.content==='普通讨论里的业务说明仍应承接'));
    const input=JSON.parse(request.messages.at(-1).content);
    assert.equal(input.userInput,'请整理当前方案');assert.deepEqual(input.currentProposal,{objective:latest.objective,preconditions:latest.preconditions,scenarios:latest.scenarios});
    return JSON.stringify(plan);

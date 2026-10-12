@@ -25,7 +25,7 @@ const histories = {
 };
 const cases = Object.keys(histories).map(public_id => ({public_id, title: public_id === 'comparison' ? '字段对比验收' : public_id === 'empty' ? '空白对话验收' : '只读任务验收', status: 'DISCUSSING'}));
 const response = (value, status = 200) => new Response(JSON.stringify(value), {status, headers: {'Content-Type': 'application/json'}});
-let pending = null;
+let pending = mode === 'recovered' ? {caseId:'readonly',userInput:'合成验收：恢复上次未完成的输入。',kind:'DISCUSS',turnNumber:1,images:[]} : null;
 const fixturePlan={status:'PENDING_CONFIRMATION',versionNumber:1,sourceTurnNumber:1,proposal:{objective:'合成验收：字段变化及独立读取',preconditions:['以用户提供的字段约束为依据，业务预期尚待核对。'],openQuestions:[],scenarios:Array.from({length:Number(params.get('rows'))||4},(_,i)=>({title:`字段情况 ${i+1}`,setup:`${i%2?'状态':'编码'}变化，其余条件一致`,action:'读取并比较指定字段',expected:'按已提供规则核对。'+('长说明用于验证自动换行。'.repeat(i===1?30:0)),evidence:'合成验收规则文本，仅用于界面检查。'})),exchangePlan:{status:'NOT_REQUIRED',steps:[],openQuestions:[]}}};
 let stage=mode==='plan'?'CONFIRM_PLAN_DATA':'DISCUSSION';
 const exchange=params.get('exchange');
@@ -65,7 +65,7 @@ window.fetch = async (url, options = {}) => {
     pending = null;
     return response({});
   }
-  if (endpoint === 'discussion') return response({turns: histories[caseId] || [], pending: null});
+  if (endpoint === 'discussion') return response({turns: histories[caseId] || [], pending:pending?.caseId===caseId?pending:null});
   if(endpoint==='plan/confirm'){const body=JSON.parse(options.body);if(body.versionNumber!==fixturePlan.versionNumber)return response({message:'方案已更新'},409);if(body.section==='DATA'&&stage==='CONFIRM_PLAN_DATA')stage='CONFIRM_EXPECTATIONS';else if(body.section==='EXPECTATIONS'&&stage==='CONFIRM_EXPECTATIONS'){stage='PREPARE_DATA';fixturePlan.status='LOCKED';}else return response({message:'确认顺序不正确'},409);return response({});}
   if(endpoint==='plan')return response(mode==='plan'?fixturePlan:null);
   if(endpoint==='data')return response(exchange&&exchange!=='unconfirmed'?{reviewStatus:'CONFIRMED'}:null);

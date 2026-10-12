@@ -5,6 +5,7 @@ import {DetailPanel} from './assistant-ui/detail-panel.jsx';
 import {ArtifactCard} from './assistant-ui/artifact-card.jsx';
 import {ApprovalCard} from './assistant-ui/approval-card.jsx';
 import {ThreadList} from './assistant-ui/thread-list.jsx';
+import {NameButton} from './assistant-ui/name-button.jsx';
 import './assistant-ui/elements.css';
 import {MessageImages,readMessageImages} from './message-images.jsx';
 import {GlobalDataCatalog} from './global-data-catalog.jsx';
@@ -27,10 +28,10 @@ import {discussionAction} from './discussion-actions.js';
 import {MessageBody} from './message-body.jsx';
 import {HistoricalPlan} from './historical-plan.jsx';
 import {ThemePicker} from './theme-picker.jsx';
-import {NewCaseForm,NewProjectForm} from './new-case-form.jsx';
+import {NewCaseForm,NewProjectForm,RenameForm} from './new-case-form.jsx';
 import {PlanDocument, planSummary} from './plan-document.jsx';
-import {MessageSquare, RotateCcw} from './ui-icons.jsx';
-import './node-feedback.css';
+import {RotateCcw} from './ui-icons.jsx';
+import {ReplyFeedback} from './reply-feedback.jsx';
 import {useSidebarResize} from './sidebar-resize.jsx';
 import {ThreadPrimitive} from '@assistant-ui/react';
 import {CaseAssistant} from './case-assistant.jsx';
@@ -120,6 +121,7 @@ export function CaseWorkbench({accountControl}) {
   const quote=state.quotes?.[draftKey]||'';
   const [retryOriginalInput,setRetryOriginalInput]=useState('');
   const canDiscuss=newConversation||(!state.workflow?false:state.workflow.waiting?.includes('DISCUSS'));
+  const recoveredPending=!newConversation&&!loading&&!running&&!!state.pending&&!nodeError;
   const inputDisabled=loading||!!navigationFailure||!canDiscuss||running||!!state.pending||((completed||projectReadOnly)&&!newConversation);
   const addImages=async files=>{if(inputDisabled||readingImages)return;const request=viewRequest.current;setReadingImages(true);try{const added=await readMessageImages(files,images);if(request===viewRequest.current)setImageDrafts(v=>({...v,[draftKey]:[...(v[draftKey]||[]),...added]}));}catch(e){setNotice(e.message);}finally{setReadingImages(false);}};
   const savedMessages = newConversation ? [] : state.messages[state.selected] || [];
@@ -350,15 +352,16 @@ export function CaseWorkbench({accountControl}) {
     <nav className="cw-sets" aria-label="项目与 Case">
       {state.sets.map(set => <div className={`cw-set ${set.status!=='ACTIVE'?'is-sealed':''}`} key={set.id}>
         <div className="cw-set-heading">
-          <button className="cw-set-toggle" aria-expanded={set.expanded} aria-controls={`cases-${set.id}`} onClick={() => toggleSet(set.id)}>
+          <NameButton className="cw-set-toggle" aria-expanded={set.expanded} aria-controls={`cases-${set.id}`} title="双击或按 F2 改名" onClick={() => toggleSet(set.id)} onRename={()=>setModal({type:'rename',projectId:set.id,name:set.name})}>
             <Folder size={18}/><span>{set.name}</span>
-          </button>
+          </NameButton>
           <button className="cw-icon cw-add" aria-label={`在${set.name}中新建 Case`} title="新建 Case" disabled={set.status!=='ACTIVE'} onClick={() => openNewConversation(set.id)}><SquarePen size={18}/></button>
         </div>
         <div id={`cases-${set.id}`} className={`cw-set-children ${set.expanded ? 'is-expanded' : ''}`} inert={!set.expanded}>
           <div className="cw-set-children-inner">
             <ThreadList threads={set.cases.map(item=>({id:item.id,title:item.name,time:''}))}
               activeIndex={!dataSetId&&!newConversation?set.cases.findIndex(item=>item.id===state.selected):-1}
+              onTitleRename={index=>setModal({type:'rename',projectId:set.id,caseId:set.cases[index].id,name:set.cases[index].name})}
               onActiveIndexChange={index=>selectCase(set.cases[index].id)}/>
 
 
@@ -410,10 +413,11 @@ export function CaseWorkbench({accountControl}) {
           </button>}
           {!newConversation && ['EVALUATE_RESULT','CONFIRM_RESULT','CASE_FINAL'].includes(state.workflow?.stage) && <button type="button" className="cw-result" onClick={()=>setModal({type:'review-result'})}><span className="cw-result-icon" aria-hidden="true"><FileText size={18}/></span><span className="cw-result-copy"><span className="cw-result-title">结果核对</span></span><span className="cw-result-action">查看详情<ChevronRight size={14}/></span></button>}
           {!loading && !newConversation && currentSet.id && showProjectLifecycle(currentSet.status,currentCase.status) && <ProjectLifecycleCard chatId={currentSet.id} caseId={state.selected} onChanged={refreshCurrentCase} onNavigate={async target=>{if(renderedView!==viewRequest.current)return;if(target.casePublicId)await openCatalogCase(target.chatPublicId,target.casePublicId);else {const snapshot=await liveSnapshot(target.chatPublicId,null);if(renderedView!==viewRequest.current)return;applySnapshot(snapshot);openNewConversation(target.chatPublicId);}}}/>}
-          {!newConversation && (loading||running||!!state.pending) && !nodeError && <p className="cw-reply-status" role="status">{loading?'连接讨论服务…':(state.pending?.kind||activeAction)==='PROPOSE_PLAN'?'正在整理方案…':'正在回复…'}</p>}
+          {!newConversation && (loading||running) && !nodeError && <p className="cw-reply-status" role="status">{loading?'连接讨论服务…':(state.pending?.kind||activeAction)==='PROPOSE_PLAN'?'正在整理方案…':'正在回复…'}</p>}
+          {recoveredPending && <ReplyFeedback role="status" title="上次回复未完成" message="可以重新尝试发送原输入。"><button type="button" disabled={completed||projectReadOnly} onClick={()=>submitFirstNode(state.pending.userInput,state.pending.kind||retryAction,state.pending.images||[],state.pending.userInput)}><RotateCcw size={15}/><span>重新尝试</span></button></ReplyFeedback>}
           {newConversation && (loading||running) && <p role="status">{loading?'连接讨论服务…':'正在回复…'}</p>}
           
-          {nodeError && <div className="cw-node-error cw-node-feedback" role="alert"><MessageSquare size={16} className="cw-feedback-icon"/><div className="cw-feedback-content"><p>{nodeError}</p>{navigationFailure&&<button type="button" disabled={loading} onClick={()=>navigationFailure.initial?loadInitial():navigateCase(navigationFailure.chatId,navigationFailure.caseId)}>重试加载 Case</button>}{retryInput && !completed && !['MODEL_BUDGET_EXHAUSTED','WORKFLOW_ACTION_UNAVAILABLE'].includes(nodeErrorCode) && <button type="button" disabled={running} aria-busy={running} onClick={()=>submitFirstNode(retryInput,retryAction,retryImages,retryOriginalInput||retryInput)}><RotateCcw size={15}/><span>{running?'重试中…':'重试原输入'}</span></button>}</div></div>}
+          {nodeError && <ReplyFeedback title={navigationFailure?'暂时无法加载':'本次回复未完成'} message={nodeError}>{navigationFailure&&<button type="button" disabled={loading} onClick={()=>navigationFailure.initial?loadInitial():navigateCase(navigationFailure.chatId,navigationFailure.caseId)}>重新加载</button>}{retryInput && !completed && !['MODEL_BUDGET_EXHAUSTED','WORKFLOW_ACTION_UNAVAILABLE'].includes(nodeErrorCode) && <button type="button" disabled={running} aria-busy={running} onClick={()=>submitFirstNode(retryInput,retryAction,retryImages,retryOriginalInput||retryInput)}><RotateCcw size={15}/><span>{running?'重试中…':'重新尝试'}</span></button>}</ReplyFeedback>}
         </div>
       </ThreadViewport>
       {page==='chat' && dataSet && <section className="cw-draft-page" aria-label={`${dataSet.name}的草稿数据`}>
@@ -457,6 +461,10 @@ export function CaseWorkbench({accountControl}) {
       await openCatalogCase(chatId,caseId);
       setState(v=>({...v,drafts:{...v.drafts,[caseId]:text}}));
       setImageDrafts(v=>({...v,[caseId]:images}));
+    }}/></Modal>}
+    {modal?.type === 'rename' && <Modal title={modal.caseId?'重命名Case':'重命名项目'} className="cw-row-editor" onClose={()=>{if(!creatingCase)setModal(null);}}><RenameForm target={modal} onBusy={setCreatingCase} onCancel={()=>setModal(null)} onSaved={name=>{
+      setState(value=>({...value,sets:value.sets.map(set=>set.id!==modal.projectId?set:modal.caseId?{...set,cases:set.cases.map(item=>item.id===modal.caseId?{...item,name}:item)}:{...set,name})}));
+      setModal(null);
     }}/></Modal>}
     {modal?.type === 'navigation' && <Modal title="项目" onClose={() => setModal(null)}><div className="cw-mobile-sidebar">{sidebar}</div></Modal>}
     {modal?.type === 'historical-plan' && <DetailPanel title={modal.message.draft?'方案草稿':'测试方案'} onClose={()=>setModal(null)}><HistoricalPlan message={modal.message} messages={messages} currentPlan={state.plan} onOpenCurrent={()=>{setPlanError('');setModal({type:state.workflow?.stage==='CONFIRM_EXPECTATIONS'?'expectations':'result'});}} onResume={()=>{setModal(null);composer.current?.focus();}}/></DetailPanel>}

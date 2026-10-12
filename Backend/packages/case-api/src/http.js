@@ -14,6 +14,7 @@ import {buildApplicationPackage} from '../../platform-protocol/src/application-p
 
 const taResetPath=/^\/api\/exchange\/channels\/([1-9]\d*)\/ta-reset(?:\/(confirm))?$/i;
 const chatCollectionPath=/^\/api\/chats(?:\/([0-9a-f-]{36})\/cases)?$/i;
+const renamePath=/^\/api\/chats\/([0-9a-f-]{36})(?:\/cases\/([0-9a-f-]{36}))?\/rename$/i;
 const lifecyclePath=/^\/api\/chats\/([0-9a-f-]{36})\/lifecycle(?:\/(close|retest|new-run))?$/i;
 const pathPattern = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/(discussion|discussion\/cancel|plan|plan\/data|plan\/content|plan\/confirm|data|data\/execute|data\/review|data\/confirm|application-preparation)$/i;
 const applicationPath = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/applications$/i;
@@ -83,6 +84,8 @@ export function createCaseHttpHandler({ accountModelQuotas, modelRuntime, global
     const resetRoute=Boolean(reset && ((!reset[2] && request.method==='GET') || (reset[2] && request.method==='POST')));
     const collection=chatCollectionPath.exec(pathname);
     const collectionRoute=Boolean(collection && ['GET','POST'].includes(request.method));
+    const rename=renamePath.exec(pathname);
+    const renameRoute=Boolean(rename && request.method==='POST');
     const lifecycle=chatLifecycle && lifecyclePath.exec(pathname);
     const lifecycleRoute=Boolean(lifecycle && ((!lifecycle[2] && request.method==='GET') || (lifecycle[2] && request.method==='POST')));
     const globalDataRoute=Boolean(globalDataCatalog && ((/^\/api\/data\/tables\/[a-z]+$/.test(pathname) && request.method==='GET')||(/^\/api\/data\/tables\/[a-z]+\/search$/.test(pathname)&&request.method==='POST')));
@@ -123,7 +126,7 @@ export function createCaseHttpHandler({ accountModelQuotas, modelRuntime, global
         (application && ['GET', 'POST'].includes(request.method)) ||
         (batch && request.method === 'POST') ||
         ((files || applicationPackage) && request.method === 'GET')));
-    if (!distributorDefaultsRoute && !distributorRoute && !globalDataRoute && !globalFileRoute && !resetRoute && !workflowRoute && !receiptsRoute && !collectionRoute && !lifecycleRoute && !resultRoute && !holdingsRoute && !supplementRoute && !catalog && !salesRoute && !confirmationRoute && !exchangeRoute && !parsingRoute && (!match || !['GET', 'POST', 'PATCH'].includes(request.method) ||
+    if (!renameRoute && !distributorDefaultsRoute && !distributorRoute && !globalDataRoute && !globalFileRoute && !resetRoute && !workflowRoute && !receiptsRoute && !collectionRoute && !lifecycleRoute && !resultRoute && !holdingsRoute && !supplementRoute && !catalog && !salesRoute && !confirmationRoute && !exchangeRoute && !parsingRoute && (!match || !['GET', 'POST', 'PATCH'].includes(request.method) ||
         (request.method === 'PATCH' && match?.[3] !== 'data') ||
         (['discussion/cancel','plan/data','plan/content','plan/confirm', 'data/execute', 'data/confirm'].includes(match?.[3]) && request.method !== 'POST') ||
         (match?.[3] === 'data/review' && !['GET', 'POST'].includes(request.method)) ||
@@ -165,6 +168,13 @@ export function createCaseHttpHandler({ accountModelQuotas, modelRuntime, global
         const body=await jsonBody(request);
         if(!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).length!==3||!['requestId','reason','confirmation'].every(k=>Object.hasOwn(body,k))){send(response,400,{error:'INVALID_INPUT'});return;}
         send(response,200,await taReset.confirm(token,{channelId:reset[1],...body}));return;
+      }
+      if(renameRoute){
+        if(request.headers.origin!==allowedOrigin){send(response,403,{error:'INVALID_ORIGIN'});return;}
+        if(!/^application\/json(?:\s*;|$)/i.test(request.headers['content-type']??'')){send(response,415,{error:'UNSUPPORTED_MEDIA_TYPE'});return;}
+        const body=await jsonBody(request);
+        if(!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).length!==1||!Object.hasOwn(body,'title')){send(response,400,{error:'INVALID_INPUT',message:'请填写名称'});return;}
+        send(response,200,rename[2]?await repository.renameCase(token,rename[1],rename[2],body.title):await repository.renameChat(token,rename[1],body.title));return;
       }
       if(collectionRoute){
         if(request.method==='GET'){send(response,200,collection[1]?await repository.listCases(token,collection[1]):await repository.listChats(token));return;}

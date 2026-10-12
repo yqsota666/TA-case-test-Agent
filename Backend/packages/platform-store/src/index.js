@@ -148,6 +148,32 @@ export function createCaseRepository({ transaction }) {
     });
   }
 
+  async function renameChat(token, chatPublicId, title) {
+    chatPublicId = requiredUuid(chatPublicId, 'Chat');
+    const cleanTitle = titleText(title);
+    return transaction(async db => {
+      const auth = await authenticateSession(db, token);
+      const [[chat]] = await db.execute('SELECT id FROM case_chats WHERE workspace_id=? AND public_id=? FOR UPDATE', [auth.workspace_id, chatPublicId]);
+      if (!chat) throw storeError('CHAT_NOT_FOUND', 404, '项目不存在或无法访问');
+      await db.execute('UPDATE case_chats SET title=? WHERE workspace_id=? AND id=?', [cleanTitle, auth.workspace_id, chat.id]);
+      return {publicId:chatPublicId, title:cleanTitle};
+    });
+  }
+
+  async function renameCase(token, chatPublicId, casePublicId, title) {
+    chatPublicId = requiredUuid(chatPublicId, 'Chat');
+    casePublicId = requiredUuid(casePublicId, 'Case');
+    const cleanTitle = titleText(title);
+    return transaction(async db => {
+      const auth = await authenticateSession(db, token);
+      const [[item]] = await db.execute(`SELECT k.id,k.chat_id FROM cases k JOIN case_chats c ON c.workspace_id=k.workspace_id AND c.id=k.chat_id
+        WHERE c.workspace_id=? AND c.public_id=? AND k.public_id=? FOR UPDATE`, [auth.workspace_id, chatPublicId, casePublicId]);
+      if (!item) throw storeError('CASE_NOT_FOUND', 404, 'Case不存在或无法访问');
+      await db.execute('UPDATE cases SET title=? WHERE workspace_id=? AND chat_id=? AND id=?', [cleanTitle, auth.workspace_id, item.chat_id, item.id]);
+      return {publicId:casePublicId, title:cleanTitle};
+    });
+  }
+
   async function saveSopProposal(token, chatPublicId, casePublicId, proposal, options = {}) {
     chatPublicId = requiredUuid(chatPublicId, 'Chat');
     casePublicId = requiredUuid(casePublicId, 'Case');
@@ -832,7 +858,7 @@ export function createCaseRepository({ transaction }) {
     });
   }
 
-  return Object.freeze({ createChat, listChats, assertCaseWritable, createCase, listCases, saveSopProposal,
+  return Object.freeze({ createChat, listChats, renameChat, renameCase, assertCaseWritable, createCase, listCases, saveSopProposal,
     getLatestSopProposal, confirmSopProposal, readCaseDiscussion, beginCaseDiscussionTurn,
     finishCaseDiscussionTurn, abandonCaseDiscussionTurn, finishCasePlanProposal, checkpointCasePlanProposal,
     generatedData, generatedDataCatalog, executeGeneratedData, editGeneratedData,

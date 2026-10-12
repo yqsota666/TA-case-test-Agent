@@ -4,7 +4,7 @@ import { withDiscussionChannels } from './draft-preparation-policy.js';
 import {isDeepStrictEqual} from 'node:util';
 import {validateDiscussionImages,analyzeDiscussionImages,imageDiscussionContent,IMAGE_ONLY_INPUT} from './discussion-images.js';
 import { definePlanContract, displayPlanContract } from './plan-contract.js';
-import { createDiscussionGraph, discussTurn, proposeDiscussionPlan } from './discussion-graph.js';
+import { createDiscussionGraph, discussTurn, proposeDiscussionPlan, HISTORICAL_PLAN_CONTEXT } from './discussion-graph.js';
 
 export function createPersistedDiscussionService({ repository, complete, visionComplete, admit, readChannels, readContext, routeComplete }) {
   if (!repository || typeof repository.readCaseDiscussion !== 'function' ||
@@ -49,8 +49,8 @@ export function createPersistedDiscussionService({ repository, complete, visionC
     const channels=readChannels ? (await readChannels(token)).channels : undefined;
     const existingPlan=await repository.getLatestSopProposal?.(token,chatPublicId,casePublicId);
     const snapshot=await readContext?.(token,{chatPublicId,casePublicId});
-    const result = await discussTurn(graphFor(history,{onDelta,onReset,signal,channels,discussionContext:{planAvailable:Boolean(existingPlan && existingPlan.status!=='DRAFT'),snapshot,needsClarification}}), { priorTurns: history.turns.map(t=>({...t,content:imageDiscussionContent(t.content,t.imageAnalysis)})), userInput: imageDiscussionContent(input,imageAnalysis) });
-    if(offerPlan && result.reply.length<=3900){result.reply+='\n下一步可以把当前讨论整理成审阅方案。你可以直接说“帮我生成这个方案”。';result.promptVersion='discussion-offer-plan-v1';}
+    const result = await discussTurn(graphFor(history,{onDelta,onReset,signal,channels,discussionContext:{planAvailable:Boolean(existingPlan && existingPlan.status!=='DRAFT'),snapshot,needsClarification,offerPlan}}), { priorTurns: history.turns.map(t=>({...t,content:imageDiscussionContent(t.content,t.imageAnalysis)})), userInput: imageDiscussionContent(input,imageAnalysis) });
+    if(offerPlan)result.promptVersion='discussion-offer-plan-v1';
     signal?.throwIfAborted();
     const saved = await repository.finishCaseDiscussionTurn(token, chatPublicId, casePublicId, {
       turnNumber: pending.turnNumber,
@@ -96,7 +96,7 @@ export function createPersistedDiscussionService({ repository, complete, visionC
     const checkpoint=history.pending?latest:null;
     const currentProposal=latest?.proposal?Object.fromEntries(['objective','preconditions','scenarios'].map(key=>[key,latest.proposal[key]])):undefined;
     const priorTurns=history.turns.map(t=>({...t,content:t.role==='assistant'&&t.kind==='PROPOSE_PLAN'?
-      '历史方案已保留；本轮业务内容以当前已保存草稿与用户消息为准，历史生成不证明确认或执行。':imageDiscussionContent(t.content,t.imageAnalysis)}));
+      HISTORICAL_PLAN_CONTEXT:imageDiscussionContent(t.content,t.imageAnalysis)}));
     const result=checkpoint?.status==='DRAFT' && checkpoint.sourceTurnNumber===pending.turnNumber && !checkpoint.proposal.contract?
       {proposal:checkpoint.proposal,reply:displayPlanProposal(checkpoint.proposal),phase:'PROPOSAL_PENDING',promptVersion:'plan-proposal-draft-v12'}:
       await proposeDiscussionPlan(graphFor(history,{signal,channels,currentProposal}), { priorTurns, userInput: modelInput });
