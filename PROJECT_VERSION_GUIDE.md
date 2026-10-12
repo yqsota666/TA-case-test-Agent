@@ -1,5 +1,9 @@
 # 项目版本与工作树索引
 
+## 方案触发修复（2026-10-12，已替换5199）
+
+按用户“替换到5199”，当前统一入口 http://127.0.0.1:5199/?theme=liquid ，前后端均运行 `/Users/apple/Documents/ChatGPT/gf-worktrees/plan-trigger-fix`、分支 `codex/plan-trigger-fix`，整合提交 `866c0d83`。保留当前Chat交互修复 `1c5ad1b6` 的全部前端改动，接入 `03186c83` 与 `5b97f5db` 的查询保留待审阅状态、真实模型方案原文绑定及旧失败污染修复。API仍为3106，继续原 `ta_case_agent_chain`，未迁入5220合成数据、未迁移数据库或重写历史Case/方案。切换前后业务记录数量及截图原Case各方案摘要一致；47项常规前端测试及构建通过，先前后端477通过/0失败/22默认跳过，专项MySQL及真实Sophnet按钮/文字生成已通过。3项既有旧SSR测试仍失败，未计为通过。说明 `docs/方案触发与询问退回修复.md`，运行记录 `.context/plan-trigger/5199-pids.json`；无push/PR。旧入口说明为历史记录，后续以本条和实时Git/进程为准。
+
 ## Chat 交互修复（2026-10-12，本地5199待验收）
 
 当前5199前端运行 `codex/chat-interaction-fixes`，工作树 `/Users/apple/.codex/worktrees/fixed-workspace-scroll/gf`，从最新整合aa4a96ff连续修复。包含全部已整合平台、筛选及历史方案改动，修复Case导航/旧确认串页、跨Case运行状态、执行阶段无效发送、窄屏焦点，以及独立复审发现的首屏缓存和旧文件刷新竞态。47项前端测试、六尺寸滚动、8组专项、双确认/失败恢复、文件入口及构建通过；本地skill独立复审通过。入口 http://localhost:5199/?theme=liquid ，API3106及数据库不变。说明 `docs/Chat交互修复.md`，证据 `.context/chat-interaction`。没有真实业务写入或模型调用，无push/PR。旧条目的分支/入口为历史记录，以本条及实时Git/进程为准。
