@@ -360,7 +360,7 @@ export function CaseWorkbench({accountControl}) {
           <div className="cw-set-children-inner">
             <ThreadList threads={set.cases.map(item=>({id:item.id,title:item.name,time:''}))}
               activeIndex={!dataSetId&&!newConversation?set.cases.findIndex(item=>item.id===state.selected):-1}
-              onRename={index=>setModal({type:'rename',projectId:set.id,caseId:set.cases[index].id,name:set.cases[index].name})}
+              onTitleRename={index=>setModal({type:'rename',projectId:set.id,caseId:set.cases[index].id,name:set.cases[index].name})}
               onActiveIndexChange={index=>selectCase(set.cases[index].id)}/>
 
 

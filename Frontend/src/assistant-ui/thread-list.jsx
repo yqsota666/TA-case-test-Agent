@@ -3,10 +3,11 @@ import { NameButton } from './name-button.jsx';
 import { PencilIcon, Trash2Icon } from "lucide-react";
 import { cn } from "./element-utils.js";
 import { field, mono } from "./element-utils.js";
-export function ThreadList({ threads, activeIndex, onActiveIndexChange, onRename, onDelete, className, ...props }) {
+export function ThreadList({ threads, activeIndex, onActiveIndexChange, onTitleRename, onRename, onDelete, className, ...props }) {
     return (<div data-slot="thread-list" className={cn("flex w-full max-w-[240px] flex-col gap-0.5", className)} {...props}>
       {threads.map((thread, i) => {
             const active = i === activeIndex;
+            const renameTitle = onTitleRename || onRename;
             const hasActions = onRename !== undefined || onDelete !== undefined;
             const hasTwoActions = onRename !== undefined && onDelete !== undefined;
             const rowClassName = cn("group relative flex w-full items-center rounded-xl text-[13.5px] transition-colors", active
@@ -35,7 +36,7 @@ export function ThreadList({ threads, activeIndex, onActiveIndexChange, onRename
             </span>
           </>);
             return (<div key={thread.id} className={rowClassName}>
-            {onActiveIndexChange ? (<NameButton type="button" aria-current={active ? "page" : undefined} onClick={() => onActiveIndexChange(i)} onRename={onRename?()=>onRename(i):undefined} title={onRename?'双击或按 F2 改名':undefined} className={contentClassName}>
+            {onActiveIndexChange ? (<NameButton type="button" aria-current={active ? "page" : undefined} onClick={() => onActiveIndexChange(i)} onRename={renameTitle?()=>renameTitle(i):undefined} title={renameTitle?'双击或按 F2 改名':undefined} className={contentClassName}>
                 {content}
               </NameButton>) : (<div aria-current={active || undefined} className={contentClassName}>
                 {content}
