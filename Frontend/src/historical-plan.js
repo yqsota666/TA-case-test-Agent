@@ -17,3 +17,40 @@ export function readHistoricalPlan(text='') {
   }
   return proposal.objective&&proposal.scenarios.length&&proposal.scenarios.every(s=>s.setup&&s.action&&s.expected)?{proposal,notes,schedule}:null;
 }
+
+// Read literal values only. Unsupported wording stays available in the full conditions.
+const reviewFields=[
+  ['销售商',/销售商\s*(\d+(?:[（(][^）)]+[）)])?)/u],
+  ['基金',/(?:基金代码|基金)\s*(\d{6})(?!\d)/u],
+  ['业务日期',/业务日期\s*[：:]?\s*(\d{8})(?!\d)/u],
+  ['申请金额',/申请金额\s*[：:]?\s*(\d+(?:\.\d+)?\s*元)/u],
+  ['份额类别',/份额类别\s*[：:]?\s*([A-Za-z0-9])(?![A-Za-z0-9])/u],
+  ['模拟客户',/新模拟客户\s*[：:]?\s*([^，,；;。\s]+)/u],
+  ['净值',/净值\s*[：:]?\s*(\d+(?:\.\d+)?)(?![\d.])/u],
+  ['前收费',/前收费\s*[：:]?\s*(\d+(?:\.\d+)?%?)(?![\d.])/u],
+];
+export function historicalReviewFacts(setup='',preconditions=[]) {
+  const clauses=setup.split(/[，,；;。\n]/).map(s=>s.trim()).filter(Boolean);
+  const facts=[];
+  for(const [label,pattern] of reviewFields){
+    for(const clause of clauses){
+      if(/不是|不使用|不采用|不得|未知|未明确|待确认|待定|留空|例如|比如|可能|或者/.test(clause))continue;
+      const match=pattern.exec(clause);
+      if(!match||facts.some(f=>f.label===label&&f.value===match[1]))continue;
+      const value=match[1];
+      const simulated=label==='模拟客户'||(['净值','前收费'].includes(label)&&preconditions.some(s=>s.includes('【模拟假设】')&&s.includes(value)&&s.includes(label)));
+      facts.push({label,value,simulated});
+    }
+  }
+  // Other case types may already use explicit, arbitrary field labels.
+  for(const clause of clauses){
+    const match=/^((?!在|同时)[\p{L}\p{N}_/（）() -]{1,16})[：:]\s*(.+)$/u.exec(clause);
+    if(match&&!facts.some(f=>f.label===match[1]))facts.push({label:match[1],value:match[2],simulated:false});
+  }
+  return facts;
+}
+
+export function historicalPlanStatus(message,messages=[]) {
+  const index=messages.findIndex(m=>m.id===message.id);
+  return {failed:/执行结构尚未通过校验/.test(message.text||''),hasLaterPlan:index>=0&&messages.slice(index+1).some(m=>m.result===true)};
+}

@@ -423,7 +423,7 @@ export function CaseWorkbench({accountControl}) {
       setImageDrafts(v=>({...v,[caseId]:images}));
     }}/></Modal>}
     {modal?.type === 'navigation' && <Modal title="项目" onClose={() => setModal(null)}><div className="cw-mobile-sidebar">{sidebar}</div></Modal>}
-    {modal?.type === 'historical-plan' && <DetailPanel title="历史测试方案" onClose={()=>setModal(null)}><HistoricalPlan message={modal.message}/></DetailPanel>}
+    {modal?.type === 'historical-plan' && <DetailPanel title="历史测试方案" onClose={()=>setModal(null)}><HistoricalPlan message={modal.message} messages={messages} currentPlan={state.plan} onOpenCurrent={()=>{setPlanError('');setModal({type:state.workflow?.stage==='CONFIRM_EXPECTATIONS'?'expectations':'result'});}} onResume={()=>{setModal(null);composer.current?.focus();}}/></DetailPanel>}
     {modal?.type === 'expectations' && state.plan && <DetailPanel title="确认预期结果" onClose={()=>setModal(null)}><ExpectationReview key={state.selected+state.plan.versionNumber} plan={state.plan} busy={planBusy||running} error={planError} onConfirm={()=>confirmPlan('EXPECTATIONS')} onSaveContent={savePlanContent}/></DetailPanel>}
     {modal?.type === 'result' && <DetailPanel title="测试方案" onClose={() => setModal(null)}>
       {state.plan && <PlanDocument key={state.selected+state.plan.versionNumber} proposal={state.plan.proposal} taskProgress={state.workflow?.tasks} locked={state.plan.status==='LOCKED'} onSaveOperations={async applications=>{

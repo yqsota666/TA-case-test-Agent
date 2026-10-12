@@ -20,3 +20,23 @@ test('long noncomparison content is preserved and appended raw contract is not s
  assert.equal(result.proposal.scenarios[0].setup,content);
  assert.deepEqual(result.notes,[]);
 });
+
+test('history navigation requires an actual later plan message, not just any current plan',async()=>{
+ const {historicalPlanStatus}=await import('../src/historical-plan.js');
+ const old={id:'old',text:'执行结构尚未通过校验。'},current={id:'new',result:true};
+ assert.deepEqual(historicalPlanStatus(old,[old,current]),{failed:true,hasLaterPlan:true});
+ assert.deepEqual(historicalPlanStatus(old,[current,old]),{failed:true,hasLaterPlan:false});
+ assert.equal(historicalPlanStatus(old,[{id:'reply',text:'已整理'}]).hasLaterPlan,false);
+ assert.equal(historicalPlanStatus({id:'draft',draft:true,text:'草稿'},[]).failed,false);
+});
+test('literal review fields preserve values, conflicts, and unrelated fields without guessed defaults',async()=>{
+ const {historicalReviewFacts}=await import('../src/historical-plan.js');
+ const facts=historicalReviewFacts('销售商305，基金代码123456，业务日期20261012，申请金额18.25元，申请金额20.00元，净值1.20000000，前收费0，TA账号未知时留空',['【模拟假设】净值1.20000000、前收费0']);
+ assert.deepEqual(facts.filter(f=>f.label==='申请金额').map(f=>f.value),['18.25元','20.00元']);
+ assert.equal(facts.find(f=>f.label==='净值').simulated,true);
+ assert.equal(facts.some(f=>f.label==='TA账号'),false);
+ assert.deepEqual(historicalReviewFacts('温度：37度；处理方式：人工复核'),[{label:'温度',value:'37度',simulated:false},{label:'处理方式',value:'人工复核',simulated:false}]);
+ assert.deepEqual(historicalReviewFacts('未知净值1.0；例如申请金额10元；不是基金123456'),[]);
+ assert.deepEqual(historicalReviewFacts('无可识别字段'),[]);
+ assert.ok(historicalReviewFacts('基金123456；处理方式：人工复核').some(f=>f.label==='处理方式'&&f.value==='人工复核'));
+});
