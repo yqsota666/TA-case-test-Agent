@@ -9,13 +9,14 @@ export function createSophnetCompletion({
 } = {}) {
   if (!client && !apiKey) throw new Error('SOPHNET_API_KEY is required');
   const sdk = client ?? new OpenAI({ apiKey, baseURL, maxRetries: 0, timeout: 90000 });
-  return async ({ system, user, messages, reasoningEffort, thinkingMode, maxTokens, onDelta, signal, tools, toolChoice }) => {
+  return async ({ system, user, messages, reasoningEffort, thinkingMode, maxTokens, onDelta, signal, tools, toolChoice, timeoutMs }) => {
     if ((user === undefined) === (messages === undefined)) {
       throw new TypeError('provide either user or messages');
     }
     if(reasoningEffort!==undefined && !['low','high','max'].includes(reasoningEffort))throw new TypeError('invalid reasoningEffort');
     if(thinkingMode!==undefined && !['enabled','disabled'].includes(thinkingMode))throw new TypeError('invalid thinkingMode');
     if(tools && onDelta)throw new TypeError('tool decisions cannot stream text');
+    if(timeoutMs!==undefined && (!Number.isSafeInteger(timeoutMs)||timeoutMs<1||timeoutMs>300000))throw new TypeError('invalid model timeout');
     const outputLimit=maxTokens??defaultMaxTokens;
     if(outputLimit!==undefined && (!Number.isSafeInteger(outputLimit)||outputLimit<1))throw new TypeError('invalid maxTokens');
     const limitedTokens=defaultMaxTokens===undefined?outputLimit:Math.min(outputLimit,defaultMaxTokens);
@@ -30,7 +31,7 @@ export function createSophnetCompletion({
       ...(limitedTokens===undefined?{}:{max_tokens:limitedTokens}),
       messages:providerMessages,
       ...(onDelta?{stream:true,stream_options:{include_usage:true}}:{}),
-    },signal?{signal}:undefined);
+    },signal||timeoutMs?{...(signal?{signal}:{}),...(timeoutMs?{timeout:timeoutMs}:{})}:undefined);
     if(onDelta){
       let content='',usage;
       for await(const chunk of response){

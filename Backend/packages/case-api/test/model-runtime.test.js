@@ -53,3 +53,17 @@ test('vision inputs have a nonzero reservation and oversized contexts fail befor
   const f=setup();await assert.rejects(f.runtime.run({token:'t'},()=>f.complete({system:'s',user:'x'.repeat(600001)})),{code:'MODEL_INPUT_TOO_LARGE'});
   assert.equal(f.reserves.length,0);
 });
+
+test('larger plan output is explicitly reserved while ordinary responses keep the previous default',async()=>{
+ const requests=[],reserves=[];
+ const runtime=createModelRuntime({repository:{reserve:async(_t,input)=>{reserves.push(input);return {id:'r'};},settle:async()=>{}},
+  completionFactory:options=>createSophnetCompletion({...options,client:{chat:{completions:{create:async(request,options)=>{requests.push({request,options});return {choices:[{message:{content:'ok'}}]};}}}}})});
+ const complete=runtime.completion();
+ await runtime.run({token:'t'},async()=>{
+  await complete({system:'s',user:'u'});
+  await complete({system:'s',user:'u',maxTokens:20000,timeoutMs:180000});
+ });
+ assert.deepEqual(requests.map(r=>r.request.max_tokens),[8192,20000]);
+ assert.equal(requests[1].options.timeout,180000);
+ assert.equal(reserves[1].reservedTokens-reserves[0].reservedTokens,11808);
+});

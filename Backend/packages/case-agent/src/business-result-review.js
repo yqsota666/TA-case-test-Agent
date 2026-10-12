@@ -8,7 +8,7 @@ export async function interpretBusinessResults(snapshot,complete,protocolChecks=
  const input={businessExpectations:snapshot.plan.contract.businessExpectations,scenarios:snapshot.plan.scenarios,result:{...output,evidenceId:'business-output:'+output.id},protocolChecks};
  const user=JSON.stringify(input);
  if(Buffer.byteLength(user,'utf8')>128*1024)return {checks:[],uncertainties:['业务结果与预期内容过长，请分开核对']};
- const text=await complete({system:BUSINESS_RESULT_PROMPT,user,reasoningEffort:'low'});
+ const text=await complete({system:BUSINESS_RESULT_PROMPT,user,reasoningEffort:'low',thinkingMode:'disabled'});
  try{return Proposal.parse(JSON.parse(text));}catch{return {checks:[],uncertainties:['业务结果核对格式无效，请重新核对']};}
 }
 export function mergeBusinessResults(snapshot,base,proposal){

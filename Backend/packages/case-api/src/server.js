@@ -47,7 +47,7 @@ initializeBackendMetrics();
 const pool = mysql.createPool({ ...migrationConfig(), connectionLimit: 8 });
 const transaction = createMeasuredTransaction(pool);
 const accountModelQuotas=createAccountModelQuotas({transaction,defaultDaily:modelBudgetConfig().userDaily});
-const modelRuntime=createModelRuntime({repository:createModelConsumptionRepository({transaction}),maxCalls:Number(process.env.MODEL_RUN_MAX_CALLS||8),maxInput:Number(process.env.MODEL_MAX_INPUT_TOKENS||600000),maxOutput:Number(process.env.MODEL_MAX_OUTPUT_TOKENS||8192)});
+const modelRuntime=createModelRuntime({repository:createModelConsumptionRepository({transaction}),maxCalls:Number(process.env.MODEL_RUN_MAX_CALLS||8),maxInput:Number(process.env.MODEL_MAX_INPUT_TOKENS||600000),maxOutput:Number(process.env.MODEL_MAX_OUTPUT_TOKENS||20000)});
 const accountAuth=createAccountAuth({transaction,initializeWorkspace:localWorkspaceInitializer(migrationConfig()),allowDemo:Boolean(localWorkspaceInitializer(migrationConfig()))});
 const taReset=createTaResetRepository({transaction});
 const chatLifecycle=createChatLifecycleRepository({transaction});

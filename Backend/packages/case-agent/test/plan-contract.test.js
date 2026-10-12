@@ -231,3 +231,11 @@ test('broad protocol evidence quotes never erase independent business expectatio
  assert.deepEqual(businessExpectationsFor(p,assertions),[{scenarioIndex:0,expectedQuote:quote}]);
  assert.deepEqual(businessExpectationsFor({scenarios:[{expected:'确认金额100元'}]},assertions),[]);
 });
+
+test('model distributor codes cannot become application evidence channel IDs',async()=>{
+ const {version,protocolVersion,dataSpecification,...derived}=structuredClone(contract);
+ derived.expectations.forEach(e=>e.selector.channelId='227');
+ const result=await definePlanContract(async()=>JSON.stringify(derived),plan,[],dataSpecification);
+ assert.ok(result.contract.expectations.every(e=>e.selector.channelId===null));
+ assert.equal(validPlanContract(result.contract,plan),true);
+});

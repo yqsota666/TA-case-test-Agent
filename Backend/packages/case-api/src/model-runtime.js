@@ -20,7 +20,7 @@ export function estimateModelInput(messages) {
   return tokens;
 }
 
-export function createModelRuntime({repository,maxCalls=8,maxInput=600000,maxOutput=8192,completionFactory=createSophnetCompletion}) {
+export function createModelRuntime({repository,maxCalls=8,maxInput=600000,maxOutput=20000,completionFactory=createSophnetCompletion}) {
   for(const value of [maxCalls,maxInput,maxOutput])if(!Number.isSafeInteger(value)||value<1)throw new TypeError('invalid model runtime limit');
   const context=new AsyncLocalStorage();
   const govern=async({model,messages,maxTokens,invoke})=>{
@@ -45,6 +45,9 @@ export function createModelRuntime({repository,maxCalls=8,maxInput=600000,maxOut
   };
   return {
     run:(scope,action)=>context.run({...scope,calls:0},action),
-    completion:options=>completionFactory({...options,govern,maxTokens:maxOutput}),
+    completion:options=>{
+      const complete=completionFactory({...options,govern,maxTokens:maxOutput});
+      return request=>complete({...request,maxTokens:request.maxTokens??Math.min(8192,maxOutput)});
+    },
   };
 }
