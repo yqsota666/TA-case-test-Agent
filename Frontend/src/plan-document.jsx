@@ -15,6 +15,7 @@ export function normalizePlan(proposal={}) {
 }
 export function planSummary(proposal,status) {
   if(status==='LOCKED')return '方案已确认。可以打开查看详情。';
+  if(status==='DRAFT')return '测试方案已有内容，还需完善后确认。可以打开查看或直接修改。';
   return '方案已整理。可以打开查看、修改，确认后再继续。';
 }
 const dataTables={customers:{title:'客户',columns:[['name','名称'],['investorType','客户类型'],['simulatedBalance','模拟余额']]},accounts:{title:'账户',columns:[['customerIndex','所属客户'],['branchCode','开户网点']]},funds:{title:'基金',columns:[['fundCode','基金代码'],['fundName','名称'],['shareClass','份额类别'],['nav','单位净值']]},holdings:{title:'持仓',columns:[['accountIndex','所属账户'],['fundIndex','基金'],['totalVolume','初始份额']]}};
@@ -48,11 +49,12 @@ export function PlanDocument({proposal,onSave,onSaveContent,onSaveOperations,dat
   return <div className="cw-plan-shell">
     <div className="cw-plan-document" tabIndex={0} role="region" aria-label="方案内容">
       {plan.objective&&<p className="cw-plan-objective">{plan.objective}</p>}
-      {plan.scenarios.length>0?<PlanComparison plan={plan} editable={editable} onSaveContent={onSaveContent}/>:<p>暂无测试项。</p>}
+      {plan.scenarios.length>0?<PlanComparison plan={plan} sourceScenarios={proposal.scenarios} editable={editable} onSaveContent={onSaveContent}/>:<p>暂无测试项。</p>}
       {questions.length>0&&<section className="cw-plan-questions"><h3>还需完善</h3><ul>{questions.map(item=><li key={item}>{item}</li>)}</ul></section>}
-      {(plan.dataSpecification||dataApproval)&&<details className="cw-review-common cw-plan-data-details"><summary>准备数据<ChevronRight size={15}/></summary>{plan.dataSpecification&&<PreparedPlanData data={plan.dataSpecification} onSave={onSave} editable={editable}/>} {dataApproval}</details>}
+      {plan.dataSpecification&&<details className="cw-review-common cw-plan-data-details"><summary>准备数据<ChevronRight size={15}/></summary><PreparedPlanData data={plan.dataSpecification} onSave={onSave} editable={editable}/></details>}
       <details className="cw-review-common cw-plan-data-details"><summary>执行与文件安排<ChevronRight size={15}/></summary><OperationTasks proposal={proposal} progress={taskProgress} locked={locked} editable={editable} onSave={onSaveOperations}/><FileSchedule exchangePlan={proposal.exchangePlan} ordered={proposal.contract?.version===4}/></details>
     </div>
+    {dataApproval}
   </div>;
 }
 
