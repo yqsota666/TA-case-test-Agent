@@ -3,44 +3,46 @@ import {Palette, Check} from './ui-icons.jsx';
 import './theme-picker.css';
 import './palette-preview.css';
 
-const palette = new URLSearchParams(location.search).get('palette');
-if (['neutral', 'warm', 'contrast'].includes(palette)) document.documentElement.dataset.palette = palette;
-
 export const themes = [
-  ['liquid','液态玻璃'], ['prism','棱镜玻璃'], ['opal','欧泊玻璃'], ['glacier','冰晶玻璃'],
-  ['aurora','光谱玻璃'], ['porcelain','瓷白'], ['folio','书页'], ['jade','青玉'],
-  ['copper','暖铜'], ['obsidian','黑曜石'],
-  ['graphite','石墨黑'], ['abyss','深海蓝'],
+  ['liquid','蓝色玻璃'], ['neutral','灰白'], ['warm','暖灰'], ['contrast','深灰侧栏'],
 ];
-const preferenceKey = 'case-agent-appearance';
 const valid = value => themes.some(([id]) => id === value);
 const ThemeContext = createContext(null);
 export const useTheme = () => useContext(ThemeContext);
+function requestedAppearance() {
+  const palette = new URLSearchParams(location.search).get('palette');
+  return valid(palette) ? palette : 'liquid';
+}
+function applyAppearance(value) {
+  document.documentElement.dataset.theme = 'liquid';
+  if (value === 'liquid') delete document.documentElement.dataset.palette;
+  else document.documentElement.dataset.palette = value;
+}
+applyAppearance(requestedAppearance());
 export function initialTheme() {
-  const requested = new URLSearchParams(location.search).get('theme');
-  if (valid(requested)) return requested;
   return 'liquid';
 }
-export function ThemeProvider({initial, children}) {
-  const [theme, setTheme] = useState(initial);
+export function ThemeProvider({children}) {
+  const [appearance, setAppearance] = useState(requestedAppearance);
   const choose = value => {
     if (!valid(value)) return;
-    document.documentElement.dataset.theme = value;
-    setTheme(value);
-    try {localStorage.setItem(preferenceKey, value);} catch {}
+    applyAppearance(value);
+    setAppearance(value);
     const url = new URL(location.href);
-    url.searchParams.set('theme', value);
+    url.searchParams.set('theme', 'liquid');
+    if (value === 'liquid') url.searchParams.delete('palette');
+    else url.searchParams.set('palette', value);
     history.replaceState(history.state, '', url);
   };
   useEffect(() => {
-    const restore = () => {const value = initialTheme(); document.documentElement.dataset.theme = value; setTheme(value);};
+    const restore = () => {const value = requestedAppearance(); applyAppearance(value); setAppearance(value);};
     window.addEventListener('popstate', restore);
     return () => window.removeEventListener('popstate', restore);
   }, []);
-  return <ThemeContext.Provider value={{theme, choose}}>{children}</ThemeContext.Provider>;
+  return <ThemeContext.Provider value={{theme:'liquid', appearance, choose}}>{children}</ThemeContext.Provider>;
 }
 export function ThemePicker() {
-  const {theme, choose} = useTheme();
+  const {appearance, choose} = useTheme();
   const [open, setOpen] = useState(false);
   const root = useRef(null);
   const trigger = useRef(null);
@@ -61,8 +63,8 @@ export function ThemePicker() {
   }}>
     <button type="button" className="cw-appearance-trigger" ref={trigger} aria-label="选择外观" title="选择外观" aria-expanded={open} onClick={() => setOpen(value => !value)}><Palette size={17}/></button>
     {open && <div className="cw-appearance-panel" role="group" aria-label="外观">
-      {themes.map(([id,label]) => <button key={id} type="button" ref={id === theme ? selected : null} aria-pressed={id === theme} onClick={() => {choose(id); setOpen(false); trigger.current?.focus({preventScroll:true});}}>
-        <span className={`cw-appearance-swatch cw-swatch-${id}`} aria-hidden="true"/><span>{label}</span>{id === theme && <Check size={14}/>}</button>)}
+      {themes.map(([id,label]) => <button key={id} type="button" ref={id === appearance ? selected : null} aria-pressed={id === appearance} onClick={() => {choose(id); setOpen(false); trigger.current?.focus({preventScroll:true});}}>
+        <span className={`cw-appearance-swatch cw-swatch-${id}`} aria-hidden="true"/><span>{label}</span>{id === appearance && <Check size={14}/>}</button>)}
     </div>}
   </div>;
 }
