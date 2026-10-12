@@ -1,5 +1,12 @@
 # 项目版本与工作树索引
 
+## 产品修复收拢核对（2026-10-12，已接入5199）
+
+按用户“所有有意义的fix都merge到5199”，以实时ca854a8e核对全部本地分支/工作树。已有聊天、搜索、四外观、双确认、产物详情及Agent全链路修复均保留；旧分支等价补丁不重复覆盖。补入独立数字排序修复d57fa896，审计记录feb241b7，本地快进到codex/plan-trigger-fix。5199仍为原工作树；API3106已重启为PID28337，原进程配置仅在内存继承，数据库ta_case_agent_chain，无迁移。
+
+后端496通过/27可选跳过，前端55通过，真实MySQL业务结果专项1通过且事务回滚；临时表以实际仓储SQL验证9/10排序修复。5199 HTTP200及API未登录401正常。FFReader独立解析门槛为待单独验收的新功能，未混入本轮修复；独立Demo/视觉试验不合并。说明docs/5199修复收拢核对.md，运行记录.context/fix-consolidation/runtime.json。未调用模型、push或PR。回滚排序提交后重启API即可。
+
+
 ## Agent九文件与同包回传修复（2026-10-12，已接入5199）
 
 按用户“合并到5199，然后使用本地的review skill check一下现在的5199”，codex/agent-ta-full-flow的fbb6850a、3fc47e4b、33780e84与实时95a357a8在独立树整合为ee09cfe0，再本地快进接入codex/plan-trigger-fix。5199继续从/Users/apple/Documents/ChatGPT/gf-worktrees/plan-trigger-fix运行，前端热更新、API3106重启，数据库仍ta_case_agent_chain，无迁移。现存227通道67显式配置同步为九文件及业务日期目录，其他通道及历史ZIP不改。
