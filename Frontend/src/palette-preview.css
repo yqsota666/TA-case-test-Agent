@@ -60,3 +60,8 @@ html[data-theme=liquid][data-palette=contrast] .cw-shell .cw-sidebar {
   --study-selected-shadow:inset 0 1px rgb(255 255 255 / 8%);
   color:var(--cw-ink);
 }
+html[data-theme=liquid][data-palette=contrast] .cw-appearance-panel {
+  --study-ink:var(--preview-ink);--study-muted:var(--preview-muted);
+  --study-hover:var(--preview-bubble);--study-focus:var(--preview-accent);
+  color:var(--preview-ink);
+}

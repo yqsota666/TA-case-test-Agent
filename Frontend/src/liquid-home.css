@@ -7,10 +7,10 @@ html[data-theme=liquid] .cw-shell.cw-liquid-home {
   --study-selected:linear-gradient(115deg,#d8eaf0,#eaf4f7);--study-on-selected:#104e64;
   --study-selected-shadow:inset 0 1px 0 #fff,0 3px 8px rgb(36 89 110 / 6%);
   --cw-selected:var(--study-selected);--cw-selected-ink:var(--study-on-selected);
-  background:radial-gradient(ellipse at 96% 0%,rgb(169 210 236 / 46%),transparent 52%),radial-gradient(ellipse at 7% 100%,rgb(170 213 211 / 23%),transparent 48%),#f7fafc;
+  background:radial-gradient(ellipse at 96% 0%,rgb(169 210 236 / 24%),transparent 52%),radial-gradient(ellipse at 7% 100%,rgb(170 213 211 / 12%),transparent 48%),#f7fafc;
   color:var(--study-ink);
 }
-html[data-theme=liquid] .cw-liquid-home .cw-sidebar {background:linear-gradient(160deg,rgb(251 254 255 / 83%),rgb(230 242 247 / 79%));box-shadow:inset -1px 0 0 rgb(255 255 255 / 90%),1px 0 0 var(--cw-line);}
+html[data-theme=liquid] .cw-liquid-home .cw-sidebar {background:linear-gradient(160deg,rgb(230 240 248 / 96%),rgb(217 234 244 / 94%));box-shadow:inset -1px 0 0 rgb(255 255 255 / 90%),1px 0 0 rgb(46 91 119 / 19%);}
 html[data-theme=liquid] .cw-liquid-home .cw-header {border-bottom:1px solid rgb(46 91 119 / 7%);}
 html[data-theme=liquid] .cw-liquid-home .cw-case.is-selected,
 html[data-theme=liquid] .cw-liquid-home [data-slot=thread-list] button[aria-current=page] {position:relative;background:var(--study-selected);color:var(--study-on-selected)!important;box-shadow:var(--study-selected-shadow);font-weight:600!important;}
