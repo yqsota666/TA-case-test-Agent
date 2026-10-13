@@ -16,7 +16,7 @@ test('unplanned exchange retains structured questions without a second narrative
  const graph=createDiscussionGraph({complete:async args=>{calls.push(args);return calls.length===1?JSON.stringify({...base,exchangePlan:{status:'UNPLANNED',steps:[],openQuestions:['申请和回传分别是哪天？']}}):'当前理解：已有确认账户，需要申购测试。\n建议先测：按确认日期发送03并接收04。\n请你确认：申请和回传分别是哪一天？';}});
  assert.ok(!graph.getGraph().nodes.ask_exchange_timing);
  const result=await proposeDiscussionPlan(graph,{priorTurns,userInput:'给我计划'});
- assert.equal(calls.length,1);assert.equal(result.promptVersion,'plan-proposal-draft-v12');assert.match(result.reply,/申请和回传分别是哪天/);assert.equal(result.proposal.exchangePlan.status,'UNPLANNED');
+ assert.equal(calls.length,1);assert.equal(result.promptVersion,'plan-proposal-draft-v13');assert.match(result.reply,/申请和回传分别是哪天/);assert.equal(result.proposal.exchangePlan.status,'UNPLANNED');
  let count=0;
  await proposeDiscussionPlan(createDiscussionGraph({complete:async()=>{count++;return JSON.stringify({...base,exchangePlan});}}),{priorTurns,userInput:'03日期已确认20261006，04日期已确认20261007'});
  assert.equal(count,1);
@@ -119,7 +119,7 @@ test('shared times require evidence for each file while unscoped rejection remai
   const result=await proposeDiscussionPlan(graph,{priorTurns,userInput:'整理计划'});
   assert.equal(result.proposal.exchangePlan.status,ready?'READY':'UNPLANNED',messages.join('；'));
   assert.equal(calls,1,messages.join('；'));
-  if(missing)assert.deepEqual(result.proposal.exchangePlan.openQuestions.map(question=>question.match(/^请确认 (\d{2}) 文件/)[1]),missing.map(id=>plan.steps.find(step=>step.stepId===id).fileType),messages.join('；'));
+  if(missing)assert.deepEqual(result.proposal.exchangePlan.openQuestions.map(question=>({'开户申请':'01','开户确认':'02','交易申请':'03','交易确认':'04','份额对账':'05'}[question.split('的日期')[0]])),missing.map(id=>plan.steps.find(step=>step.stepId===id).fileType),messages.join('；'));
  }
 });
 
@@ -154,7 +154,7 @@ test('offset digits and natural rescheduling cannot supply or preserve unrelated
   const result=await proposeDiscussionPlan(graph,{priorTurns,userInput:'整理计划'});
   assert.equal(result.proposal.exchangePlan.status,ready?'READY':'UNPLANNED',messages.join('；'));
   assert.equal(calls,1,messages.join('；'));
-  if(missing)assert.deepEqual(result.proposal.exchangePlan.openQuestions.map(question=>question.match(/^请确认 (\d{2}) 文件/)[1]),missing.map(id=>plan.steps.find(step=>step.stepId===id).fileType),messages.join('；'));
+  if(missing)assert.deepEqual(result.proposal.exchangePlan.openQuestions.map(question=>({'开户申请':'01','开户确认':'02','交易申请':'03','交易确认':'04','份额对账':'05'}[question.split('的日期')[0]])),missing.map(id=>plan.steps.find(step=>step.stepId===id).fileType),messages.join('；'));
  }
 });
 

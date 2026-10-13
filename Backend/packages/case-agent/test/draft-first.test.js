@@ -8,17 +8,18 @@ import {createPersistedDiscussionService} from '../src/persisted-discussion.js';
 
 const proposal={objective:'核对重复回传',preconditions:['【模拟假设】03业务日期20261006','【模拟假设】04回传日期20261007'],scenarios:[{title:'重复回传',setup:'合成申请',action:'同一确认回传两次',expected:'不重复入账',evidence:'处理记录'}],openQuestions:[],exchangePlan};
 
-test('one complete discussion can produce an editable draft with explicit synthetic dates',async()=>{
+test('missing dates produce an editable draft that asks the user despite synthetic date labels',async()=>{
  const calls=[];
  const result=await proposeDiscussionPlan(createDiscussionGraph({complete:async request=>{calls.push(request);return JSON.stringify(proposal);}}),{priorTurns:[{role:'user',content:'模拟一笔重复回传，不重复入账'},{role:'assistant',content:'可以先准备合成申请。'}],userInput:'整理方案'});
  assert.equal(calls.length,1);
- assert.equal(result.proposal.exchangePlan.status,'READY');
+ assert.equal(result.proposal.exchangePlan.status,'UNPLANNED');
+ assert.match(result.reply,/日期是哪一天/);
  assert.deepEqual(result.proposal.preconditions,proposal.preconditions);
  assert.equal(result.phase,'PROPOSAL_PENDING');
 });
 
-test('synthetic dates need explicit draft labels and never override human date revisions',()=>{
- assert.equal(guardExchangeTimeEvidence(proposal,['同日同通道生成03，04按回传接收']).exchangePlan.status,'READY');
+test('synthetic date labels cannot replace human timing evidence',()=>{
+ assert.equal(guardExchangeTimeEvidence(proposal,['同日同通道生成03，04按回传接收']).exchangePlan.status,'UNPLANNED');
  assert.equal(guardExchangeTimeEvidence(proposal,['03业务日期20261008']).exchangePlan.status,'UNPLANNED');
  assert.equal(guardExchangeTimeEvidence({...proposal,preconditions:[]},['整理方案']).exchangePlan.status,'UNPLANNED');
  for(const text of ['03日期取消','03业务日期改为20261008','03业务日期待定，不要模拟']) {
@@ -55,20 +56,21 @@ test('persisted discussion reloads authenticated channel configuration after a u
 
  test('marked grouped business and confirmation dates retain their directional scope',()=>{
  const grouped={...proposal,preconditions:['业务日期：20261006，确认日期：20261007【模拟假设】']};
- assert.equal(guardExchangeTimeEvidence(grouped,['03同日同通道整包']).exchangePlan.status,'READY');
+ assert.equal(guardExchangeTimeEvidence(grouped,['03同日同通道整包']).exchangePlan.status,'UNPLANNED');
  assert.equal(guardExchangeTimeEvidence(grouped,['03日期改为20261008']).exchangePlan.status,'UNPLANNED');
  assert.equal(guardExchangeTimeEvidence({...grouped,preconditions:['业务日期：20261007，确认日期：20261006【模拟假设】']},[]).exchangePlan.status,'UNPLANNED');
  });
 
-test('proposal repairs an omitted synthetic date label once without asking the user for technical fields',async()=>{
+test('missing dates ask once while preserving other simulated defaults',async()=>{
  const calls=[];
- const graph=createDiscussionGraph({complete:async request=>{calls.push(request);return JSON.stringify(calls.length===1?{...proposal,preconditions:[]}:proposal);}});
- const result=await proposeDiscussionPlan(graph,{priorTurns:[{role:'user',content:'准备合成重复回传，日期你先模拟'},{role:'assistant',content:'先给可修改草稿'}],userInput:'整理方案'});
- assert.equal(calls.length,2);
- assert.match(calls[1].messages.at(-1).content,/模拟日期必须明确标/);
- assert.equal(result.proposal.exchangePlan.status,'READY');
+ const graph=createDiscussionGraph({complete:async request=>{calls.push(request);return JSON.stringify(proposal);}});
+ const result=await proposeDiscussionPlan(graph,{priorTurns:[{role:'user',content:'准备合成重复回传，其他条件默认'},{role:'assistant',content:'先给可修改草稿'}],userInput:'整理方案'});
+ assert.equal(calls.length,1);
+ assert.equal(result.proposal.exchangePlan.status,'UNPLANNED');
+ assert.deepEqual(result.proposal.scenarios,proposal.scenarios);
+ assert.match(result.reply,/日期是哪一天/);
+ assert.match(calls[0].system,/不得自行提出模拟日期/);
 });
-
 
 test('business field changes retain existing dates while explicit timing changes still invalidate them',()=>{
  const messages=['03业务日期20261006，04回传日期20261007'];
