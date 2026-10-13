@@ -82,7 +82,7 @@ export function createPersistedDiscussionService({ repository, complete, visionC
       const latest=await repository.getLatestSopProposal(token,chatPublicId,casePublicId);
       if(latest?.sourceTurnNumber===history.revision && latest.status==='PENDING_CONFIRMATION') {
         return {reply:history.turns.at(-1).content,proposal:latest.proposal,phase:latest.status==='DRAFT'&&!latest.proposal.contract?'DRAFT_PENDING':'PROPOSAL_PENDING',
-          promptVersion:'plan-confirmed-contract-v1',revision:history.revision,versionNumber:latest.versionNumber,replayed:true};
+          promptVersion:history.promptVersion??'plan-confirmed-contract-v2',revision:history.revision,versionNumber:latest.versionNumber,replayed:true};
       }
     }
     const imageAnalysis=history.pending?.imageAnalysis??analyzedImages??await analyzeDiscussionImages(visionComplete,images);

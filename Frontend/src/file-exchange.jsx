@@ -11,26 +11,29 @@ const stamp=value=>value?new Date(value).toLocaleString('zh-CN',{month:'2-digit'
 export function FileExchangePanel({chatId,caseId,plan,draft,workflow,readOnly,onChanged}) {
   const [view,setView]=useState('applications'),tabsId=useId();
   const path=casePath(chatId,caseId),chatPath=`/chats/${chatId}`;
-  const mounted=useRef(true);
+  const mounted=useRef(true),requestId=useRef(0);
   const [reloadRevision,setReloadRevision]=useState(0);
   const [data,setData]=useState(null),[busy,setBusy]=useState(false),[error,setError]=useState('');
   const [preview,setPreview]=useState(null),[selected,setSelected]=useState({}),[dragging,setDragging]=useState(''),[channelId,setChannelId]=useState('');
   const refresh=async()=>{
+    if(!mounted.current)return;
+    const id=++requestId.current;
     const [preparation,returns,confirmation,channelResult]=await Promise.all([requestCase(path+'/application-preparation'),requestCase(path+'/return-parsing'),requestCase(path+'/return-confirmation'),requestCase('/exchange/channels')]);
     const records={};
     await Promise.all((preparation.files??[]).map(async file=>{records[file.fileName]=(await requestCase(`${chatPath}/files/${file.id}?view=records`)).records;}));
-    if(mounted.current)setData({preparation,returns,confirmation,records,channels:channelResult.channels??[]});
+    if(mounted.current&&id===requestId.current)setData({preparation,returns,confirmation,records,channels:channelResult.channels??[]});
   };
   useEffect(()=>{let active=true;mounted.current=true;setData(null);setBusy(true);setError('');
     const load=async()=>{try {await refresh();}catch(e){if(active){console.warn('File exchange read failed',e);setError(artifactReadError(e,'文件'));}}finally{if(active)setBusy(false);}};
-    load();return()=>{active=false;mounted.current=false;};
+    load();return()=>{active=false;mounted.current=false;requestId.current++;};
   },[path,reloadRevision]);
   const perform=async action=>{
     setBusy(true);setError('');
     try {
-      await action();await refresh();
-      const workflow=await requestCase(path+'/workflow');
-      await requestCase(path+'/workflow/resume',{eventId:crypto.randomUUID(),expectedStage:workflow.stage});
+      await action();if(!mounted.current)return;await refresh();
+      if(!mounted.current)return;
+      const current=await requestCase(path+'/workflow');
+      await requestCase(path+'/workflow/resume',{eventId:crypto.randomUUID(),expectedStage:current.stage});
       if(mounted.current)await onChanged();
     }catch(e){setError(e.message);try{await refresh();}catch{/* Keep action failure visible. */}}
     finally{setBusy(false);}
