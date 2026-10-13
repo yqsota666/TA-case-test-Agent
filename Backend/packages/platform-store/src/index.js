@@ -389,7 +389,7 @@ export function createCaseRepository({ transaction }) {
         }
       }
       const sourceContext=await readPredecessorContext(db,[auth.workspace_id,chat.id],caseRow.predecessor_case_id);
-      return { revision: rows.length, turns, pending,...(rows.at(-1)?.status==='COMPLETE' && rows.at(-1)?.prompt_version==='discussion-offer-plan-v1'?{nextAction:'PROPOSE_PLAN'}:{}),...(sourceContext?{sourceContext}:{}) };
+      return { revision: rows.length, turns, pending,...(rows.at(-1)?.status==='COMPLETE'&&rows.at(-1)?.turn_kind==='PROPOSE_PLAN'?{promptVersion:rows.at(-1).prompt_version}:{}),...(rows.at(-1)?.status==='COMPLETE' && rows.at(-1)?.prompt_version==='discussion-offer-plan-v1'?{nextAction:'PROPOSE_PLAN'}:{}),...(sourceContext?{sourceContext}:{}) };
     });
   }
 

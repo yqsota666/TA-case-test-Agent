@@ -88,3 +88,16 @@ test('ordinary registration cannot claim the reserved demo identity',async()=>{
  const auth=createAccountAuth({transaction:()=>{throw new Error('must not reach database');},allowDemo:true});
  await assert.rejects(auth.register({email:'local-demo@ta-agent.example.invalid',name:'模拟账户',password:'synthetic-password'}),{code:'INVALID_INPUT'});
 });
+
+test('password change rejects unsupported nonempty hashes before any credential writes',async()=>{
+ for(const password_hash of ['legacy-hash','sha256$synthetic','scrypt$malformed']){
+  const writes=[];
+  const auth=createAccountAuth({transaction:async action=>action({execute:async(sql,args)=>{
+   if(sql.includes('FROM platform_sessions'))return [[{user_id:7,workspace_id:8}]];
+   if(sql.includes('FROM platform_users'))return [[{id:7,password_hash}]];
+   writes.push({sql,args});return [{}];
+  }})});
+  await assert.rejects(auth.password(token,{currentPassword:'wrong-current',newPassword:'new-synthetic-password'}),{code:'LOGIN_REJECTED'});
+  assert.deepEqual(writes,[]);
+ }
+});

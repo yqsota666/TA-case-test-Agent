@@ -112,7 +112,7 @@ export function createAccountAuth({transaction,initializeWorkspace,allowDemo=fal
       return transaction(async db=>{
         const {user_id}=await authenticateSession(db,token);
         const [[user]]=await db.execute('SELECT id,public_id,email,display_name,password_hash FROM platform_users WHERE id=? FOR UPDATE',[user_id]);
-        if(user.password_hash.startsWith('scrypt$')&&!await passwordMatches(input.currentPassword,user.password_hash))throw fail('LOGIN_REJECTED',401,'当前密码不正确');
+        if(user.password_hash!==''&&!await passwordMatches(input.currentPassword,user.password_hash))throw fail('LOGIN_REJECTED',401,'当前密码不正确');
         const hash=await passwordHash(input.newPassword);
         await db.execute('UPDATE platform_users SET password_hash=? WHERE id=?',[hash,user_id]);
         await db.execute('DELETE FROM platform_sessions WHERE user_id=?',[user_id]);

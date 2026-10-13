@@ -1,5 +1,5 @@
 export function localWorkspaceInitializer(config,{localDatabase=process.env.CASE_LOCAL_DEMO_DATABASE ?? 'ta_case_agent_local'}={}) {
-  if(!['127.0.0.1','localhost'].includes(config.host)||config.database!==localDatabase)return undefined;
+  if(!['127.0.0.1','localhost','::1'].includes(config.host)||config.database!==localDatabase)return undefined;
   return async (db,workspaceId)=>{
     const [profiles]=await db.execute("SELECT DISTINCT channel_name,ta_environment,ta_code,distributor_code,protocol_version FROM exchange_channels WHERE ta_environment='LOCAL'");
     if(profiles.length!==1)return;

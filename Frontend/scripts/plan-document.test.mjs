@@ -4,7 +4,7 @@ import React from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {createServer} from 'vite';
 let server,component;
-before(async()=>{server=await createServer({server:{middlewareMode:true},appType:'custom'});component=await server.ssrLoadModule('/src/plan-document.jsx');});
+before(async()=>{server=await createServer({server:{middlewareMode:true,ws:false},optimizeDeps:{noDiscovery:true,include:[]},appType:'custom'});component=await server.ssrLoadModule('/src/plan-document.jsx');});
 after(async()=>{await server?.close();});
 const render=proposal=>renderToStaticMarkup(React.createElement(component.PlanDocument,{proposal}));
 test('unrelated business plans preserve every scenario field and default to a list',()=>{
@@ -25,13 +25,14 @@ test('missing optional data does not invent exchange steps or questions',()=>{
 test('many items, long text, and markup-like data retain content safely',()=>{
   const scenarios=Array.from({length:100},(_,i)=>({title:`检查项目 ${i}`,setup:'a'.repeat(1200),action:'查看记录',expected:'<script>alert(1)</script>',evidence:'核对记录'}));
   const html=render({scenarios});
-  assert.equal((html.match(/class="cw-plan-item"/g)||[]).length,100);
+  assert.equal((html.match(/<th scope="row"/g)||[]).length,100);
   assert.ok(html.includes('检查项目 99'));assert.ok(html.includes('&lt;script&gt;'));assert.ok(!html.includes('<script>'));
-  assert.ok(component.planSummary({scenarios}).includes('100 个测试项'));
+  assert.equal(component.planSummary({scenarios}),component.planSummary({scenarios:scenarios.slice(0,1)}));
 });
 test('ready and unplanned exchange plans retain dependencies and timing questions',()=>{
   const ready=render({exchangePlan:{status:'READY',steps:[{stepId:'receive',fileType:'02',direction:'RECEIVE',businessTime:{value:'用户确认的接收时间'},dependsOn:[{stepId:'send',condition:'SENT'}],required:false}]}});
-  for(const value of ['02','接收','用户确认的接收时间','send / SENT','可选'])assert.ok(ready.includes(value));
+  for(const value of ['02','接收','用户确认的接收时间','前置文件安排待明确','可选'])assert.ok(ready.includes(value));
   const waiting=render({exchangePlan:{status:'UNPLANNED',steps:[],openQuestions:['请确认接收时点']}});
   assert.ok(waiting.includes('请确认接收时点'));
+  assert.match(ready,/role="tabpanel"[^>]*hidden=""/);
 });

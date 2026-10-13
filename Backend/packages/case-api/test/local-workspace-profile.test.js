@@ -9,6 +9,8 @@ test('isolated local demo needs explicit matching configuration; remote host rem
  const options={localDatabase:'ta_case_agent_chain'};
  assert.equal(localWorkspaceInitializer({host:'localhost',database:'ta_case_agent_chain'},{localDatabase:'ta_case_agent_local'}),undefined);
  assert.equal(typeof localWorkspaceInitializer({host:'localhost',database:'ta_case_agent_chain'},options),'function');
+ assert.equal(typeof localWorkspaceInitializer({host:'::1',database:'ta_case_agent_chain'},options),'function');
+ assert.equal(localWorkspaceInitializer({host:'::1',database:'production'},options),undefined);
  assert.equal(localWorkspaceInitializer({host:'db.example',database:'ta_case_agent_chain'},options),undefined);
  assert.equal(localWorkspaceInitializer({host:'localhost',database:'other'},options),undefined);
 });
