@@ -1,5 +1,12 @@
 # 项目版本与工作树索引
 
+## 缺少业务日期主动询问（2026-10-13，已接入5199）
+
+按用户“替换5199”，独立 `codex/ask-business-date` 的 c278e01f 已本地快进接入 `codex/plan-trigger-fix`，仍运行 `/Users/apple/Documents/ChatGPT/gf-worktrees/plan-trigger-fix`。用户未给日期时主动问是哪一天，不能默认今天或自拟模拟日期；其他默认规则及已保存方案的日期继承保留，历史记录不自动改写。
+
+后端496通过、27可选数据库测试跳过；真实Sophnet首轮、后续及缺日期方案请求的日期行为断言通过。API3106重启为PID41882，前端5199原进程，数据库ta_case_agent_chain无迁移。5199 HTTP200及API/代理未登录401正常；切换前后业务记录数量和全部方案内容摘要一致。说明docs/缺少日期时主动询问.md；运行记录.context/ask-business-date/runtime.json。无push/PR。
+
+
 ## 5199独立审查与旧演练清理（2026-10-12）
 
 从实时baa58b02建立codex/review-5199-cleanup独立树。按用户确认仅删除当前5199账户16个旧演练Case及9项目，保留test01两个Case、空白c1和AgentZIP，共3项目4Case；恢复备份仅本机保存，实际删除/恢复回滚验证通过，保留和其他账户数据摘要一致，API已核对。
