@@ -1,5 +1,5 @@
 import React, {useEffect,useRef,useState} from 'react';
-import {ArrowDown,ArrowUp,Plus,Search,X} from 'lucide-react';
+import {ArrowDown,ArrowUp,Plus,Search,X} from './ui-icons.jsx';
 import './workflow-data-editor.css';
 
 const clone=value=>structuredClone(value);

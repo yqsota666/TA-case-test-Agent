@@ -1,3 +1,4 @@
+import {observeGraph} from './observability.js';
 import { StateGraph, StateSchema, START, END, interrupt, MemorySaver, Command } from '@langchain/langgraph';
 import { z } from 'zod';
 
@@ -8,6 +9,7 @@ export function workflowPosition(facts) {
   if (facts.plan.status !== 'LOCKED') return {stage:facts.dataConfirmed ? 'CONFIRM_EXPECTATIONS':'CONFIRM_PLAN_DATA', waiting:['PLAN_CONFIRM','DISCUSS']};
   if (!facts.generated) return {stage:'PREPARE_DATA',waiting:['DATA_EXECUTE']};
   if (!facts.draftConfirmed) return {stage:'CONFIRM_DRAFT',waiting:['DATA_CONFIRM']};
+  if (!facts.order && facts.plan.proposal?.exchangePlan?.status==='NOT_REQUIRED')return {stage:'EVALUATE_RESULT',waiting:['RESULT_EVALUATE']};
   if (!facts.order) return {stage:'DEFINE_EXCHANGE_ORDER',waiting:['EXCHANGE_PLAN_CONFIRM']};
   const completed = (id,condition) => facts.order.events.some(e=>e.stepId===id && e.condition===condition);
   const blocked=new Set((facts.order.blockers??[]).flatMap(b=>b.blockedStepIds));
@@ -38,7 +40,7 @@ export function createDurableWorkflowGraph({checkpointer, readFacts}) {
     interrupt({stage:state.position.stage,waiting:state.position.waiting,revision:state.revision});return {};
   }).addEdge(stage.toLowerCase(),'reconcile_committed_business');
   graph.addConditionalEdges('reconcile_committed_business',state=>stages.includes(state.position.stage)?state.position.stage.toLowerCase():END);
-  return graph.compile({checkpointer});
+  return observeGraph(graph.compile({checkpointer}));
 }
 
 export class SqlWorkflowSaver extends MemorySaver {

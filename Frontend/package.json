@@ -9,7 +9,11 @@
     "preview": "vite preview --host 127.0.0.1"
   },
   "dependencies": {
+    "@assistant-ui/react": "0.15.25",
+    "@assistant-ui/react-markdown": "0.14.19",
+    "@radix-ui/react-collapsible": "^1.1.21",
     "@vitejs/plugin-react": "5.2.0",
+    "class-variance-authority": "^0.7.1",
     "lucide-react": "0.544.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",

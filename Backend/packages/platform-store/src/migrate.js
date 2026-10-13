@@ -17,9 +17,10 @@ export function migrationStatements(sql) {
     const widenReply = /^ALTER TABLE case_discussion_turns MODIFY COLUMN assistant_text MEDIUMTEXT NULL$/i.test(compact);
     const widenSalesCertificate = /^ALTER TABLE sales_confirmed_accounts MODIFY COLUMN certificate_no VARCHAR\(40\) CHARACTER SET ascii COLLATE ascii_bin NOT NULL$/i.test(compact);
     const addHoldingsSnapshot = /^ALTER TABLE sales_confirmed_holdings ADD COLUMN snapshot_date DATE NULL, ADD COLUMN snapshot_total DECIMAL\(16,2\) NULL, ADD COLUMN snapshot_available DECIMAL\(16,2\) NULL, ADD COLUMN snapshot_frozen DECIMAL\(16,2\) NULL, ADD COLUMN snapshot_parse_id BIGINT UNSIGNED NULL, ADD COLUMN available_volume DECIMAL\(16,2\) NULL, ADD COLUMN frozen_volume DECIMAL\(16,2\) NULL$/i.test(compact);
-    if (!addHoldingsSnapshot && !create && !widenSalesCertificate && !widenSopStatus && !addTurnKind && !addSopSource && !widenReply) throw new Error('迁移语句不在允许的范围内');
-    return { sql: statement, table: addHoldingsSnapshot ? 'sales_confirmed_holdings' : create?.[1] ?? (widenSalesCertificate ? 'sales_confirmed_accounts' : (addTurnKind || widenReply ? 'case_discussion_turns' : 'case_sop_versions')),
-      kind: addHoldingsSnapshot ? 'ADD_HOLDINGS_SNAPSHOT' : widenSalesCertificate ? 'WIDEN_SALES_CERTIFICATE' : create ? 'CREATE' : addTurnKind ? 'ADD_TURN_KIND' : addSopSource ? 'ADD_SOP_SOURCE' :
+    const widenTransaction=/^ALTER TABLE sales_confirmed_transactions DROP CHECK ck_sales_transaction_business, ADD CONSTRAINT ck_sales_transaction_business CHECK \(business_code IN \('022','024'\)\)$/i.test(compact);
+    if (!widenTransaction && !addHoldingsSnapshot && !create && !widenSalesCertificate && !widenSopStatus && !addTurnKind && !addSopSource && !widenReply) throw new Error('迁移语句不在允许的范围内');
+    return { sql: statement, table: widenTransaction?'sales_confirmed_transactions':addHoldingsSnapshot ? 'sales_confirmed_holdings' : create?.[1] ?? (widenSalesCertificate ? 'sales_confirmed_accounts' : (addTurnKind || widenReply ? 'case_discussion_turns' : 'case_sop_versions')),
+      kind: widenTransaction?'WIDEN_TRANSACTION_BUSINESS':addHoldingsSnapshot ? 'ADD_HOLDINGS_SNAPSHOT' : widenSalesCertificate ? 'WIDEN_SALES_CERTIFICATE' : create ? 'CREATE' : addTurnKind ? 'ADD_TURN_KIND' : addSopSource ? 'ADD_SOP_SOURCE' :
         widenReply ? 'WIDEN_REPLY' : 'WIDEN_SOP_STATUS',
       checksum: crypto.createHash('sha256').update(statement).digest('hex') };
   });
@@ -32,6 +33,10 @@ async function tableExists(db, name) {
 }
 
 async function stepApplied(db, step) {
+  if(step.kind==='WIDEN_TRANSACTION_BUSINESS'){
+    const [[row]]=await db.execute(`SELECT check_clause AS clause FROM information_schema.check_constraints WHERE constraint_schema=DATABASE() AND constraint_name='ck_sales_transaction_business'`);
+    return row?.clause.includes('024')===true;
+  }
   if (step.kind === 'CREATE') return tableExists(db, step.table);
   if (step.kind === 'ADD_TURN_KIND' || step.kind === 'ADD_SOP_SOURCE') {
     const table = step.kind === 'ADD_TURN_KIND' ? 'case_discussion_turns' : 'case_sop_versions';

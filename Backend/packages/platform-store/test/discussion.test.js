@@ -31,7 +31,7 @@ function fixture({ chat = { id: 41, status: 'ACTIVE' },
     }
     if (sql.includes('SET assistant_text=?')) {
       const row = turns.find(item => item.turn_number === values[5]);
-      row.assistant_text = values[0]; row.status = 'COMPLETE';
+      row.assistant_text = values[0]; row.prompt_version=values[1]; row.status = 'COMPLETE';
     }
     if (sql.includes("SET status='ABANDONED'")) turns.find(item => item.turn_number === values[3]).status = 'ABANDONED';
     if (sql.includes("SET status='DRAFT'")) sop.status = 'DRAFT';
@@ -69,6 +69,22 @@ test('submitting a revision invalidates the pending Plan before confirmation can
   assert.equal(sop.status, 'DRAFT');
   await assert.rejects(repository.confirmSopProposal(...scope, 1), { code: 'INVALID_CASE_STATE' });
   assert.ok(calls.some(call => call.sql.includes('USER_REVISED_PLAN') && call.values.at(-1) === 7));
+});
+
+test('asking about next steps keeps the pending proposal and completes without downgrading it',async()=>{
+ const {repository,caseRow,sop,calls}=fixture({caseRow:{id:51,status:'SOP_PENDING'}});
+ await repository.beginCaseDiscussionTurn(...scope,{expectedRevision:0,userInput:'下一步是什么？',preservePlan:true});
+ assert.equal(caseRow.status,'SOP_PENDING');assert.equal(sop.status,'PENDING_CONFIRMATION');
+ await assert.rejects(repository.confirmSopProposal(...scope,1,'DATA'),{code:'DISCUSSION_IN_PROGRESS'});
+ await repository.finishCaseDiscussionTurn(...scope,{turnNumber:1,assistantReply:'请在测试方案中审阅准备数据，再点击确认准备数据。',promptVersion:'followup-discussion-draft-adaptive-v7'});
+ assert.equal((await repository.readCaseDiscussion(...scope)).pending,null);
+ assert.equal(caseRow.status,'SOP_PENDING');assert.equal(sop.status,'PENDING_CONFIRMATION');
+ assert.ok(!calls.some(c=>c.sql.includes('USER_REVISED_PLAN')));
+});
+
+test('a proposal cannot bypass invalidation by claiming read-only preservation',async()=>{
+ const {repository}=fixture({caseRow:{id:51,status:'SOP_PENDING'}});
+ await assert.rejects(repository.beginCaseDiscussionTurn(...scope,{expectedRevision:0,userInput:'重新整理',kind:'PROPOSE_PLAN',preservePlan:true}),{code:'INVALID_DISCUSSION_TURN'});
 });
 
 test('a pending response blocks a new Plan; abandoning it permits another turn', async () => {
@@ -136,19 +152,34 @@ test('a valid Plan display longer than 4000 characters can be saved', async () =
   assert.equal(saved.versionNumber, 1);
 });
 
-test('proposal completion rejects too little discussion before writing a SOP', async () => {
-  const { repository, calls } = fixture({ initialTurns: [
-    { turn_number: 1, user_text: '问题', assistant_text: '回答', status: 'COMPLETE', turn_kind: 'DISCUSS' },
-  ], sop: null });
+test('first-message proposal can save a scoped review draft without a discussion-count gate', async () => {
+  const { repository, calls } = fixture({ initialTurns: [], sop: null });
+  await repository.beginCaseDiscussionTurn(...scope,
+    { expectedRevision: 0, userInput: '请生成方案', kind: 'PROPOSE_PLAN' });
+  const plan = { objective: '检查规则', preconditions: [], scenarios: [
+    { title: '边界', setup: '准备数据', action: '执行', expected: '可观察结果', evidence: '记录' },
+  ], openQuestions: [] };
+  const result=await repository.finishCasePlanProposal(...scope,
+    { turnNumber: 1, assistantReply: '已保存草稿',draft:true,
+      promptVersion: 'plan-review-draft-v1', proposal: plan });
+  assert.equal(result.status,'DRAFT');
+  const insert=calls.find(c=>c.sql.includes('INSERT INTO case_sop_versions'));
+  assert.equal(insert.values[5],'DRAFT');
+  assert.ok(!calls.some(c=>c.sql.includes("UPDATE cases SET status='SOP_PENDING'")));
+});
+
+test('proposal completion saves a reviewable SOP after one complete discussion', async () => {
+  const { repository, calls } = fixture({ initialTurns: [{turn_number:1,user_text:'问题',assistant_text:'草稿建议',status:'COMPLETE',turn_kind:'DISCUSS'}], sop: null });
   await repository.beginCaseDiscussionTurn(...scope,
     { expectedRevision: 1, userInput: '请生成方案', kind: 'PROPOSE_PLAN' });
   const plan = { objective: '检查规则', preconditions: [], scenarios: [
     { title: '边界', setup: '准备数据', action: '执行', expected: '可观察结果', evidence: '记录' },
   ], openQuestions: [] };
-  await assert.rejects(repository.finishCasePlanProposal(...scope,
+  const saved=await repository.finishCasePlanProposal(...scope,
     { turnNumber: 2, assistantReply: '测试目标：检查规则',
-      promptVersion: 'plan-proposal-v1', proposal: plan }), { code: 'INSUFFICIENT_DISCUSSION' });
-  assert.equal(calls.some(call => call.sql.includes('INSERT INTO case_sop_versions')), false);
+      promptVersion: 'plan-proposal-v1', proposal: plan });
+  assert.equal(saved.versionNumber,1);
+  assert.equal(calls.some(call => call.sql.includes('INSERT INTO case_sop_versions')), true);
 });
 
  test('locked Case and closed Chat retain scoped read-only discussion history',async()=>{
@@ -158,3 +189,51 @@ test('proposal completion rejects too little discussion before writing a SOP', a
   assert.ok(calls.filter(c=>c.sql.includes('FROM case_discussion_turns')).every(c=>c.values[0]===31&&c.values[1]===41&&c.values[2]===51));
   await assert.rejects(repository.beginCaseDiscussionTurn(...scope,{expectedRevision:1,userInput:'写入'}),{code:'CHAT_CLOSED'});
  });
+
+
+test('discussion exposes persisted start and completion times without inventing missing timestamps', async () => {
+  const {repository} = fixture({initialTurns:[{turn_number:1,status:'COMPLETE',turn_kind:'DISCUSS',user_text:'边界',assistant_text:reply,created_at:new Date('2026-10-07T01:00:00Z'),finished_at:new Date('2026-10-07T01:01:19Z')}]});
+  const history=await repository.readCaseDiscussion(...scope);
+  assert.equal(history.turns[0].createdAt,'2026-10-07T01:00:00.000Z');
+  assert.equal(history.turns[1].createdAt,'2026-10-07T01:01:19.000Z');
+  assert.equal(history.turns[1].durationMs,79000);
+});
+
+
+test('proposal turns expose their kind so historical proposals are not rendered as ordinary chat',async()=>{
+ const {repository}=fixture({initialTurns:[{turn_number:1,status:'COMPLETE',turn_kind:'PROPOSE_PLAN',user_text:'请整理方案',assistant_text:reply}]});
+ const history=await repository.readCaseDiscussion(...scope);
+ assert.equal(history.turns[1].kind,'PROPOSE_PLAN');
+});
+
+
+test('proposal identity retains its real turn number across abandoned attempts',async()=>{
+ const {repository}=fixture({initialTurns:[{turn_number:1,status:'ABANDONED',turn_kind:'PROPOSE_PLAN',user_text:'失败尝试'}, {turn_number:2,status:'COMPLETE',turn_kind:'PROPOSE_PLAN',user_text:'重新整理',assistant_text:reply}]});
+ const history=await repository.readCaseDiscussion(...scope);
+ assert.equal(history.turns.length,2);assert.equal(history.turns[1].sourceTurnNumber,2);
+});
+
+test('only the latest completed system offer supplies a pending next action',async()=>{
+ const {repository}=fixture({sop:null});
+ await repository.beginCaseDiscussionTurn(...scope,{expectedRevision:0,userInput:'先讨论规则'});
+ await repository.finishCaseDiscussionTurn(...scope,{turnNumber:1,assistantReply:'可以整理',promptVersion:'discussion-offer-plan-v1'});
+ assert.equal((await repository.readCaseDiscussion(...scope)).nextAction,'PROPOSE_PLAN');
+ await repository.beginCaseDiscussionTurn(...scope,{expectedRevision:1,userInput:'先不要整理'});
+ assert.equal((await repository.readCaseDiscussion(...scope)).nextAction,undefined);
+});
+
+test('checkpoint retains a scoped draft while its proposal turn remains pending',async()=>{
+ const {repository,calls}=fixture({sop:null});
+ await repository.beginCaseDiscussionTurn(...scope,{expectedRevision:0,userInput:'整理方案',kind:'PROPOSE_PLAN'});
+ const proposal={objective:'规则',preconditions:[],scenarios:[{title:'一',setup:'条件',action:'观察',expected:'结果',evidence:'日志'}],openQuestions:[]};
+ await repository.checkpointCasePlanProposal(...scope,{turnNumber:1,assistantReply:'可审阅业务草稿',promptVersion:'plan-review-draft-v1',proposal});
+ assert.equal((await repository.readCaseDiscussion(...scope)).pending.turnNumber,1);
+ assert.ok(!calls.some(c=>c.sql.includes('SET assistant_text=')));
+ assert.equal(calls.find(c=>c.sql.includes('INSERT INTO case_sop_versions')).values[5],'DRAFT');
+});
+test('finalization updates only the current pending turn checkpoint instead of appending a duplicate version',async()=>{
+ const {repository,calls}=fixture({initialTurns:[{turn_number:1,user_text:'整理',status:'PENDING',turn_kind:'PROPOSE_PLAN'}],sop:{id:61,status:'DRAFT',version_number:2,source_turn_number:1}});
+ const proposal={objective:'规则',preconditions:[],scenarios:[{title:'一',setup:'条件',action:'观察',expected:'结果',evidence:'日志'}],openQuestions:[]};
+ const result=await repository.finishCasePlanProposal(...scope,{turnNumber:1,assistantReply:'草稿待补充',promptVersion:'plan-review-draft-v1',proposal,draft:true});
+ assert.equal(result.versionNumber,2);assert.ok(calls.some(c=>c.sql.includes('UPDATE case_sop_versions SET plan_json=')));assert.ok(!calls.some(c=>c.sql.includes('INSERT INTO case_sop_versions')));
+});

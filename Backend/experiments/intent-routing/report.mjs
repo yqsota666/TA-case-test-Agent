@@ -1,0 +1,74 @@
+import {readFileSync,writeFileSync,mkdirSync,existsSync} from 'node:fs';
+import {fileURLToPath} from 'node:url';
+import {cases} from './cases.mjs';
+
+const root=fileURLToPath(new URL('../../../',import.meta.url));
+const evidence=root+'.context/intent-routing/';
+const routing=JSON.parse(readFileSync(evidence+'routing-results.json','utf8'));
+const rows=[...new Map(routing.rows.map(r=>[`${r.id}:${r.method}:${r.repeat}`,r])).values()];
+const endAll=JSON.parse(readFileSync(evidence+'end-to-end-results.json','utf8'));
+if(existsSync(evidence+'end-to-end-complete-context.json'))endAll.push(...JSON.parse(readFileSync(evidence+'end-to-end-complete-context.json','utf8')));
+const end=[...new Map(endAll.map(r=>[`${r.id}:${r.method}`,r])).values()];
+const names={baseline:'现有短句路由',json:'上下文 JSON 路由',tools:'上下文工具调用路由'};
+const summary=['baseline','json','tools'].map(method=>{
+  const subset=rows.filter(r=>r.method===method),positive=subset.filter(r=>r.expected==='PROPOSE_PLAN');
+  const times=subset.map(r=>r.latencyMs).filter(Number.isFinite).sort((a,b)=>a-b);
+  return {method,total:subset.length,correct:subset.filter(r=>r.passed).length,positive:positive.length,positiveCorrect:positive.filter(r=>r.actual==='PROPOSE_PLAN').length,falsePositive:subset.filter(r=>r.expected==='DISCUSS'&&r.actual==='PROPOSE_PLAN').length,errors:subset.filter(r=>r.error).length,medianMs:times[Math.floor(times.length/2)]??null,p95Ms:times[Math.min(times.length-1,Math.floor(times.length*.95))]??null};
+});
+const failures=rows.filter(r=>r.method!=='baseline'&&!r.passed);
+const initialErrors=routing.rows.filter(r=>r.error).length;
+const lines=[
+  '# 意图路由真实模型对比实验',
+  '2026-10-11；本地实验分支 `codex/intent-routing-experiment`；基线 `29c37109`。实验尚未接入 5199。',
+  '**实验结论：语义路由明显减少入口漏判，但本次重建的开户申购场景仍未产出合法可保存方案。四情况对比与非对比日志检查已通过现有方案服务和契约校验。需要同时处理意图路由、方案构造与修复回路；不能把本实验视为事故已经修复。**',
+  '## 实验范围与方法',
+  '使用 Sophnet `DeepSeek-V4-Pro-0813` 和真实 OpenAI 兼容接口。密钥由 macOS 钥匙串直接读入进程内存，不写入文件。没有读取或修改用户 Case 数据库；事故对话采用重建上下文，保留关键请求和业务值，姓名改为合成值、移除证件号码。原始历史不是逐字全文重放。',
+  '24 个预先标注样本覆盖事故中的推进请求、修改并整理、取消、解释、引用、条件句、相同“继续”的不同上下文、缺失业务规则、四情况对比、单份日志检查、长历史和确认边界。两个模型方案各跑两轮；模型提示词没有写入事故的具体基金、金额、销售商或短句。模型路由 temperature=0、thinking=disabled，max_tokens=512。用服务端动作白名单验证返回值，生成方案不替代人工确认。',
+  '现有路由直接调用产品的 discussionAction；确定性函数只算一轮。JSON 路由返回经过 schema 校验的决策；工具调用路由使用 provider tools + tool_choice=auto，要求实际返回一次 route_action 工具调用，并校验参数。没有引入新的 Agent SDK，实验验证的是两种决策机制与现有服务的衔接。',
+  '## 路由结果',
+  '| 方案 | 符合预期 | 应生成时正确推进 | 不该生成时误触发 | 最终请求失败 | 路由耗时中位数 / P95 |',
+  '|---|---:|---:|---:|---:|---:|',
+  ...summary.map(s=>`| ${names[s.method]} | ${s.correct}/${s.total} | ${s.positiveCorrect}/${s.positive} | ${s.falsePositive} | ${s.errors} | ${s.medianMs===null?'本地函数，未计时':`${(s.medianMs/1000).toFixed(2)}秒 / ${(s.p95Ms/1000).toFixed(2)}秒`} |`),
+  `首次批量调用有 ${initialErrors} 次 HTTP 429，全部保留在 initial-routing-results.json 和追加式结果中；降低为同一进程至少每1.5秒开始一次请求后仅补测失败请求。上表按同一样本、方法、轮次的最后一次请求计数，不能据此声称首次请求成功率为100%。限流请求没有算成语义识别错误。耗时为实际请求响应，不包含本地排队等待。`,
+  '| 事故/边界输入 | 预期 | 现有入口 | JSON 两轮 | 工具调用两轮 |',
+  '|---|---|---|---|---|',
+  ...['incident_continue','incident_review','incident_can_generate','incident_no_button','cancel','method_question','context_continue_plan','context_continue_explain','compound'].map(id=>{
+    const c=cases.find(c=>c.id===id),find=m=>rows.filter(r=>r.id===id&&r.method===m).sort((a,b)=>a.repeat-b.repeat).map(r=>r.actual||r.error).join(' / ');
+    return `| ${c.input.userInput} | ${c.expected} | ${find('baseline')} | ${find('json')} | ${find('tools')} |`;
+  }),
+  '## 未通过的模型判断',
+  ...(failures.length?failures.map(r=>`- ${names[r.method]}，${r.id}，第${r.repeat}轮：实际 ${r.actual||r.error}，预期 ${r.expected}。模型依据：${r.decision?.reason??'无有效决策'}。`):['本次样本未出现模型路由判断错误。']),
+  '该样本的上一条 AI 建议是“可以整理成供审阅方案”，用户回复“继续”；实验预期承接整理。JSON 路由有一次选择澄清，说明自由文本历史仍有指代不稳定。建议正式实现维护明确的待推进动作，并提供可见的整理入口；不要依赖上一条 AI 回复的固定措辞。这个建议没有在本次实验中实现或验证。',
+  '## 实际调用现有方案服务',
+  '路由后调用现有 createPersistedDiscussionService 的 discuss/propose、LangGraph 提案和数据/预期契约生成。使用现有 SophnetCompletion、默认基金行情和通道上下文；方案模型参数沿用现有服务，未强制关闭其默认思考。仓储仅在内存记录保存，workflowPosition 读取该记录计算下一阶段。没有 HTTP/UI 接线、真实数据库持久化、文件生成、TA 投递或回传。',
+  'JSON 与工具调用路线进入的是同一个现有方案服务，后续生成是独立模型采样；两次生成结果的差异不能直接归因于路由返回JSON还是tool call。',
+  '上下文补充实验 incident_complete_context：早先压缩重建历史只保留“申购金额”和“预期份额”，遗漏原对话AI曾明确写出的“04确认金额”。补充该已存在的预期回传段落后另跑一次工具调用路线，未修改路由提示词、生成提示词或校验器。此额外实验改变了输入上下文，单独列出，不混算进24样本路由准确率；它用于观察完整业务信息能否改善后续生成，不构成对某种路由机制的胜负证明。',
+  '| 场景 | 路线 | 是否保存审阅方案 | 契约校验 | 下一阶段 | 完整断言 | 耗时 |',
+  '|---|---|---|---|---|---|---:|',
+  ...end.map(r=>`| ${r.id} | ${names[r.method]} | ${r.savedProposal?'是':'否'} | ${r.contractValid===true?'通过':r.contractValid===false?'失败':'未产生契约'} | ${r.position?.stage??'未推进'} | ${r.assertionsPassed?'通过':r.error?.message??'失败'} | ${(r.latencyMs/1000).toFixed(1)}秒 |`),
+  `端到端首次限流失败 ${endAll.filter(r=>r.error?.message==='PROVIDER_HTTP_429').length} 次，原记录保留。后续业务校验失败若存在，也保留在 end-to-end-results.json，不作为路由成功后自动成功处理。`,
+  '事故场景的断言检查：最新金额2000.00、基金270008、净值1.00000000、网点926、01与03同日同包、新账户引用顺序、未知TA账号不编造、初始持仓为空、missing为空、完整契约合法，并进入等待准备数据确认。四情况场景检查场景数量为4且不走TA文件；非对比日志检查场景数量为1且不走TA文件。这些是合成验收预期，不是TA实际业务结果。',
+  '## 当前结论与限制',
+  ...(endAll.some(r=>r.error?.code==='INVALID_PLAN_CONTRACT')?['额外发现：重建事故上下文的JSON路线已进入方案节点，但模型把预期原文“申购金额2000.00元”绑定为 confirmedAmount，契约修复重答后仍被拒绝。离线逐项定位显示只移除这条绑定时契约才合法；这不是有效修复，系统不应靠删断言绕过校验。证据见 contract-diagnosis.json。它证明路由改善后仍可能暴露原生成链路的语义构造故障，不证明原用户Case已经实际发生同一契约错误。']:[]),
+  ...(endAll.some(r=>r.method==='tools'&&r.id==='incident_can_generate'&&r.error?.code==='INVALID_PLAN_CONTRACT')?['同一压缩上下文的工具路线出现另一种失败：提案输出 UNPLANNED、没有发送步骤，随后现有服务仍调用申请契约构造；模型生成 stepId=null 的开户/申购申请，重答后依旧无效。这表明待澄清文件安排与契约构造之间也需要明确衔接；不是工具调用路由没有识别到生成意图。']:[]),
+  ...(endAll.some(r=>r.id==='incident_complete_context'&&r.error?.code==='INVALID_PLAN_CONTRACT')?['补回明确的04回传预期后仍失败：模型把同包03发送写成依赖01已发送，后续契约校验认为这违反同包生成约束。当前重答只修改申请/预期契约，原方案的文件依赖仍保持原样，因此无法修复这个更上游的错误。离线诊断单独检查去掉同包发送依赖后的契约是否合法；该诊断不是实际修复或已保存的可审阅方案。']:[]),
+  '模型可以在现有业务上下文里选择实际动作，现有短句匹配漏掉了大多数正常推进表达。此样本中工具调用路由没有出现语义漏判，JSON 路由有一次；样本规模不足以证明工具调用普遍更准确。增加模型判断需要约2秒路由时间；方案生成自身的耗时单独列出。',
+  '本次没有验证生产 HTTP/SSE 接线、重复发送幂等、并发修改、图片输入、跨工作空间隔离或真实确认交互。阶段白名单含合成的禁止生成快照，只验证决策约束，不代表执行阶段已开放聊天。两个方案共享相同提示策略和样本，属于本地可行性实验，不是独立盲测。',
+  '## 实际模型产物与证据',
+  ...end.filter(r=>r.savedProposal&&r.contractValid&&r.assertionsPassed).map(r=>`- [${r.id} / ${names[r.method]}：可读审阅稿](${evidence}${r.id}-${r.method}-review.md)`),
+  ...end.filter(r=>r.result).map(r=>`- [${r.id} / ${names[r.method]}：实际输出](${evidence}${r.id}-${r.method}.md)`),
+  `- [全部路由请求、模型返回、耗时和补测记录](${evidence}routing-results.json)`,
+  `- [现有服务的请求、原始回复、契约、内存保存及断言](${evidence}end-to-end-results.json)`,
+  ...(existsSync(evidence+'end-to-end-complete-context.json')?[`- [补回原对话明确回传预期后的独立实验](${evidence}end-to-end-complete-context.json)`]:[]),
+  `- [契约失败的离线逐项定位](${evidence}contract-diagnosis.json)`,
+  '## 参考与复现',
+  '- [LangGraph 官方结构化路由示例](https://github.com/langchain-ai/docs/blob/main/src/oss/langgraph/workflows-agents.mdx)',
+  '- [OpenAI Agents SDK：工具与运行循环](https://github.com/openai/openai-agents-python/blob/main/docs/agents.md)',
+  '在工作树根目录使用已配置 Node 运行：',
+  '```sh\nEXPERIMENT_NODE=/Users/apple/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node\n"$EXPERIMENT_NODE" --test Backend/experiments/intent-routing/router.test.mjs\n"$EXPERIMENT_NODE" Backend/experiments/intent-routing/run.mjs\n"$EXPERIMENT_NODE" Backend/experiments/intent-routing/end-to-end.mjs\nEXPERIMENT_COMPLETE_CONTEXT=1 "$EXPERIMENT_NODE" Backend/experiments/intent-routing/end-to-end.mjs\n"$EXPERIMENT_NODE" Backend/experiments/intent-routing/diagnose-contract.mjs\n"$EXPERIMENT_NODE" Backend/experiments/intent-routing/review.mjs\n"$EXPERIMENT_NODE" Backend/experiments/intent-routing/report.mjs\n```',
+  '遇到限流后保留结果并等待服务恢复，再分别以 EXPERIMENT_RETRY_ERRORS=1 运行对应脚本，仅追加失败请求的补测。初始并发实验与补测的全部记录均保存在当前工作树 .context/intent-routing。',
+];
+mkdirSync(root+'docs',{recursive:true});
+writeFileSync(root+'docs/意图路由真实模型实验.md',lines.map((line,i)=>(i?(line.startsWith('|')&&lines[i-1].startsWith('|')?'\n':'\n\n'):'')+line).join('')+'\n');
+writeFileSync(evidence+'summary.json',JSON.stringify({summary,initialErrors,failures,endToEnd:end.map(({trace,input,...rest})=>rest)},null,2));
+console.log(JSON.stringify({summary,endToEnd:end.map(r=>({id:r.id,method:r.method,saved:r.savedProposal,passed:r.assertionsPassed,error:r.error}))},null,2));

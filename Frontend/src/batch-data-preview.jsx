@@ -1,5 +1,5 @@
 import React, {useState} from 'react';
-import {Database, X} from 'lucide-react';
+import {Database, X} from './ui-icons.jsx';
 import './batch-data-preview.css';
 
 function buildDraft(cases){

@@ -2,6 +2,8 @@
 
 当前完整流程以[Case全流程设计](../../docs/Case全流程设计.md)和[Backend说明](../README.md)为准；本文件以下测试计数记录模块各次引入时的验证，最终整体验证见验收报告。
 
+操作链定义及后端合理性审查另遵循[中登协议操作链规范](./agent-langgraph-protocol-chain.md)。业务申请必须有已核实的协议映射，协调器恢复不能创造账户/份额或成功确认，也不能将外部日期推进、私有配置等自然语言条件当成已执行事实。该规范是新增审查依据，不表示本次已修改协调器行为。
+
 Case图包含 `reconcile_committed_business → 对应阶段等待节点 → reconcile_committed_business` 循环。前者读取认证范围内业务SQL，等待节点使用原生LangGraph `interrupt`；通知用 `Command({resume})` 恢复。MySQL保存LangGraph checkpoint、pending writes和事件响应，进程重启后继续原来的等待点。
 
 等待阶段覆盖讨论、Plan数据确认、Plan预期确认、准备草稿、草稿确认、文件时序补充、文件交换、结果判断、人工确认结果、Case最终及Chat关闭。文件交换返回多个同时可以处理的step；01/03是否相依、独立05位于哪个时间点，始终由用户已确认Plan DAG与SQL SENT/PARSED/CONFIRMED事件决定。

@@ -1,0 +1,37 @@
+.cw-project-bar .cw-project-picker {
+  display:flex;align-items:center;gap:8px;min-width:0;max-width:100%;min-height:28px;
+  padding:3px 7px;border-radius:7px;color:var(--study-ink);font-size:13px;line-height:20px;
+  transition:background-color 150ms ease;
+}
+.cw-project-picker > span {overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.cw-project-picker > svg {flex:none;color:var(--study-muted);}
+.cw-project-picker:hover,.cw-project-picker[aria-expanded=true] {background:var(--study-hover);}
+.cw-project-picker > svg:last-child {transition:transform 150ms ease;}
+.cw-project-picker[aria-expanded=true] > svg:last-child {transform:rotate(180deg);}
+.cw-project-menu {
+  position:fixed;z-index:50;overflow:auto;overscroll-behavior:contain;padding:6px;
+  border:1px solid var(--study-line);border-radius:12px;background:var(--study-modal);
+  color:var(--study-ink);box-shadow:var(--study-modal-shadow);font-family:var(--study-font);
+  font-size:13px;line-height:20px;color-scheme:var(--study-scheme);scrollbar-width:thin;
+  scrollbar-color:var(--study-scrollbar) transparent;
+}
+.cw-project-menu-label {padding:5px 9px 7px;font-size:12px;color:var(--study-muted);}
+.cw-project-menu button {
+  display:flex;align-items:center;gap:9px;width:100%;min-height:38px;padding:8px 9px;
+  border:0;border-radius:7px;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer;
+  transition:background-color 150ms ease;
+}
+.cw-project-menu button > span {min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.cw-project-menu button > svg {flex:none;color:var(--study-icon);stroke-width:1.5;}
+.cw-project-menu .cw-project-check {margin-left:auto;color:var(--study-accent);}
+.cw-project-menu button[aria-selected=true] {background:var(--study-hover);}
+.cw-project-menu button:hover {background:var(--study-hover);}
+.cw-project-menu button:focus-visible {outline:2px solid var(--study-focus);outline-offset:-2px;background:var(--study-hover);}
+.cw-project-menu .cw-project-create {margin-bottom:5px;}
+@media (pointer:coarse) {
+  .cw-project-bar .cw-project-picker {min-height:44px;}
+  .cw-project-menu button {min-height:44px;}
+}
+@media (prefers-reduced-motion:reduce) {
+  .cw-project-picker,.cw-project-picker > svg:last-child,.cw-project-menu button {transition:none;}
+}

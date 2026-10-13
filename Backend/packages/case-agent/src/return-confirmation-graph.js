@@ -1,3 +1,4 @@
+import {observeGraph} from './observability.js';
 import { StateGraph, StateSchema, START, END } from '@langchain/langgraph';
 import { z } from 'zod';
 import { planReturnConfirmation } from '../../platform-protocol/src/return-confirmation.js';
@@ -28,5 +29,5 @@ export function createReturnConfirmationGraph({ channel, applyAccountConfirmatio
   graph.addEdge('verify_account_return', 'apply_account_confirmation');
   graph.addEdge('verify_transaction_return', 'apply_transaction_confirmation');
   graph.addEdge('apply_account_confirmation', END).addEdge('apply_transaction_confirmation', END);
-  return graph.compile();
+  return observeGraph(graph.compile());
 }

@@ -1,0 +1,44 @@
+:root[data-theme=abyss] {
+  --study-scheme:dark;
+  --study-font:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;
+  --study-surface:#233348;
+  --study-ink:#e6edf5;
+  --study-muted:#bac8d8;
+  --study-icon:#bdcede;
+  --study-line:#475c73;
+  --study-canvas:radial-gradient(ellipse at 85% 0%,#354a60 0%,transparent 65%),linear-gradient(145deg,#2b3e54,#233348 72%);
+  --study-sidebar:linear-gradient(105deg,#2c3e53,#25364b);
+  --study-hover:#3b5067;
+  --study-selected:linear-gradient(110deg,#3e5d77,#345169);
+  --study-on-selected:#edf5fc;
+  --study-selected-shadow:inset 2px 0 0 #a3c5dd,inset 0 1px 0 rgb(218 234 247 / 14%),0 3px 9px rgb(13 25 40 / 12%);
+  --study-bubble:linear-gradient(135deg,#34485e,#2c4056);
+  --study-bubble-shadow:inset 0 1px 0 rgb(225 237 248 / 7%);
+  --study-accent:#a6cadf;
+  --study-accent-deep:#8bb7d1;
+  --study-focus:#b0cfe3;
+  --study-disabled:#3b4e63;
+  --study-mark:linear-gradient(140deg,#526f88,#38536b);
+  --study-edge-shadow:inset 0 1px 0 rgb(229 242 251 / 18%),0 3px 8px rgb(13 25 40 / 15%);
+  --study-document:linear-gradient(135deg,#334960,#2c4056);
+  --study-document-shadow:inset 0 1px 0 rgb(225 237 248 / 7%),0 6px 16px rgb(13 25 40 / 12%);
+  --study-document-hover-shadow:inset 0 1px 0 rgb(225 237 248 / 12%),0 9px 22px rgb(13 25 40 / 18%);
+  --study-document-icon:linear-gradient(140deg,#49637b,#3a536c);
+  --study-composer:linear-gradient(165deg,#3b5067,#2d425a 60%,#2a3c53);
+  --study-composer-edge:#6a8298;
+  --study-composer-shadow:inset 0 1px 0 rgb(225 240 250 / 20%),inset 0 -1px 0 rgb(13 25 40 / 18%),0 14px 32px rgb(13 25 40 / 20%);
+  --study-composer-focus-shadow:inset 0 1px 0 rgb(225 240 250 / 26%),0 0 0 3px rgb(166 202 223 / 9%),0 14px 32px rgb(13 25 40 / 20%);
+  --study-project-bar:linear-gradient(100deg,#3b5067,#30465e);
+  --study-modal:linear-gradient(145deg,#354a60,#293c52);
+  --study-modal-shadow:inset 0 1px 0 rgb(225 237 248 / 13%),0 24px 64px rgb(10 20 34 / 38%);
+  --study-table:#2b3f55;
+  --study-table-head:#3b5067;
+  --study-backdrop:rgb(13 23 36 / 60%);
+  --study-selection:#4b6780;
+  --study-scrollbar:#748aa0;
+  --study-error:#ffd0c4;
+}
+html[data-theme=abyss] .cw-brand-mark,
+html[data-theme=abyss] .cw-result-icon {border-radius:8px;}
+html[data-theme=abyss] .cw-shell svg {stroke-width:1.5;}
+html[data-theme=abyss] .cw-shell .cw-send:not(:disabled) {background:linear-gradient(145deg,#bdd7e7,#8bb7d1) !important;color:#233348 !important;}

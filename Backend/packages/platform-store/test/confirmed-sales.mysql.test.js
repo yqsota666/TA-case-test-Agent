@@ -53,7 +53,7 @@ test('MySQL: draft -> delivered 01 -> confirmed 02 -> delivered 03 -> confirmed 
     const stepIds=new Map();
     const counters=new Map();
     const planStep=(stepId,fileType,roundId,dependsOn=[])=>({stepId,fileType,roundId,direction:['01','03'].includes(fileType)?'SEND':'RECEIVE',businessTime:{kind:'DATE',value:fileType==='01'?'20261006':'20261007'},required:true,dependsOn});
-    async function createCase(withAccount = true, sharedChat = null) {
+    async function createCase(withAccount = true, sharedChat = null, count = 1) {
       const scope = { chatPublicId: sharedChat ?? crypto.randomUUID(),casePublicId: crypto.randomUUID() };
       let chat;
       if(sharedChat){const [[existing]]=await db.execute('SELECT id FROM case_chats WHERE workspace_id=? AND public_id=?',[workspaceId,sharedChat]);chat={insertId:existing.id};}
@@ -61,10 +61,10 @@ test('MySQL: draft -> delivered 01 -> confirmed 02 -> delivered 03 -> confirmed 
       const [c] = await db.execute(`INSERT INTO cases(public_id,workspace_id,chat_id,title,status) VALUES (?,?,?,'合成确认账本测试','SOP_LOCKED')`,[scope.casePublicId,workspaceId,chat.insertId]);
       await db.execute(`INSERT INTO case_sop_versions(workspace_id,chat_id,case_id,version_number,plan_json,status,locked_at)
         VALUES (?,?,?,1,?,'LOCKED',CURRENT_TIMESTAMP(3))`,[workspaceId,chat.insertId,c.insertId,JSON.stringify({test:'synthetic',exchangePlan:{status:'READY',openQuestions:[],steps:withAccount? [planStep('s01_1','01','open1'),planStep('r02_1','02','open1',[{stepId:'s01_1',condition:'SENT'}]),planStep('s03_1','03','trade1',[{stepId:'r02_1',condition:'CONFIRMED'}]),planStep('r04_1','04','trade1',[{stepId:'s03_1',condition:'SENT'}])] : [planStep('s03_1','03','trade1'),planStep('r04_1','04','trade1',[{stepId:'s03_1',condition:'SENT'}]),planStep('s03_2','03','trade2',[{stepId:'r04_1',condition:'CONFIRMED'}]),planStep('r04_2','04','trade2',[{stepId:'s03_2',condition:'SENT'}])]}})]);
-      const spec = { customers: withAccount ? [{ name:'合成客户',investorType:'1',simulatedBalance:'999999.00' }] : [],
-        accounts: withAccount ? [{ customerIndex:0,branchCode:'306' }] : [],
+      const spec = { customers: withAccount ? Array.from({length:count},(_,i)=>({ name:count===1?'合成客户':'合成客户'+i,investorType:'1',simulatedBalance:'999999.00' })) : [],
+        accounts: withAccount ? Array.from({length:count},(_,i)=>({ customerIndex:i,branchCode:'306' })) : [],
         funds:[{ fundCode:'000001',fundName:'合成基金',shareClass:'0',nav:'1.00000000' }],
-        holdings: withAccount ? [{ accountIndex:0,fundIndex:0,totalVolume:'888.00000000' }] : [],missing:[] };
+        holdings: withAccount ? Array.from({length:count},(_,i)=>({ accountIndex:i,fundIndex:0,totalVolume:'888.00000000' })) : [],missing:[] };
       await repository.executeGeneratedData(token,scope.chatPublicId,scope.casePublicId,1,spec,(conn,keys,data)=>
         createDataGenerationGraph({ db:conn,scope:keys,specification:data }).invoke({}));
       const data = await repository.confirmGeneratedData(token,scope.chatPublicId,scope.casePublicId,0);
@@ -262,6 +262,35 @@ test('MySQL: draft -> delivered 01 -> confirmed 02 -> delivered 03 -> confirmed 
     const [[sentBoth]]=await db.execute(`SELECT COUNT(*) AS n FROM applications WHERE public_id IN (?,?) AND status='WAITING_RETURN'`,mixedApps.map(app=>app.publicId));assert.equal(Number(sentBoth.n),2);
     assert.equal((await confirmations.delivery(token,{...mixedOpening.scope,batchPublicId:mixedBatch.publicId})).duplicate,true);
     await verifyHoldingsSync({db,transaction,token,workspaceId,channelId,confirmations,trade,returned04,createCase,stage,generate,parse});
+    // A shared exchange step must retain every customer's application in one file.
+    const grouped=await createCase(true,null,3);
+    const opens=grouped.data.accounts.map((a,i)=>({...opening,AppSheetSerialNo:'BATCHOPEN'+i,TransactionAccountID:a.account_no,CertificateNo:'BATCHCERT'+i,InvestorName:'合成客户'+i}));
+    const groupedGenerate=async(type,records)=>{
+      const apps=[];for(const record of records)apps.push(await stage(grouped.scope,grouped.data,type,record));
+      const batch=await exchange.createOutboundBatch(token,{chatPublicId:grouped.scope.chatPublicId,channelId,businessDate:records[0].TransactionDate,applicationPublicIds:apps.map(a=>a.publicId)});
+      const generated=await exchange.generateOutboundFiles(token,{chatPublicId:grouped.scope.chatPublicId,batchPublicId:batch.publicId});
+      assert.equal(generated.files.length,1);assert.equal(generated.files[0].recordCount,3);
+      assert.equal(generated.files[0].fileType,type);
+      const [[membership]]=await db.execute('SELECT COUNT(*) AS n FROM batch_applications WHERE batch_id=(SELECT id FROM exchange_batches WHERE public_id=?)',[batch.publicId]);
+      assert.equal(Number(membership.n),3);
+      stepIds.set(batch.publicId,'s'+type+'_1');
+      await confirmations.delivery(token,{...grouped.scope,batchPublicId:batch.publicId,exchangeStepId:stepIds.get(batch.publicId)});
+      return batch.publicId;
+    };
+    const grouped01=await groupedGenerate('01',opens);
+    const returns02=opens.map((r,i)=>({...r,BusinessCode:'101',ReturnCode:'0000',TAAccountID:'BATCHTA'+i,TASerialNO:'BATCHCFM'+i,TransactionCfmDate:'20261007'}));
+    const receipt02=await parse(grouped.scope,grouped01,'02',returns02,950);
+    await confirmations.apply(token,{...grouped.scope,parseId:receipt02.parseId,recordIndexes:[0,1,2]});
+    assert.equal((await exchange.listCaseBindings(token,grouped.scope)).bindings.length,3);
+    const trades=opens.map((r,i)=>({...trade,AppSheetSerialNo:'BATCHTRADE'+i,TransactionAccountID:r.TransactionAccountID,TAAccountID:'BATCHTA'+i,ApplicationAmount:'100.00'}));
+    const grouped03=await groupedGenerate('03',trades);
+    const returns04=trades.map((r,i)=>({...r,BusinessCode:'122',ReturnCode:'0000',TASerialNO:'BATCHCFMTRADE'+i,TransactionCfmDate:'20261007',ConfirmedAmount:'100.00',ConfirmedVol:'100.00',NAV:'1.00000000',BusinessFinishFlag:'1'}));
+    const receipt04=await parse(grouped.scope,grouped03,'04',returns04,951);
+    await confirmations.apply(token,{...grouped.scope,parseId:receipt04.parseId,recordIndexes:[0,1,2]});
+    const groupedSales=await confirmations.salesData(token);
+    const groupedAccounts=new Set(opens.map(r=>r.TransactionAccountID));
+    const groupedHoldings=groupedSales.holdings.filter(h=>groupedAccounts.has(h.transactionAccountId));
+    assert.equal(groupedHoldings.length,3);assert.ok(groupedHoldings.every(h=>h.totalVolume==='100.00'));
     const otherUserId = crypto.randomUUID();
     const [other] = await db.execute(`INSERT INTO platform_users(public_id,email,password_hash,display_name) VALUES (?,?,?,'隔离测试')`,
       [otherUserId,otherUserId+'@example.invalid','synthetic-test-only']);

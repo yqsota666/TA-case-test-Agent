@@ -3,9 +3,10 @@ const exact = (v, keys) => v && typeof v === 'object' && !Array.isArray(v) && Ob
 const text = v => typeof v === 'string' && v.trim() === v && v.length > 0 && v.length <= 300 && !/[\r\n]/.test(v);
 export function exchangeError(code, message) { return Object.assign(new Error(message), { code, status: 409 }); }
 export function validExchangePlan(plan) {
-  if (!exact(plan,['status','steps','openQuestions']) || !['READY','UNPLANNED'].includes(plan.status) ||
+  if (!exact(plan,['status','steps','openQuestions']) || !['READY','UNPLANNED','NOT_REQUIRED'].includes(plan.status) ||
       !Array.isArray(plan.openQuestions) || plan.openQuestions.length > 30 || !plan.openQuestions.every(text) ||
       !Array.isArray(plan.steps) || plan.steps.length > 100) return false;
+  if(plan.status==='NOT_REQUIRED')return plan.steps.length===0 && plan.openQuestions.length===0;
   if (plan.status === 'UNPLANNED') return plan.steps.length === 0 && plan.openQuestions.length > 0;
   if (!plan.steps.length || plan.openQuestions.length) return false;
   const steps = new Map();

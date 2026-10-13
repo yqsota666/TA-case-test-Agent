@@ -1,5 +1,8 @@
+import {observeGraph} from './observability.js';
 import { StateGraph, StateSchema, START, END } from '@langchain/langgraph';
 import { z } from 'zod';
+import {DISCUSSION_VOICE,checkDiscussionReply,completeDiscussionReply} from './discussion-reply.js';
+import {planPlatformOwnershipIssues} from './plan-platform-ownership.js';
 import {
   FIRST_DISCUSSION_PROMPT,
   FIRST_DISCUSSION_PROMPT_VERSION,
@@ -13,8 +16,9 @@ import {
   guardExchangeTimeEvidence,
 } from './plan-proposal.js';
 
-export const FOLLOWUP_DISCUSSION_PROMPT_VERSION = 'followup-discussion-v3';
-export const FOLLOWUP_DISCUSSION_PROMPT = '你是测试方案讨论助手。阅读完整对话，以使用者最新补充或纠正为准。根据已确认的信息提出一项可讨论的测试方法，说明要观察什么；未确认的信息只作为待确认问题，不写成事实。此轮仍在讨论，不宣布最终 Plan，也不声称自己或系统已生成、锁定或执行任何方案；不执行操作。输出简短中文纯文本，严格只写以下三行，每行小标题后直接写简短内容，不加空行，不使用 Markdown 标题、列表符号、加粗符号或代码块。第三行必须包含一个以中文或英文问号结尾的问题，可以紧接一句简短解释：\n当前理解：概括目前已确认的目标和条件。\n建议先测：说明你建议的方法和观察结果。\n请你确认：询问下一步最需要使用者决定的事项？';
+export const FOLLOWUP_DISCUSSION_PROMPT_VERSION = 'followup-discussion-draft-adaptive-v8';
+export const HISTORICAL_PLAN_CONTEXT = '历史方案已保留；本轮业务内容以当前已保存草稿与用户消息为准，历史生成不证明确认或执行。';
+export const FOLLOWUP_DISCUSSION_PROMPT = DISCUSSION_VOICE + '\n阅读完整对话，以用户最新纠正为准。承接上轮问题的答案，推动下一步，不循环索要已经提供的信息。';
 
 const Turn = z.object({ role: z.enum(['user', 'assistant']), content: z.string() });
 const DiscussionState = new StateSchema({
@@ -27,23 +31,7 @@ const DiscussionState = new StateSchema({
   proposal: z.unknown().nullable().default(null),
 });
 
-export function checkFollowupDiscussionReply(reply) {
-  if (typeof reply === 'string') reply = reply.replace(/[ \t]+(?=\n|$)/g, '');
-  const lines = typeof reply === 'string' ? reply.split('\n') : [];
-  if (typeof reply !== 'string' || reply.length < 30 || reply.length > 360 ||
-      reply !== reply.trim() || /\r|(?:\*\*|__|`|\*[^*\n]+\*|(?<![A-Za-z0-9_])_[^_\n]+_(?![A-Za-z0-9_])|\[[^\]\n]+\]\([^)\n]+\)|^\s{0,3}(?:#{1,6}\s|[-*+]\s|\d+[.)]\s))/m.test(reply) ||
-      /(?:我|我们|本助手|本系统|系统|AI)\s*(?:已|已经|现已)[^。！？\n]{0,20}(?:生成|制定|锁定|执行|提交|启动|完成|定稿|锁好|生成好|执行完)/i.test(reply) ||
-      /(?:Plan|SOP|方案|测试)[^。！？\n]{0,6}(?:已|已经|现已)(?:生成|锁定|执行|完成|定稿)/i.test(reply) ||
-      lines.length !== 3 ||
-      !/^当前理解：\S.+/.test(lines[0]) ||
-      !/^建议先测：\S.+/.test(lines[1]) ||
-      !/^请你确认：\S.+[？?]/.test(lines[2])) {
-    const error = new Error('后续讨论回复不符合三行中文纯文本格式');
-    error.code = 'MODEL_OUTPUT_FORMAT';
-    throw error;
-  }
-  return reply;
-}
+export const checkFollowupDiscussionReply = checkDiscussionReply;
 
 function validatePriorTurns(priorTurns) {
   if (!Array.isArray(priorTurns) || priorTurns.length % 2 !== 0) {
@@ -57,28 +45,43 @@ function validatePriorTurns(priorTurns) {
   }
 }
 
-export function createDiscussionGraph({ complete }) {
+export function createDiscussionGraph({ complete, onDelta, onReset, signal, discussionContext={}, proposalRepair, currentProposal, currentProposalHistoryOffset=0 }) {
   if (typeof complete !== 'function') throw new TypeError('complete must be a function');
   const graph = new StateGraph(DiscussionState);
   graph.addNode('ask_testing_intent', async ({ userInput }) => ({
-    reply: checkFirstDiscussionReply(await complete({ system: FIRST_DISCUSSION_PROMPT, user: userInput })),
+    reply: await completeDiscussionReply(complete,{ system: FIRST_DISCUSSION_PROMPT, user: userInput, ...(onDelta?{onDelta,onReset,signal}:{}) },discussionContext),
     phase: 'AWAITING_USER',
     promptVersion: FIRST_DISCUSSION_PROMPT_VERSION,
   }));
   graph.addNode('refine_test_approach', async ({ userInput, priorTurns }) => ({
-    reply: checkFollowupDiscussionReply(await complete({
-      system: FOLLOWUP_DISCUSSION_PROMPT,
+    reply: await completeDiscussionReply(complete,{
+      system: FOLLOWUP_DISCUSSION_PROMPT+(discussionContext.needsClarification?' 本轮无法明确用户省略表达所指的操作，请只澄清影响下一步的具体指代，不反复解释系统流程。':''),
+      ...(onDelta?{onDelta,onReset,signal}:{}),
       messages: [...priorTurns, { role: 'user', content: userInput }],
-    })),
+    },discussionContext),
     phase: 'AWAITING_USER',
     promptVersion: FOLLOWUP_DISCUSSION_PROMPT_VERSION,
   }));
   graph.addNode('propose_plan', async ({ userInput, priorTurns }) => {
-    if (priorTurns.length < 4) throw new Error('Plan 提案前至少需要两轮完整讨论');
-    const proposal = guardExchangeTimeEvidence(parsePlanProposal(await complete({
-      system: PLAN_PROPOSAL_PROMPT,
-      messages: [...priorTurns, { role: 'user', content: userInput }],
-    })), [...priorTurns.filter(turn=>turn.role==='user').map(turn=>turn.content),userInput]);
+    const proposeComplete=request=>complete(currentProposal?{...request,
+      system:request.system+' currentProposal是当前已保存的业务草稿，仅供承接条件；不证明已确认或已执行，也不是系统能力事实。保留用户明确的业务值，但必须纠正与系统平台职责冲突的历史AI说法：交易账号由平台在构造申请包前生成，不能写成TA处理开户后生成交易账号；TA回传确认和TA账号绑定，不生成或更换平台交易账号。用户最新输入优先。历史AI失败诊断、可选核验建议和技术缺失不是用户新增要求，不继承为业务问题；重新检查当前用户已给的日期、同包安排与实际业务规则。',
+      messages:request.messages.map((turn,i)=>i===priorTurns.length?{...turn,content:JSON.stringify({userInput:turn.content,currentProposal})}:turn).filter(turn=>turn.role!=='assistant'||turn.content!==HISTORICAL_PLAN_CONTEXT),
+    }:request);
+    let parsed,previous,proposal,ownershipIssues=[];
+    for(let attempt=0;attempt<2;attempt++){
+      const reply=await proposeComplete({thinkingMode:'disabled',reasoningEffort:'low',
+        system:PLAN_PROPOSAL_PROMPT+(proposalRepair?' 上次文件安排与后续申请契约不一致。请依据proposalRepair修复文件安排，保持用户业务条件、日期与真实未来结果依赖；不能机械删除真实依赖。只生成修复后的方案JSON。':'')+(attempt?' 上次格式或日期证据校验未通过。只修正JSON结构、日期格式、用户日期依据和纯文本字段，保留用户范围与业务值；用户未提供日期时使用UNPLANNED并询问是哪一天，不得补模拟日期；不可改写用户指定日期、取消或待定指令。必须直接以{开头、以}结尾，不能含代码围栏、解释或额外字段。':''),
+        messages:[...priorTurns,{role:'user',content:proposalRepair?JSON.stringify({userInput,proposalRepair}):userInput},...(attempt?[{role:'assistant',content:previous},{role:'user',content:ownershipIssues.length?ownershipIssues.join('\n'):'请修正上述方案输出格式及日期证据：日期必须来自用户已明确的信息；缺少日期时使用UNPLANNED并询问是哪一天，不能靠【模拟假设】补齐。用户指定、改期或待定仍优先，不能为了READY捏造真实时间。业务条件仍以原对话为准。'}]:[])]});
+      try{
+        parsed=parsePlanProposal(reply);
+        ownershipIssues=planPlatformOwnershipIssues(parsed);
+        if(ownershipIssues.length)throw Object.assign(new Error(ownershipIssues.join('；')),{code:'MODEL_OUTPUT_FORMAT'});
+        const inheritedTimes=currentProposal?.exchangePlan?.status==='READY'?[currentProposal.exchangePlan.steps.map(step=>`${step.fileType}文件${step.direction==='SEND'?'申请':'回传'}日期采用${step.businessTime.value}`).join('；')]:[];
+        const humanTurns=turns=>turns.filter(turn=>turn.role==='user').map(turn=>turn.content);
+        proposal=guardExchangeTimeEvidence(parsed,[...humanTurns(priorTurns.slice(0,currentProposalHistoryOffset)),...inheritedTimes,...humanTurns(priorTurns.slice(currentProposalHistoryOffset)),userInput]);
+        break;
+      }catch(e){if(e.code!=='MODEL_OUTPUT_FORMAT'||attempt===1)throw e;previous=reply;}
+    }
     return {
       proposal,
       reply: displayPlanProposal(proposal),
@@ -86,21 +89,13 @@ export function createDiscussionGraph({ complete }) {
       promptVersion: PLAN_PROPOSAL_PROMPT_VERSION,
     };
   });
-  graph.addNode('ask_exchange_timing', async ({ proposal, userInput, priorTurns }) => ({
-    reply: checkFollowupDiscussionReply(await complete({
-      system: FOLLOWUP_DISCUSSION_PROMPT + ' 本轮专门询问文件时序：逐轮01/02、03/04及可选独立05，询问未知的业务日期或相对时点、发送/接收前置条件。不要猜测日期，不把1至2轮当上限。当前缺少的信息：' + proposal.exchangePlan.openQuestions.join('；'),
-      messages: [...priorTurns, {role:'user',content:userInput}],
-    })),
-    promptVersion: 'exchange-timing-v1', phase:'PROPOSAL_PENDING',
-  }));
-  graph.addConditionalEdges('propose_plan', ({proposal}) => proposal.exchangePlan.status === 'UNPLANNED' ? 'ask_exchange_timing' : END, ['ask_exchange_timing', END]);
-  graph.addEdge('ask_exchange_timing', END);
+  graph.addEdge('propose_plan', END);
   graph.addConditionalEdges(START,
     ({ mode, priorTurns }) => mode === 'PROPOSE_PLAN' ? 'propose_plan' :
       priorTurns.length ? 'refine_test_approach' : 'ask_testing_intent',
     ['ask_testing_intent', 'refine_test_approach', 'propose_plan']);
   graph.addEdge('ask_testing_intent', END).addEdge('refine_test_approach', END);
-  return graph.compile();
+  return observeGraph(graph.compile());
 }
 
 export async function discussTurn(graph, { priorTurns = [], userInput }) {
@@ -121,7 +116,6 @@ export async function discussTurn(graph, { priorTurns = [], userInput }) {
 
 export async function proposeDiscussionPlan(graph, { priorTurns = [], userInput }) {
   validatePriorTurns(priorTurns);
-  if (priorTurns.length < 4) throw new Error('Plan 提案前至少需要两轮完整讨论');
   if (typeof userInput !== 'string' || !userInput.trim()) {
     throw new TypeError('userInput must be non-empty text');
   }

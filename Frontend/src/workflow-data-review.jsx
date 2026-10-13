@@ -1,5 +1,5 @@
 import React, {useState} from 'react';
-import {Table2} from 'lucide-react';
+import {Table2} from './ui-icons.jsx';
 import './workflow-data-review.css';
 
 export function WorkflowDataReview({data,turns,busy,onOpen,onEdit,onConfirm,onSend,onRetry,filePanel}){

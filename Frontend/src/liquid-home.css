@@ -1,0 +1,44 @@
+/* The reviewed homepage material is scoped to Liquid chat, including its detail panel. */
+html[data-theme=liquid] .cw-shell.cw-liquid-home {
+  --study-ink:#203749;--study-muted:#526675;--study-accent:#146279;--study-accent-deep:#104e64;--study-focus:#176c88;
+  --study-hover:#deebf0;--study-line:rgb(46 91 119 / 16%);
+  --cw-ink:var(--study-ink);--cw-muted:var(--study-muted);--cw-accent:var(--study-accent);--cw-accent-deep:var(--study-accent-deep);--cw-focus:var(--study-focus);
+  --cw-accent-light:var(--study-accent);--cw-hover:var(--study-hover);--cw-line:var(--study-line);
+  --study-selected:linear-gradient(115deg,#d8eaf0,#eaf4f7);--study-on-selected:#104e64;
+  --study-selected-shadow:inset 0 1px 0 #fff,0 3px 8px rgb(36 89 110 / 6%);
+  --cw-selected:var(--study-selected);--cw-selected-ink:var(--study-on-selected);
+  background:radial-gradient(ellipse at 96% 0%,rgb(169 210 236 / 24%),transparent 52%),radial-gradient(ellipse at 7% 100%,rgb(170 213 211 / 12%),transparent 48%),#f7fafc;
+  color:var(--study-ink);
+}
+html[data-theme=liquid] .cw-liquid-home .cw-sidebar {background:linear-gradient(160deg,rgb(230 240 248 / 96%),rgb(217 234 244 / 94%));box-shadow:inset -1px 0 0 rgb(255 255 255 / 90%),1px 0 0 rgb(46 91 119 / 19%);}
+html[data-theme=liquid] .cw-liquid-home .cw-header {border-bottom:1px solid rgb(46 91 119 / 7%);}
+html[data-theme=liquid] .cw-liquid-home .cw-case.is-selected,
+html[data-theme=liquid] .cw-liquid-home [data-slot=thread-list] button[aria-current=page] {position:relative;background:var(--study-selected);color:var(--study-on-selected)!important;box-shadow:var(--study-selected-shadow);font-weight:600!important;}
+html[data-theme=liquid] .cw-liquid-home .cw-case.is-selected::before,
+html[data-theme=liquid] .cw-liquid-home [data-slot=thread-list] button[aria-current=page]::before {content:'';position:absolute;left:0;height:18px;width:3px;background:var(--study-accent);border-radius:0 3px 3px 0;}
+html[data-theme=liquid] .cw-liquid-home .aui-user-message-content {background:linear-gradient(140deg,rgb(244 252 255 / 95%),rgb(220 238 247 / 90%));border-color:rgb(35 100 130 / 14%);color:#294a60;box-shadow:inset 0 1px 0 #fff;}
+html[data-theme=liquid] .cw-liquid-home .aui-md {line-height:1.85;}
+html[data-theme=liquid] .cw-liquid-home .aui-md h1 {font-size:22px;}
+html[data-theme=liquid] .cw-liquid-home .aui-md h2 {font-size:19px;}
+html[data-theme=liquid] .cw-liquid-home .aui-md h1,
+html[data-theme=liquid] .cw-liquid-home .aui-md h2 {letter-spacing:-.3px;text-wrap:balance;}
+html[data-theme=liquid] .cw-liquid-home .aui-md p {text-wrap:pretty;}
+html[data-theme=liquid] .cw-liquid-home .cw-result {background:linear-gradient(115deg,#fff,#f0f8fb)!important;border-color:rgb(43 116 147 / 24%)!important;box-shadow:inset 0 1px 0 #fff,0 6px 20px rgb(30 81 107 / 6%);}
+html[data-theme=liquid] .cw-liquid-home .cw-result-title {color:var(--study-accent-deep);font-weight:600;font-size:15px;}
+html[data-theme=liquid] .cw-liquid-home .cw-result-icon {background:linear-gradient(140deg,#dfedf4,#d1e6ef);color:var(--study-accent);box-shadow:inset 0 1px 0 #fff;}
+html[data-theme=liquid] .cw-liquid-home .cw-result-action {color:var(--study-accent);}
+html[data-theme=liquid] .cw-liquid-home .cw-result:hover {border-color:var(--study-accent)!important;box-shadow:0 8px 24px rgb(30 81 107 / 10%);}
+html[data-theme=liquid] .cw-liquid-home .cw-composer-frame {background:linear-gradient(150deg,rgb(255 255 255 / 94%),rgb(244 250 255 / 83%)) padding-box,linear-gradient(135deg,#fff,#92bdce 32%,#fff 63%,#c0dce7) border-box;border:1px solid transparent;box-shadow:inset 0 2px 0 #fff,inset 0 -2px 4px rgb(71 127 150 / 7%),0 5px 10px rgb(28 77 105 / 4%),0 18px 44px rgb(28 77 105 / 12%);}
+html[data-theme=liquid] .cw-liquid-home .cw-composer-frame:focus-within {border-color:var(--study-focus);box-shadow:0 0 0 3px rgb(23 108 136 / 9%),0 16px 40px rgb(28 77 105 / 12%);}
+html[data-theme=liquid] .cw-liquid-home .cw-send:not(:disabled) {background:linear-gradient(145deg,#247991,#104e64)!important;color:#fff!important;box-shadow:inset 0 1px 0 rgb(255 255 255 / 22%),0 3px 7px rgb(23 84 110 / 20%);}
+html[data-theme=liquid] .cw-liquid-home .aui-detail {background:#f7fafc;}
+
+html[data-theme=liquid] .cw-shell.cw-liquid-home {
+  --chat-ink:#27272a;
+  --chat-heading:#18181b;
+  --chat-muted:#62666d;
+}
+html[data-theme=liquid] .cw-shell.cw-liquid-home :is(.aui-md,.aui-user-message-content,.cw-composer textarea) {color:var(--chat-ink);}
+html[data-theme=liquid] .cw-shell.cw-liquid-home .aui-md :is(h1,h2,h3,h4,h5,h6,strong) {color:var(--chat-heading);}
+html[data-theme=liquid] .cw-shell.cw-liquid-home .aui-message-meta {color:var(--chat-muted);}
+html[data-theme=liquid] .cw-shell.cw-liquid-home .cw-composer textarea::placeholder {color:var(--chat-muted);}

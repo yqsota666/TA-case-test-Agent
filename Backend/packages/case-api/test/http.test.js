@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import { request as httpRequest } from 'node:http';
 import test from 'node:test';
+import {buildApplicationPackage} from '../../platform-protocol/src/application-package.js';
+import {buildDataFile,dataFileName} from '../../platform-protocol/src/index.js';
 import { createCaseHttpServer } from '../src/http.js';
 
 const route = '/api/chats/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/cases/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/discussion';
@@ -9,15 +11,16 @@ const planRoute = route.replace('/discussion', '/plan');
 const dataRoute = route.replace('/discussion', '/data');
 const allowedOrigin = 'http://127.0.0.1:3100';
 
-async function fixture(t, {orderRejected=false}={}) {
+async function fixture(t, {orderRejected=false,packageFiles=[],savedPackage=null}={}) {
   const calls = [];
   const server = createCaseHttpServer({
     allowedOrigin,
+    accountAuth:{current:async()=>({user:{id:'expected-account'}})},
     durableWorkflow:{read:async(token,input)=>{calls.push(['workflow-read',token,input]);return {stage:'DISCUSSION'};},resume:async(token,input)=>{calls.push(['workflow-resume',token,input]);return {stage:'FILE_EXCHANGE'};}},
     exchangePlanSupplement:{confirm:async(token,input)=>{calls.push(['supplement',token,input]);return{versionNumber:2,status:'LOCKED',supplemented:true};}},
     returnConfirmation: Object.fromEntries(['read','delivery','apply','salesData','selectAccount'].map(method =>
       [method,async (token,input) => { calls.push(['confirmation-'+method,token,input]); return { ok:true }; }])),
-    caseResult:{read:async(token,scope)=>{calls.push(['result-read',token,scope]);return {reviewId:null};},evaluate:async(token,scope)=>{calls.push(['result-evaluate',token,scope]);return {suggestion:{outcome:'REVIEW'}};},confirm:async(token,input)=>{calls.push(['result-confirm',token,input]);return {finalVerdict:'PASS'};}},
+    caseResult:{readBusinessOutput:async(token,input)=>{calls.push(['business-read',token,input]);return {businessOutput:null};},saveBusinessOutput:async(token,input)=>{calls.push(['business-save',token,input]);return {businessOutput:{id:'1'},duplicate:false};},read:async(token,scope)=>{calls.push(['result-read',token,scope]);return {reviewId:null};},evaluate:async(token,scope)=>{calls.push(['result-evaluate',token,scope]);return {suggestion:{outcome:'REVIEW'}};},confirm:async(token,input)=>{calls.push(['result-confirm',token,input]);return {finalVerdict:'PASS'};}},
     taReceipts:{read:async(token,input)=>{calls.push(['receipts-read',token,input]);return {supportedTypes:['02','04','05']};},parse:async(token,input)=>{calls.push(['receipts-parse',token,input]);return {phase:'PARSED',businessApplied:false};}},
     holdingsReturn: {
       read: async (token,scope)=>{calls.push(['holdings-read',token,scope]);return {steps:[],parses:[]};},
@@ -43,7 +46,7 @@ async function fixture(t, {orderRejected=false}={}) {
     }, getLatestSopProposal: async (...args) => {
       calls.push(['plan', ...args]); return { versionNumber: 1, status: 'PENDING_CONFIRMATION' };
     } },
-    discussionService: { discuss: async args => {
+    discussionService: { abandon:async args=>{calls.push(['abandon',args]);return {abandoned:true};}, discuss: async args => {
       calls.push(['discuss', args]); return { reply: '请确认', revision: 3 };
     }, propose: async args => {
       calls.push(['propose', args]); return { reply: '测试目标：检查规则', versionNumber: 1 };
@@ -62,6 +65,9 @@ async function fixture(t, {orderRejected=false}={}) {
       prepare: async args => { calls.push(['prepare', args]); return { phase: 'WAITING_TA', revision: 2 }; },
     },
     exchangeRepository: {
+      readDeliveryProfile:async(token,input)=>{calls.push(['get-profile',token,input]);return {channelId:input.channelId,profile:{aml:true}};},
+      readDeliveryPackage:async(token,input)=>{calls.push(['read-package',token,input]);return savedPackage;},
+      setDeliveryProfile:async(token,input)=>{calls.push(['set-profile',token,input]);return input;},
       listChannels: async token => { calls.push(['channels', token]); return { channels: [] }; },
       listCaseApplications: async (token, ids) => {
         calls.push(['applications', token, ids]); return { applications: [] };
@@ -75,8 +81,8 @@ async function fixture(t, {orderRejected=false}={}) {
       generateOutboundFiles: async (token, input) => {
         calls.push(['generate', token, input]); return { files: [] };
       },
-      listOutboundFiles: async token => { calls.push(['files', token]); return { files: [] }; },
-      readOutboundFile: async token => { calls.push(['read-file', token]); return {
+      listOutboundFiles: async (token,chat) => { calls.push(['files', token,chat]); return { files: packageFiles }; },
+      readOutboundFile: async (token,input) => { calls.push(['read-file', token,input]); if(packageFiles.length)return packageFiles.find(f=>f.id===input.fileId);return {
         fileName: 'OFD_306_27_20261003_01_001.TXT', rawBytes: Buffer.from([0, 1, 2]), sha256: 'a'.repeat(64),
       }; },
     },
@@ -241,7 +247,7 @@ test('review input survives split UTF-8 chunks and larger table edits fit the re
   assert.equal(calls.at(-1)[1].userInput, '修改客户余额');
 
   const manyCustomers = Array.from({ length: 50 }, (_, index) => ({ id: null,
-    name: `模拟客户${index}${'甲'.repeat(100)}`, investorType: '1', simulatedBalance: '100.00',
+    name: `模拟机构${index}${'甲'.repeat(100)}`, investorType: '0', simulatedBalance: '100.00',
     branchCode: '305' }));
   const edit = { revision: 0, changes: { customers: manyCustomers,
     accounts: [], funds: [], holdings: [] } };
@@ -414,4 +420,68 @@ test('strict Plan cannot bypass frozen application values through the legacy man
  const url=`http://127.0.0.1:${server.address().port}/api/chats/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/cases/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/applications`;
  const response=await fetch(url,{method:'POST',headers:{origin:'http://127.0.0.1:5188',cookie:'case_session=synthetic','content-type':'application/json'},body:JSON.stringify({channelId:'1',businessDate:'20261006',fileType:'03',record:{ApplicationAmount:'450.00'}})});
  assert.equal(response.status,409);assert.equal((await response.json()).error,'PLAN_DATA_FROZEN');assert.equal(staged,0);
+});
+
+test('cancelling a pending discussion validates turn and origin before scoped abandonment',async t=>{
+ const {base,calls}=await fixture(t),path=route+'/cancel';
+ const headers={cookie:'case_session=abcdefghijklmnopqrstuvwxyz012345',origin:allowedOrigin,'content-type':'application/json'};
+ assert.equal((await fetch(base+path,{headers})).status,404);
+ for(const body of [null,{turnNumber:0},{turnNumber:3,workspaceId:1}]) assert.equal((await fetch(base+path,{method:'POST',headers,body:JSON.stringify(body)})).status,400);
+ assert.equal((await fetch(base+path,{method:'POST',headers:{...headers,origin:'https://foreign.example'},body:JSON.stringify({turnNumber:3})})).status,403);
+ assert.equal((await fetch(base+path,{method:'POST',headers,body:JSON.stringify({turnNumber:3})})).status,200);
+ assert.equal(calls.filter(c=>c[0]==='abandon').length,1);assert.equal(calls.at(-1)[1].turnNumber,3);
+});
+
+
+test('business output routes bind scope, reject changed account and bound JSON uploads',async t=>{
+ const {base,calls}=await fixture(t);const path=route.replace('/discussion','/result-review/business-output');
+ const headers={cookie:'case_session=abcdefghijklmnopqrstuvwxyz012345',origin:allowedOrigin,'content-type':'application/json','x-case-account':'expected-account'};
+ assert.equal((await fetch(base+path)).status,401);
+ assert.equal((await fetch(base+path,{headers})).status,200);assert.equal(calls.at(-1)[0],'business-read');
+ const body={requestId:'cccccccc-cccc-cccc-cccc-cccccccccccc',planVersion:1,sourceKind:'USER_RESULT',content:'实际输出'};
+ const saved=await fetch(base+path,{method:'POST',headers,body:JSON.stringify(body)});assert.equal(saved.status,200);
+ assert.deepEqual(calls.at(-1)[2],{chatPublicId:'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',casePublicId:'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',...body});
+ const before=calls.length;
+ for(const method of ['GET','POST'])assert.equal((await fetch(base+path,{method,headers:{...headers,'x-case-account':'previous-account'},...(method==='POST'?{body:JSON.stringify(body)}:{})})).status,409);
+ assert.equal(calls.length,before);
+ assert.equal((await fetch(base+path,{method:'POST',headers:{...headers,origin:'https://foreign.example'},body:JSON.stringify(body)})).status,403);
+ assert.equal((await fetch(base+path,{method:'POST',headers,body:JSON.stringify({...body,workspaceId:'99'})})).status,400);
+ assert.equal((await fetch(base+path,{method:'POST',headers,body:JSON.stringify({...body,content:'超'.repeat(90000)})})).status,413);
+ assert.equal((await fetch(base+path,{method:'DELETE',headers})).status,404);
+});
+
+
+test('application ZIP authenticates and scopes every original file to its Chat and batch',async t=>{
+ const batch='dddddddd-dddd-dddd-dddd-dddddddddddd',chat='aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+ const options={creator:'306',receiver:'27',date:'20261008',version:'22'};
+ const packageFiles=['01','03'].map((fileType,i)=>({id:String(i+1),batchPublicId:batch,fileName:dataFileName({...options,fileType}),rawBytes:buildDataFile({...options,fileType,records:[]})}));
+ const {base,calls}=await fixture(t,{packageFiles});
+ const route=`${base}/api/chats/${chat}/files/package/${batch}`,cookie='case_session=abcdefghijklmnopqrstuvwxyz012345';
+ assert.equal((await fetch(route)).status,401);
+ const response=await fetch(route,{headers:{cookie}});assert.equal(response.status,200);assert.equal(response.headers.get('content-type'),'application/zip');
+ assert.deepEqual(Buffer.from(await response.arrayBuffer()),buildApplicationPackage(packageFiles).rawBytes);
+ for(const call of calls.filter(c=>c[0]==='read-file')){assert.equal(call[1],cookie.split('=')[1]);assert.equal(call[2].chatPublicId,chat);}
+ assert.equal((await fetch(route.replace(batch,'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'),{headers:{cookie}})).status,404);
+});
+
+
+test('saved delivery ZIP downloads exact persisted bytes and date-only name',async t=>{
+ const savedPackage={fileName:'20260817.zip',rawBytes:Buffer.from('persisted-complete-zip')};
+ const {base,calls}=await fixture(t,{savedPackage});
+ const path='/api/chats/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/files/package/dddddddd-dddd-dddd-dddd-dddddddddddd';
+ const response=await fetch(base+path,{headers:{cookie:'case_session=abcdefghijklmnopqrstuvwxyz012345'}});
+ assert.equal(response.status,200);assert.equal(response.headers.get('content-disposition'),'attachment; filename="20260817.zip"');
+ assert.deepEqual(Buffer.from(await response.arrayBuffer()),savedPackage.rawBytes);
+ assert.equal(calls.some(c=>c[0]==='read-file'),false);
+});
+test('delivery configuration requires session, same origin and strict JSON input',async t=>{
+ const {base,calls}=await fixture(t);const path=base+'/api/exchange/channels/7/delivery-profile';
+ const headers={cookie:'case_session=abcdefghijklmnopqrstuvwxyz012345',origin:allowedOrigin,'content-type':'application/json'};
+ const body={profile:{indexSuffixes:{OFI:'-DLJ'},includeEmptyR1:true}};
+ assert.equal((await fetch(path,{headers})).status,200);
+ assert.equal((await fetch(path,{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify(body)})).status,401);
+ assert.equal((await fetch(path,{method:'PUT',headers:{...headers,origin:'https://foreign.example'},body:JSON.stringify(body)})).status,403);
+ assert.equal((await fetch(path,{method:'PUT',headers,body:JSON.stringify({...body,workspaceId:'99'})})).status,400);
+ const result=await fetch(path,{method:'PUT',headers,body:JSON.stringify(body)});assert.equal(result.status,200);
+ assert.deepEqual(calls.find(c=>c[0]==='set-profile')[2],{channelId:'7',profile:body.profile});
 });

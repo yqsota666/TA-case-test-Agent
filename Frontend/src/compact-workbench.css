@@ -1,0 +1,22 @@
+@media (min-width:481px) and (max-width:900px) {
+  .cw-header {height:56px;flex-basis:56px;padding:0 20px;}
+  .cw-messages {width:calc(100% - 40px);padding-top:24px;}
+  .cw-welcome-bot,.cw-welcome-logo {width:120px;height:120px;}
+  .cw-new-welcome {gap:14px;}
+  .cw-new-conversation h2 {font-size:22px;}
+  .cw-composer-area {padding:10px 20px max(20px,env(safe-area-inset-bottom));}
+  .cw-composer-frame {border-radius:18px;}
+  .cw-project-bar {min-height:36px;padding:8px 14px;}
+  .cw-composer {min-height:94px;padding:14px 14px 12px;gap:8px;}
+  .cw-composer textarea {font-size:14px;}
+  .cw-send {width:32px;height:32px;}
+}
+@media (min-width:481px) and (max-width:680px) {
+  .cw-header {padding-left:16px;padding-right:16px;}
+  .cw-messages {width:calc(100% - 32px);}
+  .cw-welcome-bot,.cw-welcome-logo {width:104px;height:104px;}
+  .cw-new-conversation h2 {font-size:20px;}
+  .cw-composer-area {padding-left:16px;padding-right:16px;}
+  .cw-composer {min-height:86px;padding:12px;}
+  .cw-send {width:30px;height:30px;}
+}

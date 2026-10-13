@@ -37,7 +37,7 @@ test('a plan request yields a reviewable proposal without locking it', async () 
   } });
   const result = await proposeDiscussionPlan(graph, { priorTurns, userInput: '请整理为 Plan 提案。' });
   assert.equal(result.phase, 'PROPOSAL_PENDING');
-  assert.equal(result.promptVersion, 'plan-proposal-v4');
+  assert.equal(result.promptVersion, 'plan-proposal-draft-v13');
   assert.deepEqual(result.proposal, proposal);
   assert.match(result.reply, /^测试目标：验证重复确认不会重复入账/);
   assert.match(result.reply, /场景 1：重复上传确认/);
@@ -55,11 +55,12 @@ test('a plan request yields a reviewable proposal without locking it', async () 
   assert.equal('proposal' in correction, false);
 });
 
-test('proposal guard and structural format reject premature or unsafe output', async () => {
+test('proposal accepts first-message requests while rejecting unsafe structure', async () => {
   let called = false;
   const graph = createDiscussionGraph({ complete: async () => { called = true; return JSON.stringify(proposal); } });
-  await assert.rejects(proposeDiscussionPlan(graph, { priorTurns: priorTurns.slice(0, 2), userInput: '生成 Plan' }));
-  assert.equal(called, false);
+  const first=await proposeDiscussionPlan(graph, { priorTurns: [], userInput: '生成 Plan，03日期20261006，04日期20261007' });
+  assert.equal(first.proposal.exchangePlan.status,'READY');
+  assert.equal(called, true);
   assert.deepEqual(parsePlanProposal(JSON.stringify(proposal)), proposal);
   assert.throws(() => parsePlanProposal('```json\n' + JSON.stringify(proposal) + '\n```'), { code: 'MODEL_OUTPUT_FORMAT' });
   assert.throws(() => parsePlanProposal(JSON.stringify({ ...proposal, scenarios: [] })), { code: 'MODEL_OUTPUT_FORMAT' });
@@ -78,6 +79,14 @@ test('proposal parser accepts plain identifier underscores', () => {
   const identifierProposal = { ...proposal, objective: 'confirm_record_id' };
   assert.deepEqual(parsePlanProposal(JSON.stringify(identifierProposal)), identifierProposal);
 });
+test('planning retries malformed model formatting once and never relaxes the proposal schema',async()=>{
+  let calls=0;
+  const graph=createDiscussionGraph({complete:async()=>++calls===1?'```json\n'+JSON.stringify(proposal)+'\n```':JSON.stringify(proposal)});
+  const result=await proposeDiscussionPlan(graph,{priorTurns,userInput:'请整理Plan'});
+  assert.deepEqual(result.proposal,proposal);assert.equal(calls,2);
+  calls=0;await assert.rejects(proposeDiscussionPlan(createDiscussionGraph({complete:async()=>{calls++;return '{}';}}),{priorTurns,userInput:'请整理Plan'}),{code:'MODEL_OUTPUT_FORMAT'});
+  assert.equal(calls,2);
+});
 
 test('only independent unconfirmed Chinese TA outcome clauses receive explicit status tokens',()=>{
  const raw={...proposal,openQuestions:[],scenarios:[{...proposal.scenarios[0],expected:'开户成功；申购失败；总份额100份'}]};
@@ -92,4 +101,30 @@ test('only independent unconfirmed Chinese TA outcome clauses receive explicit s
  const existing={...proposal,openQuestions:[],scenarios:[{...proposal.scenarios[0],expected:'开户成功；状态CONFIRMED'}]};
  existing.contract=planContract(existing);
  assert.deepEqual(parsePlanProposal(JSON.stringify(existing)),existing,'existing contracts are never normalized');
+});
+
+
+test('TA receive-result language normalizes business expectation without asking for enum tokens',()=>{
+ const p={...proposal,openQuestions:[],scenarios:[{...proposal.scenarios[0],expected:'02解析结果为开户成功；04解析结果为申购成功'}]};
+ const result=parsePlanProposal(JSON.stringify(p));
+ assert.deepEqual(result.openQuestions,[]);
+ assert.match(result.scenarios[0].expected,/02解析结果为开户申请状态为CONFIRMED/);
+ assert.match(result.scenarios[0].expected,/04解析结果为申购申请状态为CONFIRMED/);
+ for(const expected of ['02解析结果为开户不成功','04解析结果为申购成功吗？','02解析结果为开户成功或失败']){
+  const result=parsePlanProposal(JSON.stringify({...p,scenarios:[{...p.scenarios[0],expected}]}));
+  assert.equal(result.scenarios[0].expected,expected);
+ }
+});
+
+test('a comma-separated explicit status completes the same operation without creating a false business question',()=>{
+ const raw={...proposal,openQuestions:[]};
+ const expected='03申购申请以2000.00元确认成功，状态为CONFIRMED（成功确认），确认份额为2000.00份';
+ const result=parsePlanProposal(JSON.stringify({...raw,scenarios:[{...raw.scenarios[0],expected}]}));
+ assert.equal(result.scenarios[0].expected,expected);assert.deepEqual(result.openQuestions,[]);
+ const repeated=parsePlanProposal(JSON.stringify({...raw,openQuestions:['请澄清场景1的TA业务确认结果：03申购申请以2000.00元确认成功','请澄清场景1的TA业务确认结果：02开户确认回传状态为CONFIRMED（成功确认）','实际手续费规则待明确'],scenarios:[{...raw.scenarios[0],expected}]}));
+ assert.deepEqual(repeated.openQuestions,['实际手续费规则待明确']);
+ for(const ambiguous of ['03申购申请以2000.00元确认成功，开户状态为CONFIRMED','03申购申请以2000.00元确认成功，状态为FAILED','申购是否确认成功，状态为CONFIRMED','03申购申请以2000.00元确认成功；状态为CONFIRMED']){
+  const parsed=parsePlanProposal(JSON.stringify({...raw,scenarios:[{...raw.scenarios[0],expected:ambiguous}]}));
+  assert.ok(parsed.openQuestions.length>0,ambiguous);
+ }
 });

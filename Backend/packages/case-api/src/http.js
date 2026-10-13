@@ -1,24 +1,41 @@
+import {observeRequest,safeErrorCode} from '../../case-agent/src/observability.js';
+import {observeHttpMetrics} from './backend-metrics.js';
+import {createAccountModelHttpHandler} from './account-model-http.js';
+import {validateDiscussionImages} from '../../platform-protocol/src/discussion-images.js';
+import {handleGlobalDataCatalog} from './global-data-http.js';
+import {handleGlobalFileCatalog} from './global-file-http.js';
+import {createAccountHttpHandler} from './account-http.js';
 import { createServer } from 'node:http';
 import { DataEditSchema } from '../../case-agent/src/index.js';
+import {revisePreparedPlanContent} from './prepared-plan-content.js';
+import { revisePreparedPlanData } from './prepared-plan-data.js';
 import { parseDataFile } from '../../platform-protocol/src/index.js';
+import {buildApplicationPackage} from '../../platform-protocol/src/application-package.js';
 
 const taResetPath=/^\/api\/exchange\/channels\/([1-9]\d*)\/ta-reset(?:\/(confirm))?$/i;
 const chatCollectionPath=/^\/api\/chats(?:\/([0-9a-f-]{36})\/cases)?$/i;
+const renamePath=/^\/api\/chats\/([0-9a-f-]{36})(?:\/cases\/([0-9a-f-]{36}))?\/rename$/i;
 const lifecyclePath=/^\/api\/chats\/([0-9a-f-]{36})\/lifecycle(?:\/(close|retest|new-run))?$/i;
-const pathPattern = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/(discussion|plan|plan\/confirm|data|data\/execute|data\/review|data\/confirm|application-preparation)$/i;
+const pathPattern = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/(discussion|discussion\/cancel|plan|plan\/data|plan\/content|plan\/confirm|data|data\/execute|data\/review|data\/confirm|application-preparation)$/i;
 const applicationPath = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/applications$/i;
 const bindingPath = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/ta-bindings$/i;
 const batchPath = /^\/api\/chats\/([0-9a-f-]{36})\/batches(?:\/([0-9a-f-]{36})\/generate)?$/i;
 const filesPath = /^\/api\/chats\/([0-9a-f-]{36})\/files(?:\/([1-9]\d*))?$/i;
+const packagePath = /^\/api\/chats\/([0-9a-f-]{36})\/files\/package\/([0-9a-f-]{36})$/i;
 const supplementPath = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/exchange-plan\/confirm$/i;
 const confirmationPath = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/return-confirmation(?:\/(delivery|apply|account))?$/i;
 const workflowPath = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/workflow(?:\/(resume))?$/i;
-const resultPath = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/result-review(?:\/(evaluate|confirm))?$/i;
+const resultPath = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/result-review(?:\/(evaluate|confirm|business-output))?$/i;
 const receiptsPath = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/ta-receipts(?:\/(parse))?$/i;
 const holdingsPath = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/holdings-return(?:\/(parse|apply))?$/i;
 const parsingPath = /^\/api\/chats\/([0-9a-f-]{36})\/cases\/([0-9a-f-]{36})\/return-parsing(?:\/(02|04))?$/i;
 
 function send(response, status, value) {
+  if(value?.error)response.observationError=safeErrorCode({code:value.error});
+  if(response.headersSent){
+    if(!response.destroyed&&!response.writableEnded){response.write(`event: error\ndata: ${JSON.stringify({...value,status})}\n\n`);response.end();}
+    return;
+  }
   response.writeHead(status, { 'content-type': 'application/json; charset=utf-8',
     'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
   response.end(JSON.stringify(value));
@@ -52,31 +69,43 @@ async function jsonBody(request, limit = 256 * 1024) {
   }
 }
 
-export function createCaseHttpHandler({ repository, discussionService, confirmPlan, executeData,
-  reviseData, exchangeRepository, applicationPreparation, confirmData, returnParsing, returnConfirmation, holdingsReturn, taReceipts, caseResult, exchangePlanSupplement, chatLifecycle, durableWorkflow, taReset, allowedOrigin }) {
+export function createCaseHttpHandler({ accountModelQuotas, modelRuntime, globalDataCatalog, globalFileCatalog, admit, planContentComplete, repository, discussionService, confirmPlan, executeData,
+  reviseData, exchangeRepository, applicationPreparation, confirmData, returnParsing, returnConfirmation, holdingsReturn, taReceipts, caseResult, exchangePlanSupplement, chatLifecycle, durableWorkflow, taReset, accountAuth, secureCookie, allowedOrigin }) {
   if (!repository || !discussionService || !confirmPlan || !executeData || !reviseData || !allowedOrigin) {
     throw new TypeError('API dependencies required');
   }
-  return async (request, response) => {
+  const quotaHandler=accountModelQuotas&&createAccountModelHttpHandler({accountModelQuotas,accountAuth,allowedOrigin});
+  const accountHandler=createAccountHttpHandler({accountAuth,allowedOrigin,secureCookie});
+  const handle = async (request, response) => {
+    if(await accountHandler(request,response))return;
+    if(quotaHandler&&await quotaHandler(request,response))return;
     const pathname = new URL(request.url, 'http://localhost').pathname;
     const reset=taReset && taResetPath.exec(pathname);
     const resetRoute=Boolean(reset && ((!reset[2] && request.method==='GET') || (reset[2] && request.method==='POST')));
     const collection=chatCollectionPath.exec(pathname);
     const collectionRoute=Boolean(collection && ['GET','POST'].includes(request.method));
+    const rename=renamePath.exec(pathname);
+    const renameRoute=Boolean(rename && request.method==='POST');
     const lifecycle=chatLifecycle && lifecyclePath.exec(pathname);
     const lifecycleRoute=Boolean(lifecycle && ((!lifecycle[2] && request.method==='GET') || (lifecycle[2] && request.method==='POST')));
+    const globalDataRoute=Boolean(globalDataCatalog && ((/^\/api\/data\/tables\/[a-z]+$/.test(pathname) && request.method==='GET')||(/^\/api\/data\/tables\/[a-z]+\/search$/.test(pathname)&&request.method==='POST')));
+    const distributor=/^\/api\/data\/distributors(?:\/([1-9][0-9]{0,18}))?$/.exec(pathname);
+    const distributorRoute=Boolean(globalDataCatalog && distributor && request.method==='POST');
+    const distributorDefaultsRoute=Boolean(globalDataCatalog && pathname==='/api/data/distributors/default-profile' && request.method==='GET');
+    const globalFileRoute=Boolean(globalFileCatalog && ((['/api/files/catalog','/api/files/catalog/download'].includes(pathname) && request.method==='GET')||(pathname==='/api/files/catalog/search'&&request.method==='POST')));
     const catalog = pathname === '/api/data/catalog' && request.method === 'GET';
     const match = pathPattern.exec(pathname);
     const application = applicationPath.exec(pathname);
     const bindings = bindingPath.exec(pathname);
     const batch = batchPath.exec(pathname);
     const files = filesPath.exec(pathname);
+    const applicationPackage = packagePath.exec(pathname);
     const parsing = parsingPath.exec(pathname);
     const confirmation = confirmationPath.exec(pathname);
     const workflow=durableWorkflow && workflowPath.exec(pathname);
     const workflowRoute=Boolean(workflow && ((!workflow[3] && request.method==='GET') || (workflow[3] && request.method==='POST')));
     const resultReview=caseResult && resultPath.exec(pathname);
-    const resultRoute=Boolean(resultReview && ((!resultReview[3] && request.method==='GET') || (resultReview[3] && request.method==='POST')));
+    const resultRoute=Boolean(resultReview && (((!resultReview[3] || resultReview[3]==='business-output') && request.method==='GET') || (resultReview[3] && request.method==='POST')));
     const receipts=taReceipts && receiptsPath.exec(pathname);
     const receiptsRoute=Boolean(receipts && ((!receipts[3] && request.method==='GET') || (receipts[3] && request.method==='POST')));
     const holdings = holdingsReturn && holdingsPath.exec(pathname);
@@ -89,15 +118,17 @@ export function createCaseHttpHandler({ repository, discussionService, confirmPl
     const parsingRoute = Boolean(returnParsing && parsing &&
       ((!parsing[3] && request.method === 'GET') || (parsing[3] && request.method === 'POST')));
     const channels = pathname === '/api/exchange/channels';
+    const deliveryProfile = /^\/api\/exchange\/channels\/([1-9][0-9]{0,18})\/delivery-profile$/.exec(pathname);
     const exchangeRoute = Boolean(exchangeRepository &&
       ((channels && request.method === 'GET') ||
+        (deliveryProfile && ['GET','PUT'].includes(request.method)) ||
         (bindings && request.method === 'GET') ||
         (application && ['GET', 'POST'].includes(request.method)) ||
         (batch && request.method === 'POST') ||
-        (files && request.method === 'GET')));
-    if (!resetRoute && !workflowRoute && !receiptsRoute && !collectionRoute && !lifecycleRoute && !resultRoute && !holdingsRoute && !supplementRoute && !catalog && !salesRoute && !confirmationRoute && !exchangeRoute && !parsingRoute && (!match || !['GET', 'POST', 'PATCH'].includes(request.method) ||
+        ((files || applicationPackage) && request.method === 'GET')));
+    if (!renameRoute && !distributorDefaultsRoute && !distributorRoute && !globalDataRoute && !globalFileRoute && !resetRoute && !workflowRoute && !receiptsRoute && !collectionRoute && !lifecycleRoute && !resultRoute && !holdingsRoute && !supplementRoute && !catalog && !salesRoute && !confirmationRoute && !exchangeRoute && !parsingRoute && (!match || !['GET', 'POST', 'PATCH'].includes(request.method) ||
         (request.method === 'PATCH' && match?.[3] !== 'data') ||
-        (['plan/confirm', 'data/execute', 'data/confirm'].includes(match?.[3]) && request.method !== 'POST') ||
+        (['discussion/cancel','plan/data','plan/content','plan/confirm', 'data/execute', 'data/confirm'].includes(match?.[3]) && request.method !== 'POST') ||
         (match?.[3] === 'data/review' && !['GET', 'POST'].includes(request.method)) ||
         (match?.[3] === 'data' && !['GET', 'PATCH'].includes(request.method)))) {
       send(response, 404, { error: 'NOT_FOUND' }); return;
@@ -105,6 +136,28 @@ export function createCaseHttpHandler({ repository, discussionService, confirmPl
     try {
       const token = cookieToken(request.headers.cookie);
       if (!token) { send(response, 401, { error: 'UNAUTHENTICATED' }); return; }
+      if(request.headers['x-case-account'] && accountAuth){
+        const current=await accountAuth.current(token);
+        if(current.user.id!==request.headers['x-case-account']){send(response,409,{error:'ACCOUNT_CHANGED',message:'账户已切换，请重新连接'});return;}
+      }
+      let catalogBody;
+      if((globalDataRoute||globalFileRoute)&&request.method==='POST') {
+        if(request.headers.origin!==allowedOrigin){send(response,403,{error:'INVALID_ORIGIN'});return;}
+        catalogBody=await jsonBody(request,32*1024);
+        if(!catalogBody||typeof catalogBody!=='object'||Array.isArray(catalogBody)){send(response,400,{error:'INVALID_CATALOG_QUERY',message:'查询条件须为对象'});return;}
+      }
+      if(globalDataRoute && await handleGlobalDataCatalog(request,response,token,globalDataCatalog,catalogBody))return;
+      if(distributorDefaultsRoute){
+        const params=new URL(request.url,'http://localhost').searchParams;
+        send(response,200,await globalDataCatalog.deliveryDefaults(token,{distributorCode:params.get('distributorCode'),taCode:params.get('taCode'),protocolVersion:params.get('protocolVersion')}));return;
+      }
+      if(distributorRoute){
+        if(request.headers.origin!==allowedOrigin){send(response,403,{error:'INVALID_ORIGIN'});return;}
+        if(!/^application\/json(?:\s*;|$)/i.test(request.headers['content-type']??'')){send(response,415,{error:'UNSUPPORTED_MEDIA_TYPE'});return;}
+        const input=await jsonBody(request);
+        send(response,distributor[1]?200:201,await globalDataCatalog.saveDistributor(token,{id:distributor[1],input}));return;
+      }
+      if(globalFileRoute && await handleGlobalFileCatalog(request,response,token,globalFileCatalog,catalogBody))return;
       if(repository.assertCaseWritable && match && request.method==='POST' && ['discussion','plan','data/execute','data/review','application-preparation'].includes(match[3])){
         await repository.assertCaseWritable(token,match[1],match[2],{discussion:['discussion','plan'].includes(match[3])});
       }
@@ -115,6 +168,13 @@ export function createCaseHttpHandler({ repository, discussionService, confirmPl
         const body=await jsonBody(request);
         if(!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).length!==3||!['requestId','reason','confirmation'].every(k=>Object.hasOwn(body,k))){send(response,400,{error:'INVALID_INPUT'});return;}
         send(response,200,await taReset.confirm(token,{channelId:reset[1],...body}));return;
+      }
+      if(renameRoute){
+        if(request.headers.origin!==allowedOrigin){send(response,403,{error:'INVALID_ORIGIN'});return;}
+        if(!/^application\/json(?:\s*;|$)/i.test(request.headers['content-type']??'')){send(response,415,{error:'UNSUPPORTED_MEDIA_TYPE'});return;}
+        const body=await jsonBody(request);
+        if(!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).length!==1||!Object.hasOwn(body,'title')){send(response,400,{error:'INVALID_INPUT',message:'请填写名称'});return;}
+        send(response,200,rename[2]?await repository.renameCase(token,rename[1],rename[2],body.title):await repository.renameChat(token,rename[1],body.title));return;
       }
       if(collectionRoute){
         if(request.method==='GET'){send(response,200,collection[1]?await repository.listCases(token,collection[1]):await repository.listChats(token));return;}
@@ -153,12 +213,14 @@ export function createCaseHttpHandler({ repository, discussionService, confirmPl
       }
       if(resultRoute){
         const scope={chatPublicId:resultReview[1],casePublicId:resultReview[2]};
-        if(request.method==='GET'){send(response,200,await caseResult.read(token,scope));return;}
+        if(request.method==='GET'){send(response,200,await caseResult[resultReview[3]==='business-output'?'readBusinessOutput':'read'](token,scope));return;}
         if(request.headers.origin!==allowedOrigin){send(response,403,{error:'INVALID_ORIGIN'});return;}
         if(!/^application\/json(?:\s*;|$)/i.test(request.headers['content-type']??'')){send(response,415,{error:'UNSUPPORTED_MEDIA_TYPE'});return;}
-        const body=await jsonBody(request,4096);const keys=resultReview[3]==='evaluate'?[]:['reviewId','verdict','reason'];
+        const businessOutput=resultReview[3]==='business-output';
+        const body=await jsonBody(request,businessOutput?256*1024:4096);const keys=businessOutput?['requestId','planVersion','sourceKind','content']:resultReview[3]==='evaluate'?[]:['reviewId','verdict','reason'];
         if(!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).length!==keys.length||!keys.every(k=>Object.hasOwn(body,k))){send(response,400,{error:'INVALID_INPUT'});return;}
-        send(response,200,await caseResult[resultReview[3]](token,{...scope,...body}));return;
+        if(businessOutput && admit)await admit({token,...scope,text:JSON.stringify(body.content),purpose:'BUSINESS_OUTPUT'});
+        send(response,200,await caseResult[businessOutput?'saveBusinessOutput':resultReview[3]](token,{...scope,...body}));return;
       }
       if(receiptsRoute) {
         const scope={chatPublicId:receipts[1],casePublicId:receipts[2]};
@@ -214,6 +276,20 @@ export function createCaseHttpHandler({ repository, discussionService, confirmPl
           files:body.files,exchangeStepId:body.exchangeStepId,expectedType:parsing[3] });
         send(response,result.orderError?409:200,result.orderError?{...result,error:result.orderError.error,message:result.orderError.message}:result); return;
       }
+      if (exchangeRoute && deliveryProfile) {
+        if (request.method === 'GET') {
+          send(response,200,await exchangeRepository.readDeliveryProfile(token,{channelId:deliveryProfile[1]}));return;
+        }
+        if (request.headers.origin !== allowedOrigin) { send(response,403,{error:'INVALID_ORIGIN'});return; }
+        if (!/^application\/json(?:\s*;|$)/i.test(request.headers['content-type'] ?? '')) {
+          send(response,415,{error:'UNSUPPORTED_MEDIA_TYPE'});return;
+        }
+        const body = await jsonBody(request);
+        if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).length !== 1 || !body.profile) {
+          send(response,400,{error:'INVALID_INPUT'});return;
+        }
+        send(response,200,await exchangeRepository.setDeliveryProfile(token,{channelId:deliveryProfile[1],profile:body.profile}));return;
+      }
       if (exchangeRoute && channels) {
         send(response, 200, await exchangeRepository.listChannels(token)); return;
       }
@@ -224,6 +300,21 @@ export function createCaseHttpHandler({ repository, discussionService, confirmPl
       if (exchangeRoute && bindings) {
         send(response, 200, await exchangeRepository.listCaseBindings(token,
           { chatPublicId: bindings[1], casePublicId: bindings[2] })); return;
+      }
+      if(exchangeRoute && applicationPackage){
+        const saved = await exchangeRepository.readDeliveryPackage?.(token,
+          {chatPublicId:applicationPackage[1],batchPublicId:applicationPackage[2]});
+        if (saved) {
+          response.writeHead(200,{'content-type':'application/zip','content-disposition':`attachment; filename="${saved.fileName}"`,'content-length':saved.rawBytes.length,'cache-control':'no-store','x-content-type-options':'nosniff'});
+          response.end(saved.rawBytes);return;
+        }
+        const listed=await exchangeRepository.listOutboundFiles(token,applicationPackage[1]);
+        const members=listed.files.filter(f=>f.batchPublicId===applicationPackage[2]);
+        if(!members.length){send(response,404,{error:'FILE_NOT_FOUND',message:'申请包不存在或尚未生成'});return;}
+        const originals=await Promise.all(members.map(f=>exchangeRepository.readOutboundFile(token,{chatPublicId:applicationPackage[1],fileId:f.id})));
+        const result=buildApplicationPackage(originals);
+        response.writeHead(200,{'content-type':'application/zip','content-disposition':`attachment; filename="${result.fileName}"`,'content-length':result.rawBytes.length,'cache-control':'no-store','x-content-type-options':'nosniff'});
+        response.end(result.rawBytes);return;
       }
       if (exchangeRoute && files) {
         if (!files[2]) { send(response, 200, await exchangeRepository.listOutboundFiles(token, files[1])); return; }
@@ -303,7 +394,17 @@ export function createCaseHttpHandler({ repository, discussionService, confirmPl
       if (!String(request.headers['content-type'] ?? '').startsWith('application/json')) {
         send(response, 415, { error: 'UNSUPPORTED_MEDIA_TYPE' }); return;
       }
-      const body = await jsonBody(request);
+      const body = await jsonBody(request,match?.[3]==='discussion'?6*1024*1024:256*1024);
+      if (action === 'discussion/cancel') {
+        if(!body || typeof body!=='object' || Array.isArray(body) || Object.keys(body).length!==1 || !Number.isSafeInteger(body.turnNumber) || body.turnNumber<1){send(response,400,{error:'INVALID_INPUT'});return;}
+        send(response,200,await discussionService.abandon({token,chatPublicId,casePublicId,turnNumber:body.turnNumber}));return;
+      }
+      if (action === 'plan/content') {
+        send(response,200,await revisePreparedPlanContent({repository,admit,complete:planContentComplete,token,chatPublicId,casePublicId,body}));return;
+      }
+      if (action === 'plan/data') {
+        send(response,200,await revisePreparedPlanData({repository,admit,token,chatPublicId,casePublicId,body})); return;
+      }
       if (action === 'application-preparation') {
         if (!body || typeof body !== 'object' || Array.isArray(body) ||
           Object.keys(body).some(key => !['revision','userInput','channelId'].includes(key)) ||
@@ -319,6 +420,7 @@ export function createCaseHttpHandler({ repository, discussionService, confirmPl
       if (action === 'data' && request.method === 'PATCH') {
         const edit = DataEditSchema.safeParse(body);
         if (!edit.success) { send(response, 422, { error: 'DATA_EDIT_INVALID', message: '表格内容格式有误' }); return; }
+        if(admit)await admit({token,chatPublicId,casePublicId,text:JSON.stringify(edit.data),purpose:'DATA_EDIT'});
         send(response, 200, await repository.editGeneratedData(token, chatPublicId, casePublicId, edit.data));
         return;
       }
@@ -336,11 +438,13 @@ export function createCaseHttpHandler({ repository, discussionService, confirmPl
               Number.isSafeInteger(body.revision) && body.revision >= 0 &&
               typeof body.userInput === 'string' && Boolean(body.userInput.trim()) &&
               body.userInput.length <= 4000 :
-              Object.keys(body).length === 1 && typeof body.userInput === 'string' &&
-              Boolean(body.userInput.trim()) && body.userInput.length <= 4000);
+              Object.keys(body).every(k=>['userInput','images'].includes(k)) &&
+              (body.userInput===undefined || typeof body.userInput==='string' && body.userInput.length<=4000) &&
+              (Boolean(body.userInput?.trim()) || action==='discussion' && Array.isArray(body.images) && body.images.length>0));
       if (!validInput) {
         send(response, 400, { error: 'INVALID_INPUT' }); return;
       }
+      if(['discussion','plan'].includes(action))validateDiscussionImages(body.images);
       if (action === 'plan/confirm') {
         send(response, 200, await confirmPlan({ token, chatPublicId, casePublicId,
           versionNumber: body.versionNumber, section: body.section }));
@@ -355,9 +459,24 @@ export function createCaseHttpHandler({ repository, discussionService, confirmPl
         send(response, 200, await reviseData({ token, chatPublicId, casePublicId,
           revision: body.revision, userInput: body.userInput.trim() }));
       } else {
-        const method = action === 'plan' ? 'propose' : 'discuss';
-        send(response, 200, await discussionService[method]({ token, chatPublicId, casePublicId,
-          userInput: body.userInput }));
+        const method = action === 'plan' ? 'propose' : discussionService.respond ? 'respond' : 'discuss';
+        const input={token,chatPublicId,casePublicId,userInput:body.userInput,images:body.images};
+        if(!String(request.headers.accept).split(',').some(type=>type.trim().split(';')[0]==='text/event-stream')){
+          send(response,200,await discussionService[method](input));return;
+        }
+        const controller=new AbortController();
+        const disconnect=()=>{if(!response.writableFinished)controller.abort();};
+        response.on('close',disconnect);
+        response.writeHead(200,{'content-type':'text/event-stream; charset=utf-8','cache-control':'no-cache, no-transform','x-accel-buffering':'no','x-content-type-options':'nosniff'});
+        response.flushHeaders();
+        const event=(name,value)=>{if(!response.destroyed&&!response.writableEnded)response.write(`event: ${name}\ndata: ${JSON.stringify(value)}\n\n`);};
+        event('status',{message:action==='plan'?'正在整理方案…':'正在准备回复…'});
+        const heartbeat=setInterval(()=>{if(!response.destroyed)response.write(': heartbeat\n\n');},15000);
+        try{
+          const result=await discussionService[method]({...input,signal:controller.signal,...(action==='discussion'?{onDelta:text=>event('delta',{text}),onReset:()=>event('reset',{})}:{})});
+          event('result',result);
+          if(!response.destroyed)response.end();
+        }finally{clearInterval(heartbeat);response.off('close',disconnect);}
       }
     } catch (error) {
       if (['ER_DUP_ENTRY', 'ER_NO_REFERENCED_ROW_2', 'ER_ROW_IS_REFERENCED_2',
@@ -367,13 +486,15 @@ export function createCaseHttpHandler({ repository, discussionService, confirmPl
         return;
       }
       if(['MODEL_OUTPUT_FORMAT','MODEL_EMPTY_OUTPUT','INVALID_PLAN_CONTRACT'].includes(error.code)&&!error.status){
-        send(response,502,{error:error.code,message:'模型回复格式未通过校验，当前回合未完成，请重试原输入'});return;
+        const messages={MODEL_OUTPUT_FORMAT:'AI回复未通过校验，自动重试仍未成功，请重试原输入',MODEL_EMPTY_OUTPUT:'模型未返回内容，请重试原输入',INVALID_PLAN_CONTRACT:'方案结构不完整，当前方案未保存，请重新整理方案'};
+        send(response,502,{error:error.code,message:messages[error.code]});return;
       }
       send(response, Number.isInteger(error.status) && error.status >= 400 && error.status < 600 ?
         error.status : 500, { error: error.status ? error.code : 'INTERNAL_ERROR',
           ...(error.status ? { message: error.message } : {}) });
     }
   };
+  return (request,response)=>observeHttpMetrics(request,response,()=>observeRequest(request,response,()=>modelRuntime?modelRuntime.run({token:cookieToken(request.headers.cookie),purpose:new URL(request.url,'http://localhost').pathname.split('/').at(-1).slice(0,40)},()=>handle(request,response)):handle(request,response)));
 }
 
 export function createCaseHttpServer(dependencies) {

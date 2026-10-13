@@ -1,10 +1,12 @@
+import {operationTasks} from '../../platform-protocol/src/operation-chain.js';
+import {createOperationChainGraph} from '../../case-agent/src/operation-chain-graph.js';
 import { isDeepStrictEqual } from 'node:util';
 import { compileApplicationIntents, preparationCatalog } from '../../case-agent/src/application-preparation.js';
 import { boundPreparationHistory } from '../../platform-store/src/application-preparation.js';
 
-export function createApplicationPreparationService({ repository, preparations, exchangeRepository, derive, confirmedSales }) {
+export function createApplicationPreparationService({ repository, preparations, exchangeRepository, derive, confirmedSales, admit }) {
   const error = (code, message) => Object.assign(new Error(message), { code, status: 409 });
-  async function prepare({ token, chatPublicId, casePublicId, revision, userInput = '', channelId }) {
+  async function prepare({ token, chatPublicId, casePublicId, revision, userInput = '', channelId, deferBatching = false }) {
     const scope = { chatPublicId, casePublicId };
     const [previous, draftData, plan, channelResult, bindingResult] = await Promise.all([
       preparations.read(token, scope), repository.generatedData(token, chatPublicId, casePublicId),
@@ -21,6 +23,7 @@ export function createApplicationPreparationService({ repository, preparations, 
     if (['PREPARING', 'WAITING_OPERATION'].includes(previous.phase) && (userInput || (channelId && channelId !== previous.channelId))) {
       throw error('APPLICATION_PREPARATION_CONFLICT', '上次生成尚未完成，请先继续生成再补充新信息');
     }
+    if(userInput && admit)await admit({token,...scope,text:userInput,purpose:'APPLICATION_PREPARATION'});
     channelId ??= previous.channelId ?? (channelResult.channels.length === 1 ? channelResult.channels[0].id : undefined);
     const channel = channelResult.channels.find(row => row.id === channelId);
     if (!channel) {
@@ -36,7 +39,7 @@ export function createApplicationPreparationService({ repository, preparations, 
       throw error('APPLICATION_ALREADY_STAGED', '已有申请进入原通道，不能切换通道');
     }
     userInput = [previous.pendingUserInput, userInput].filter(Boolean).join('\n');
-    const recovering = ['PREPARING', 'WAITING_OPERATION', 'WAITING_TA'].includes(previous.phase) && previous.intents.length && !userInput;
+    const recovering = (deferBatching || ['PREPARING', 'WAITING_OPERATION', 'WAITING_TA'].includes(previous.phase)) && previous.intents.length && !userInput;
     const history = boundPreparationHistory(previous);
     if(plan.proposal.contract && data!==draftData){
       data={...data,customers:[...draftData.customers,...data.customers],accounts:[...draftData.accounts.filter(a=>!data.accounts.some(r=>r.account_no===a.account_no)),...data.accounts]};
@@ -44,7 +47,7 @@ export function createApplicationPreparationService({ repository, preparations, 
     let confirmedSuggestion;
     if(plan.proposal.contract){
       if(userInput)throw error('PLAN_DATA_FROZEN','申请数据已在Plan中锁定；修改业务内容请新建Case重新确认');
-      const intents=plan.proposal.contract.applications.map(a=>{
+      const intents=operationTasks(plan.proposal).map(a=>{
         const step=plan.proposal.exchangePlan.steps.find(s=>s.stepId===a.stepId);
         const accountNo=a.transactionAccountId ?? draftData.accounts[a.accountIndex]?.account_no;
         const account=data.accounts.find(r=>r.account_no===accountNo);
@@ -73,8 +76,15 @@ export function createApplicationPreparationService({ repository, preparations, 
         throw error('APPLICATION_ALREADY_STAGED', '已生成的申请不能通过补充对话改写，请保留原申请');
       }
     }
-    const compiled = compileApplicationIntents({ intents: suggestion.intents, data, channel,
-      bindings: bindingResult.bindings, casePublicId });
+    let schedule=null;
+    if(plan.proposal.contract?.version>=3){
+      const facts=await exchangeRepository.readOperationFacts(token,scope);
+      ({schedule}=await createOperationChainGraph().invoke({input:{plan:plan.proposal,...facts,casePublicId,channelId}}));
+    }
+    const selected=schedule?suggestion.intents.filter(i=>schedule.readyKeys.includes(i.key)):suggestion.intents;
+    const compiled = compileApplicationIntents({ intents: selected, data, channel,
+      bindings: bindingResult.bindings, casePublicId,unassignedTaAccounts:plan.proposal.contract?.version===4?new Set(plan.proposal.contract.applications.filter(a=>a.accountIndex!==null && a.businessCode==='001').map(a=>String(draftData.accounts[a.accountIndex].id))):new Set() });
+    if(schedule)compiled.waiting.push(...schedule.waitingKeys);
     const turns = [...history.turns];
     if (!recovering) {
       turns.push({ userInput, reply: suggestion.reply });
@@ -83,7 +93,7 @@ export function createApplicationPreparationService({ repository, preparations, 
       phase: 'PREPARING', channelId, pendingUserInput: '', intents: suggestion.intents, turns,
       turnsOmitted: history.turnsOmitted ?? 0, reply: suggestion.reply,
       modelQuestions: suggestion.questions, questions: compiled.questions,
-      stagedKeys: previous.stagedKeys, files: previous.files, waiting: compiled.waiting, resumeReply: suggestion.reply,
+      stagedKeys: previous.stagedKeys, files: previous.files, ...(schedule?{tasks:schedule.tasks}:{}), waiting: compiled.waiting, resumeReply: suggestion.reply,
     } });
     let waitingChat = false;
     try {
@@ -97,7 +107,7 @@ export function createApplicationPreparationService({ repository, preparations, 
       const batches = new Set(applications.filter(item => ours.has(item.applicationNumber) &&
         item.status === 'BATCHED').map(item => item.batchPublicId));
       const dates = new Set(compiled.records.map(item => item.businessDate));
-      for (const date of dates) {
+      for (const date of deferBatching ? [] : dates) {
         const ready = applications.filter(item => ours.has(item.applicationNumber) && item.status === 'READY' &&
           item.channelId === channelId && item.businessDate.replaceAll('-','') === date);
         if (!ready.length) continue;
@@ -110,7 +120,7 @@ export function createApplicationPreparationService({ repository, preparations, 
           waitingChat = true;
         }
       }
-      for (const batchPublicId of batches) {
+      for (const batchPublicId of deferBatching ? [] : batches) {
         await exchangeRepository.generateOutboundFiles(token, { chatPublicId, batchPublicId });
       }
     } catch (cause) {
@@ -128,10 +138,10 @@ export function createApplicationPreparationService({ repository, preparations, 
       .filter(item => ourBatches.has(item.batchPublicId));
     const questions = [...new Set([...suggestion.questions, ...compiled.questions])];
     const phase = questions.length ? 'NEEDS_INPUT' : waitingChat ? 'WAITING_CHAT' :
-      compiled.waiting.length ? 'WAITING_TA' : suggestion.intents.length ? 'GENERATED' : 'NO_APPLICATION';
+      compiled.waiting.length ? 'WAITING_TA' : deferBatching ? 'STAGED' : suggestion.intents.length ? 'GENERATED' : 'NO_APPLICATION';
     return preparations.save(token, { ...scope, revision: state.revision, state: { ...state,
       phase, files, questions, reply: phase === 'WAITING_TA' ?
-        '已准备当前可生成的申请。03 申请还在等待对应账户的成功 02 回传；收到后可继续生成。' :
+        '已准备当前满足条件的申请。后续操作仍在等待前序结果；回传并明确同步后可继续生成。' :
         phase === 'WAITING_CHAT' ? '申请已准备。请先确认当前 Chat 里其他 Case 的 Plan 和数据，再继续生成文件。' :
           phase === 'GENERATED' ? `${suggestion.reply}\n当前已准备的申请文件已生成，可以点击文件卡片查看；继续时会重新核对 Plan 的后续动作。` : suggestion.reply,
     } });

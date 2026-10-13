@@ -1,3 +1,6 @@
+import {validateDiscussionImages} from '../../platform-protocol/src/discussion-images.js';
+import {dataExchangeRequirementIssues} from '../../platform-protocol/src/data-exchange-requirements.js';
+import {carryPlanDataApproval,preparedDataMatches} from './plan-data-approval.js';
 import {readPredecessorContext} from './predecessor-context.js';
 import { isDeepStrictEqual } from 'node:util';
 import { validPlanContract } from '../../platform-protocol/src/plan-contract.js';
@@ -11,7 +14,7 @@ export function storeError(code, status, message) {
   return Object.assign(new Error(message), { code, status });
 }
 
-function requiredUuid(value, name) {
+export function requiredUuid(value, name) {
   if (typeof value !== 'string' || !uuid.test(value)) {
     throw storeError('INVALID_ID', 400, `${name} 无效`);
   }
@@ -146,7 +149,33 @@ export function createCaseRepository({ transaction }) {
     });
   }
 
-  async function saveSopProposal(token, chatPublicId, casePublicId, proposal) {
+  async function renameChat(token, chatPublicId, title) {
+    chatPublicId = requiredUuid(chatPublicId, 'Chat');
+    const cleanTitle = titleText(title);
+    return transaction(async db => {
+      const auth = await authenticateSession(db, token);
+      const [[chat]] = await db.execute('SELECT id FROM case_chats WHERE workspace_id=? AND public_id=? FOR UPDATE', [auth.workspace_id, chatPublicId]);
+      if (!chat) throw storeError('CHAT_NOT_FOUND', 404, '项目不存在或无法访问');
+      await db.execute('UPDATE case_chats SET title=? WHERE workspace_id=? AND id=?', [cleanTitle, auth.workspace_id, chat.id]);
+      return {publicId:chatPublicId, title:cleanTitle};
+    });
+  }
+
+  async function renameCase(token, chatPublicId, casePublicId, title) {
+    chatPublicId = requiredUuid(chatPublicId, 'Chat');
+    casePublicId = requiredUuid(casePublicId, 'Case');
+    const cleanTitle = titleText(title);
+    return transaction(async db => {
+      const auth = await authenticateSession(db, token);
+      const [[item]] = await db.execute(`SELECT k.id,k.chat_id FROM cases k JOIN case_chats c ON c.workspace_id=k.workspace_id AND c.id=k.chat_id
+        WHERE c.workspace_id=? AND c.public_id=? AND k.public_id=? FOR UPDATE`, [auth.workspace_id, chatPublicId, casePublicId]);
+      if (!item) throw storeError('CASE_NOT_FOUND', 404, 'Case不存在或无法访问');
+      await db.execute('UPDATE cases SET title=? WHERE workspace_id=? AND chat_id=? AND id=?', [cleanTitle, auth.workspace_id, item.chat_id, item.id]);
+      return {publicId:casePublicId, title:cleanTitle};
+    });
+  }
+
+  async function saveSopProposal(token, chatPublicId, casePublicId, proposal, options = {}) {
     chatPublicId = requiredUuid(chatPublicId, 'Chat');
     casePublicId = requiredUuid(casePublicId, 'Case');
     if (!validSopPlan(proposal)) {
@@ -176,22 +205,25 @@ export function createCaseRepository({ transaction }) {
       if (latestTurn?.status === 'PENDING') {
         throw storeError('DISCUSSION_IN_PROGRESS', 409, '请先完成当前讨论');
       }
-      const [[latest]] = await db.execute(`SELECT id,version_number,status FROM case_sop_versions
+      const [[latest]] = await db.execute(`SELECT id,version_number,status,source_turn_number FROM case_sop_versions
         WHERE workspace_id=? AND chat_id=? AND case_id=?
         ORDER BY version_number DESC LIMIT 1 FOR UPDATE`,
       [auth.workspace_id, chat.id, caseRow.id]);
+      if (options.expectedVersion !== undefined && (Number(latest?.version_number) !== options.expectedVersion || !['PENDING_CONFIRMATION','DRAFT'].includes(latest?.status))) throw storeError('STALE_PLAN',409,'方案已更新或锁定，请刷新后再修改');
       if (latest?.status === 'LOCKED') throw storeError('SOP_LOCKED', 409, 'SOP 已锁定');
       if (latest?.status === 'PENDING_CONFIRMATION') {
         await db.execute(`UPDATE case_sop_versions SET status='DRAFT'
           WHERE workspace_id=? AND chat_id=? AND case_id=? AND id=?`,
         [auth.workspace_id, chat.id, caseRow.id, latest.id]);
       }
+      const draft=options.expectedVersion!==undefined && (!proposal.contract || proposal.openQuestions.length>0 || proposal.contract.dataSpecification.missing.length>0 || proposal.contract.missing.length>0);
       const versionNumber = (latest?.version_number ?? 0) + 1;
       await db.execute(`INSERT INTO case_sop_versions
-        (workspace_id,chat_id,case_id,version_number,plan_json,status)
-        VALUES (?,?,?,?,?,'PENDING_CONFIRMATION')`,
-      [auth.workspace_id, chat.id, caseRow.id, versionNumber, planJson]);
-      if (caseRow.status === 'DISCUSSING') {
+        (workspace_id,chat_id,case_id,version_number,plan_json,status,source_turn_number)
+        VALUES (?,?,?,?,?,?,?)`,
+      [auth.workspace_id, chat.id, caseRow.id, versionNumber, planJson, draft?'DRAFT':'PENDING_CONFIRMATION', options.expectedVersion !== undefined ? latest.source_turn_number : null]);
+      if(!draft)await carryPlanDataApproval(db,[auth.workspace_id,chat.id,caseRow.id],latest?.version_number,versionNumber,proposal);
+      if (!draft && caseRow.status === 'DISCUSSING') {
         await db.execute(`UPDATE cases SET status='SOP_PENDING'
           WHERE workspace_id=? AND chat_id=? AND id=?`,
         [auth.workspace_id, chat.id, caseRow.id]);
@@ -200,7 +232,11 @@ export function createCaseRepository({ transaction }) {
           VALUES (?,?,?,'DISCUSSING','SOP_PENDING','AI_PLAN_PROPOSAL')`,
         [auth.workspace_id, chat.id, caseRow.id]);
       }
-      return { versionNumber, status: 'PENDING_CONFIRMATION' };
+      if(draft && caseRow.status==='SOP_PENDING'){
+        await db.execute(`UPDATE cases SET status='DISCUSSING' WHERE workspace_id=? AND chat_id=? AND id=?`,[auth.workspace_id,chat.id,caseRow.id]);
+        await db.execute(`INSERT INTO case_state_events (workspace_id,chat_id,case_id,from_status,to_status,actor_user_id,reason) VALUES (?,?,?,'SOP_PENDING','DISCUSSING',?,'USER_REVISED_PLAN')`,[auth.workspace_id,chat.id,caseRow.id,auth.user_id]);
+      }
+      return { versionNumber, status: draft?'DRAFT':'PENDING_CONFIRMATION' };
     });
   }
 
@@ -216,7 +252,8 @@ export function createCaseRepository({ transaction }) {
         WHERE workspace_id=? AND chat_id=? AND public_id=?`,
       [auth.workspace_id, chat.id, casePublicId]);
       if (!caseRow) throw storeError('CASE_NOT_FOUND', 404, 'Case 不存在');
-      const [[latest]] = await db.execute(`SELECT version_number,plan_json,status,locked_at,source_turn_number
+      const [[latest]] = await db.execute(`SELECT version_number,plan_json,status,locked_at,source_turn_number,
+        EXISTS(SELECT 1 FROM case_plan_data_authorizations a WHERE a.workspace_id=case_sop_versions.workspace_id AND a.chat_id=case_sop_versions.chat_id AND a.case_id=case_sop_versions.case_id AND a.version_number=case_sop_versions.version_number) AS auto_prepare_data
         FROM case_sop_versions WHERE workspace_id=? AND chat_id=? AND case_id=?
         ORDER BY version_number DESC LIMIT 1`,
       [auth.workspace_id, chat.id, caseRow.id]);
@@ -224,7 +261,7 @@ export function createCaseRepository({ transaction }) {
       const [confirmations] = await db.execute(`SELECT section,confirmed_at AS confirmedAt FROM case_plan_section_confirmations
         WHERE workspace_id=? AND chat_id=? AND case_id=? AND version_number=? ORDER BY section`,
       [auth.workspace_id,chat.id,caseRow.id,latest.version_number]);
-      return { confirmations, versionNumber: latest.version_number, status: latest.status,
+      return { ...(Number(latest.auto_prepare_data)?{dataApprovalMode:'PLAN_CONFIRMED'}:{}),confirmations, versionNumber: latest.version_number, status: latest.status,
         proposal: typeof latest.plan_json === 'string' ? JSON.parse(latest.plan_json) : latest.plan_json,
         lockedAt: latest.locked_at, sourceTurnNumber: latest.source_turn_number };
     });
@@ -249,6 +286,11 @@ export function createCaseRepository({ transaction }) {
       if (caseRow.status !== 'SOP_PENDING') {
         throw storeError('INVALID_CASE_STATE', 409, 'Case 尚无待确认的 Plan');
       }
+      const [[pendingTurn]] = await db.execute(`SELECT turn_number,status FROM case_discussion_turns
+        WHERE workspace_id=? AND chat_id=? AND case_id=?
+        ORDER BY turn_number DESC LIMIT 1 FOR UPDATE`,
+      [auth.workspace_id,chat.id,caseRow.id]);
+      if(pendingTurn?.status==='PENDING')throw storeError('DISCUSSION_IN_PROGRESS',409,'本轮回复尚未完成，请等待后再确认方案');
       const [[latest]] = await db.execute(`SELECT id,version_number,plan_json,status
         FROM case_sop_versions WHERE workspace_id=? AND chat_id=? AND case_id=?
         ORDER BY version_number DESC LIMIT 1 FOR UPDATE`,
@@ -260,7 +302,7 @@ export function createCaseRepository({ transaction }) {
       if (!validSopPlan(plan)) {
         throw storeError('INVALID_PLAN', 409, '已保存的 Plan 结构无效，请重新生成');
       }
-      if (!plan.exchangePlan || plan.exchangePlan.status !== 'READY') {
+      if (!plan.exchangePlan || !['READY','NOT_REQUIRED'].includes(plan.exchangePlan.status)) {
         throw storeError('EXCHANGE_PLAN_REQUIRED',409,'请先讨论文件的轮次、业务时间和顺序，再确认 Plan');
       }
       if (plan.openQuestions.length) {
@@ -269,11 +311,16 @@ export function createCaseRepository({ transaction }) {
       if (!plan.contract || !validPlanContract(plan.contract,plan)) {
         throw storeError('PLAN_CONTRACT_REQUIRED',409,'请重新生成带准备数据和结构化预期的Plan');
       }
+      const exchangeIssues=dataExchangeRequirementIssues(plan);
+      if(exchangeIssues.length)throw storeError('DATA_EXCHANGE_REQUIRED',409,exchangeIssues.join('；'));
       if (![ 'DATA','EXPECTATIONS' ].includes(section)) {
         throw storeError('PLAN_SECTION_REQUIRED',400,'请明确确认准备数据或预期结果');
       }
       if (plan.contract.dataSpecification.missing.length || (section==='EXPECTATIONS' && plan.contract.missing.length)) {
         throw storeError('PLAN_HAS_OPEN_QUESTIONS',409,'准备数据或预期还有待澄清事项');
+      }
+      if (section==='EXPECTATIONS' && plan.exchangePlan.status==='NOT_REQUIRED' && plan.contract.version===1) {
+        throw storeError('NO_EXCHANGE_WORKFLOW_UNSUPPORTED',409,'当前流程尚未支持无需文件交换的结果核对；准备数据可审阅，方案暂不能锁定');
       }
       const keys=[auth.workspace_id,chat.id,caseRow.id,versionNumber];
       const [confirmed] = await db.execute(`SELECT section FROM case_plan_section_confirmations
@@ -285,6 +332,7 @@ export function createCaseRepository({ transaction }) {
         (workspace_id,chat_id,case_id,version_number,section,actor_user_id) VALUES (?,?,?,?,?,?)`,
       [...keys,section,auth.user_id]);
       if (section==='DATA') return {versionNumber,status:'PENDING_CONFIRMATION',phase:'AWAITING_EXPECTATIONS'};
+      await db.execute(`INSERT INTO case_plan_data_authorizations (workspace_id,chat_id,case_id,version_number,actor_user_id) VALUES (?,?,?,?,?)`,[...keys,auth.user_id]);
       await db.execute(`UPDATE case_sop_versions SET status='LOCKED',locked_at=UTC_TIMESTAMP(3)
         WHERE workspace_id=? AND chat_id=? AND case_id=? AND id=?`,
       [auth.workspace_id, chat.id, caseRow.id, latest.id]);
@@ -311,36 +359,49 @@ export function createCaseRepository({ transaction }) {
         WHERE workspace_id=? AND chat_id=? AND public_id=?`,
       [auth.workspace_id, chat.id, casePublicId]);
       if (!caseRow) throw storeError('CASE_NOT_FOUND', 404, 'Case 不存在');
-      const [rows] = await db.execute(`SELECT turn_number,user_text,assistant_text,status,turn_kind
+      const [rows] = await db.execute(`SELECT turn_number,user_text,assistant_text,status,turn_kind,prompt_version,created_at,finished_at,
+        (SELECT images_json FROM case_discussion_images i WHERE i.workspace_id=case_discussion_turns.workspace_id AND i.chat_id=case_discussion_turns.chat_id AND i.case_id=case_discussion_turns.case_id AND i.turn_number=case_discussion_turns.turn_number) AS images_json,
+        (SELECT image_analysis FROM case_discussion_images i WHERE i.workspace_id=case_discussion_turns.workspace_id AND i.chat_id=case_discussion_turns.chat_id AND i.case_id=case_discussion_turns.case_id AND i.turn_number=case_discussion_turns.turn_number) AS image_analysis
         FROM case_discussion_turns WHERE workspace_id=? AND chat_id=? AND case_id=?
         ORDER BY turn_number`, [auth.workspace_id, chat.id, caseRow.id]);
       const turns = [];
       let pending = null;
       for (const [index, row] of rows.entries()) {
+        const imageFields=row.images_json?{images:JSON.parse(row.images_json),imageAnalysis:row.image_analysis}:{};
         if (Number(row.turn_number) !== index + 1) {
           throw storeError('CORRUPT_HISTORY', 500, 'Case 讨论记录不连续');
         }
         if (row.status === 'COMPLETE') {
-          turns.push({ role: 'user', content: row.user_text },
-            { role: 'assistant', content: row.assistant_text });
+          const started = row.created_at ? new Date(row.created_at) : null;
+          const finished = row.finished_at ? new Date(row.finished_at) : null;
+          const hasStart = started && Number.isFinite(started.getTime());
+          const hasFinish = finished && Number.isFinite(finished.getTime());
+          turns.push({ role: 'user', content: row.user_text,...imageFields,
+              ...(hasStart ? {createdAt:started.toISOString()} : {}) },
+            { role: 'assistant', content: row.assistant_text,
+              ...(row.turn_kind === 'PROPOSE_PLAN' ? {kind:'PROPOSE_PLAN',sourceTurnNumber:Number(row.turn_number),...(row.prompt_version==='plan-review-draft-v1'?{draft:true}:{})} : {}),
+              ...(hasFinish ? {createdAt:finished.toISOString()} : {}),
+              ...(hasStart && hasFinish && finished >= started ? {durationMs:finished-started} : {}) });
         } else if (row.status === 'PENDING' && index === rows.length - 1) {
-          pending = { turnNumber: Number(row.turn_number), userInput: row.user_text, kind: row.turn_kind };
+          pending = { turnNumber: Number(row.turn_number), userInput: row.user_text, kind: row.turn_kind,...imageFields };
         } else if (row.status !== 'ABANDONED') {
           throw storeError('CORRUPT_HISTORY', 500, 'Case 讨论记录状态无效');
         }
       }
       const sourceContext=await readPredecessorContext(db,[auth.workspace_id,chat.id],caseRow.predecessor_case_id);
-      return { revision: rows.length, turns, pending,...(sourceContext?{sourceContext}:{}) };
+      return { revision: rows.length, turns, pending,...(rows.at(-1)?.status==='COMPLETE' && rows.at(-1)?.prompt_version==='discussion-offer-plan-v1'?{nextAction:'PROPOSE_PLAN'}:{}),...(sourceContext?{sourceContext}:{}) };
     });
   }
 
   async function beginCaseDiscussionTurn(token, chatPublicId, casePublicId,
-    { expectedRevision, userInput, kind = 'DISCUSS' }) {
+    { expectedRevision, userInput, kind = 'DISCUSS', images=[], imageAnalysis='', preservePlan=false }) {
+    const checkedImages=validateDiscussionImages(images);
+    if(checkedImages.length&&(typeof imageAnalysis!=='string'||!imageAnalysis.trim()||imageAnalysis.length>6000))throw storeError('INVALID_DISCUSSION_IMAGES',400,'图片解析内容无效');
     chatPublicId = requiredUuid(chatPublicId, 'Chat');
     casePublicId = requiredUuid(casePublicId, 'Case');
     if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0 || expectedRevision >= 0xffffffff ||
         typeof userInput !== 'string' || !userInput.trim() || userInput.length > 4000 ||
-        !['DISCUSS', 'PROPOSE_PLAN'].includes(kind)) {
+        !['DISCUSS', 'PROPOSE_PLAN'].includes(kind) || typeof preservePlan!=='boolean' || preservePlan && kind!=='DISCUSS') {
       throw storeError('INVALID_DISCUSSION_TURN', 400, '讨论输入或版本无效');
     }
     return transaction(async db => {
@@ -366,7 +427,7 @@ export function createCaseRepository({ transaction }) {
       if (latestTurn?.status === 'PENDING') {
         throw storeError('DISCUSSION_IN_PROGRESS', 409, '上一轮讨论尚未完成');
       }
-      if (caseRow.status === 'SOP_PENDING') {
+      if (caseRow.status === 'SOP_PENDING' && !preservePlan) {
         const [[latestSop]] = await db.execute(`SELECT id,status FROM case_sop_versions
           WHERE workspace_id=? AND chat_id=? AND case_id=?
           ORDER BY version_number DESC LIMIT 1 FOR UPDATE`,
@@ -390,6 +451,7 @@ export function createCaseRepository({ transaction }) {
         (workspace_id,chat_id,case_id,turn_number,user_text,actor_user_id,turn_kind)
         VALUES (?,?,?,?,?,?,?)`,
       [auth.workspace_id, chat.id, caseRow.id, revision, userInput.trim(), auth.user_id, kind]);
+      if(checkedImages.length)await db.execute(`INSERT INTO case_discussion_images (workspace_id,chat_id,case_id,turn_number,images_json,image_analysis) VALUES (?,?,?,?,?,?)`,[auth.workspace_id,chat.id,caseRow.id,revision,JSON.stringify(checkedImages),imageAnalysis]);
       return { revision, turnNumber: revision };
     });
   }
@@ -413,7 +475,7 @@ export function createCaseRepository({ transaction }) {
         WHERE workspace_id=? AND chat_id=? AND public_id=? FOR UPDATE`,
       [auth.workspace_id, chat.id, casePublicId]);
       if (!caseRow) throw storeError('CASE_NOT_FOUND', 404, 'Case 不存在');
-      if (caseRow.status !== 'DISCUSSING') {
+      if (!['DISCUSSING','SOP_PENDING'].includes(caseRow.status)) {
         throw storeError('INVALID_CASE_STATE', 409, '当前 Case 不能完成讨论');
       }
       const [[turn]] = await db.execute(`SELECT status,turn_kind FROM case_discussion_turns
@@ -464,7 +526,7 @@ export function createCaseRepository({ transaction }) {
   }
 
   async function finishCasePlanProposal(token, chatPublicId, casePublicId,
-    { turnNumber, assistantReply, promptVersion, proposal }) {
+    { turnNumber, assistantReply, promptVersion, proposal, draft=false, checkpoint=false }) {
     chatPublicId = requiredUuid(chatPublicId, 'Chat');
     casePublicId = requiredUuid(casePublicId, 'Case');
     if (!Number.isSafeInteger(turnNumber) || turnNumber < 1 ||
@@ -473,6 +535,7 @@ export function createCaseRepository({ transaction }) {
         !validSopPlan(proposal)) {
       throw storeError('INVALID_PLAN', 400, 'Plan 提案或讨论回复无效');
     }
+    if(typeof draft!=='boolean' || typeof checkpoint!=='boolean' || checkpoint&&!draft || checkpoint && proposal.contract)throw storeError('INVALID_PLAN',400,'草稿不能包含未校验契约');
     const planJson = JSON.stringify(proposal);
     if (planJson.length > 100000) throw storeError('INVALID_PLAN', 400, 'Plan 提案过长');
     return transaction(async db => {
@@ -494,37 +557,37 @@ export function createCaseRepository({ transaction }) {
       if (turn?.status !== 'PENDING' || turn.turn_kind !== 'PROPOSE_PLAN') {
         throw storeError('STALE_DISCUSSION', 409, 'Plan 提案回合已完成或类型不符');
       }
-      const [[history]] = await db.execute(`SELECT COUNT(*) AS count FROM case_discussion_turns
-        WHERE workspace_id=? AND chat_id=? AND case_id=? AND turn_number<? AND status='COMPLETE'`,
-      [auth.workspace_id, chat.id, caseRow.id, turnNumber]);
-      if (Number(history.count) < 2) {
-        throw storeError('INSUFFICIENT_DISCUSSION', 409, 'Plan 提案前至少需要两轮完整讨论');
-      }
-      const [[latest]] = await db.execute(`SELECT id,version_number,status FROM case_sop_versions
+      const [[latest]] = await db.execute(`SELECT id,version_number,status,source_turn_number FROM case_sop_versions
         WHERE workspace_id=? AND chat_id=? AND case_id=?
         ORDER BY version_number DESC LIMIT 1 FOR UPDATE`,
       [auth.workspace_id, chat.id, caseRow.id]);
       if (latest?.status === 'LOCKED' || latest?.status === 'PENDING_CONFIRMATION') {
         throw storeError('INVALID_CASE_STATE', 409, '当前 Case 已有不可覆盖的 SOP');
       }
-      const versionNumber = (latest?.version_number ?? 0) + 1;
-      await db.execute(`INSERT INTO case_sop_versions
-        (workspace_id,chat_id,case_id,version_number,plan_json,status,source_turn_number)
-        VALUES (?,?,?,?,?,'PENDING_CONFIRMATION',?)`,
-      [auth.workspace_id, chat.id, caseRow.id, versionNumber, planJson, turnNumber]);
-      await db.execute(`UPDATE case_discussion_turns
-        SET assistant_text=?,prompt_version=?,status='COMPLETE',finished_at=UTC_TIMESTAMP(3)
-        WHERE workspace_id=? AND chat_id=? AND case_id=? AND turn_number=?`,
-      [assistantReply, promptVersion, auth.workspace_id, chat.id, caseRow.id, turnNumber]);
-      await db.execute(`UPDATE cases SET status='SOP_PENDING'
-        WHERE workspace_id=? AND chat_id=? AND id=?`,
-      [auth.workspace_id, chat.id, caseRow.id]);
-      await db.execute(`INSERT INTO case_state_events
-        (workspace_id,chat_id,case_id,from_status,to_status,reason)
-        VALUES (?,?,?,'DISCUSSING','SOP_PENDING','AI_PLAN_PROPOSAL')`,
-      [auth.workspace_id, chat.id, caseRow.id]);
-      return { revision: turnNumber, versionNumber, status: 'PENDING_CONFIRMATION' };
+      const resumeDraft=latest?.status==='DRAFT' && Number(latest.source_turn_number)===turnNumber;
+      const versionNumber=resumeDraft?latest.version_number:(latest?.version_number??0)+1;
+      if(resumeDraft){
+        await db.execute(`UPDATE case_sop_versions SET plan_json=?,status=? WHERE workspace_id=? AND chat_id=? AND case_id=? AND id=?`,[planJson,draft?'DRAFT':'PENDING_CONFIRMATION',auth.workspace_id,chat.id,caseRow.id,latest.id]);
+      }else{
+        await db.execute(`INSERT INTO case_sop_versions (workspace_id,chat_id,case_id,version_number,plan_json,status,source_turn_number) VALUES (?,?,?,?,?,?,?)`,[auth.workspace_id,chat.id,caseRow.id,versionNumber,planJson,draft?'DRAFT':'PENDING_CONFIRMATION',turnNumber]);
+      }
+      if(!checkpoint)await db.execute(`UPDATE case_discussion_turns SET assistant_text=?,prompt_version=?,status='COMPLETE',finished_at=UTC_TIMESTAMP(3) WHERE workspace_id=? AND chat_id=? AND case_id=? AND turn_number=?`,[assistantReply,promptVersion,auth.workspace_id,chat.id,caseRow.id,turnNumber]);
+      if(!draft){
+        await carryPlanDataApproval(db,[auth.workspace_id,chat.id,caseRow.id],versionNumber-1,versionNumber,proposal);
+        await db.execute(`UPDATE cases SET status='SOP_PENDING'
+          WHERE workspace_id=? AND chat_id=? AND id=?`,
+        [auth.workspace_id, chat.id, caseRow.id]);
+        await db.execute(`INSERT INTO case_state_events
+          (workspace_id,chat_id,case_id,from_status,to_status,reason)
+          VALUES (?,?,?,'DISCUSSING','SOP_PENDING','AI_PLAN_PROPOSAL')`,
+        [auth.workspace_id, chat.id, caseRow.id]);
+      }
+      return { revision: turnNumber, versionNumber, status: draft?'DRAFT':'PENDING_CONFIRMATION' };
     });
+  }
+
+  async function checkpointCasePlanProposal(token,chatPublicId,casePublicId,body){
+    return finishCasePlanProposal(token,chatPublicId,casePublicId,{...body,draft:true,checkpoint:true});
   }
 
   async function generatedData(token, chatPublicId, casePublicId) {
@@ -754,7 +817,7 @@ export function createCaseRepository({ transaction }) {
     });
   }
 
-  async function confirmGeneratedData(token, chatPublicId, casePublicId, revision) {
+  async function confirmGeneratedData(token, chatPublicId, casePublicId, revision, options={}) {
     chatPublicId = requiredUuid(chatPublicId, 'Chat');
     casePublicId = requiredUuid(casePublicId, 'Case');
     if (!Number.isSafeInteger(revision) || revision < 0) {
@@ -774,12 +837,27 @@ export function createCaseRepository({ transaction }) {
         throw storeError('INVALID_CASE_STATE', 409, '当前 Case 不能确认数据');
       }
       const keys = [auth.workspace_id,chat.id,caseRow.id];
-      const [[execution]] = await db.execute(`SELECT sop_version_id FROM case_data_executions
-        WHERE workspace_id=? AND chat_id=? AND case_id=? FOR UPDATE`, keys);
+      const [[execution]] = await db.execute(`SELECT e.sop_version_id,v.version_number,a.version_number AS authorized_version
+        FROM case_data_executions e
+        JOIN case_sop_versions v ON v.workspace_id=e.workspace_id AND v.chat_id=e.chat_id AND v.case_id=e.case_id AND v.id=e.sop_version_id
+        LEFT JOIN case_plan_data_authorizations a ON a.workspace_id=v.workspace_id AND a.chat_id=v.chat_id AND a.case_id=v.case_id AND a.version_number=v.version_number
+        WHERE e.workspace_id=? AND e.chat_id=? AND e.case_id=? FOR UPDATE`, keys);
       if (!execution) throw storeError('DATA_NOT_STARTED', 409, '数据尚未生成');
+      const planAuthorized=execution.authorized_version!==null && execution.authorized_version!==undefined;
+      if(options.planVersionNumber!==undefined || planAuthorized){
+        const [[approved]]=await db.execute(`SELECT v.id,v.plan_json FROM case_sop_versions v
+          JOIN case_plan_data_authorizations a ON a.workspace_id=v.workspace_id AND a.chat_id=v.chat_id AND a.case_id=v.case_id AND a.version_number=v.version_number
+          WHERE v.workspace_id=? AND v.chat_id=? AND v.case_id=? AND v.version_number=? AND v.status='LOCKED' FOR UPDATE`,[...keys,options.planVersionNumber??Number(execution.version_number)]);
+        const plan=approved && (typeof approved.plan_json==='string'?JSON.parse(approved.plan_json):approved.plan_json);
+        const data=await readGeneratedData(db,keys,true);
+        if(!approved || String(approved.id)!==String(execution.sop_version_id) || !plan?.contract || !preparedDataMatches(data,plan.contract.dataSpecification))throw storeError('PLAN_DATA_MISMATCH',409,'生成数据与已确认方案不一致，请重试准备数据或核对失败原因');
+      }
       const [[prior]] = await db.execute(`SELECT revision FROM case_data_confirmations
         WHERE workspace_id=? AND chat_id=? AND case_id=? FOR UPDATE`, keys);
-      if (prior) throw storeError('DATA_ALREADY_CONFIRMED', 409, '数据已经确认');
+      if (prior) {
+        if(options.planVersionNumber!==undefined && Number(prior.revision)===revision)return readGeneratedData(db,keys,true);
+        throw storeError('DATA_ALREADY_CONFIRMED', 409, '数据已经确认');
+      }
       const [[latest]] = await db.execute(`SELECT COALESCE(MAX(revision),0) AS revision
         FROM case_data_edit_events WHERE workspace_id=? AND chat_id=? AND case_id=? FOR UPDATE`, keys);
       if (Number(latest.revision) !== revision) {
@@ -791,18 +869,18 @@ export function createCaseRepository({ transaction }) {
       if (caseRow.status !== 'EXECUTING') {
         await db.execute(`UPDATE cases SET status='EXECUTING'
           WHERE workspace_id=? AND chat_id=? AND id=?`, keys);
-        await db.execute(`INSERT INTO case_state_events
+      await db.execute(`INSERT INTO case_state_events
           (workspace_id,chat_id,case_id,from_status,to_status,actor_user_id,reason)
-          VALUES (?,?,?,?,?,?,'USER_CONFIRMED_DATA')`,
-        [...keys,caseRow.status,'EXECUTING',auth.user_id]);
+          VALUES (?,?,?,?,?,?,?)`,
+        [...keys,caseRow.status,'EXECUTING',auth.user_id,planAuthorized?'CONFIRMED_PLAN_DATA_PREPARED':'USER_CONFIRMED_DATA']);
       }
       return readGeneratedData(db, keys, true);
     });
   }
 
-  return Object.freeze({ createChat, listChats, assertCaseWritable, createCase, listCases, saveSopProposal,
+  return Object.freeze({ createChat, listChats, renameChat, renameCase, assertCaseWritable, createCase, listCases, saveSopProposal,
     getLatestSopProposal, confirmSopProposal, readCaseDiscussion, beginCaseDiscussionTurn,
-    finishCaseDiscussionTurn, abandonCaseDiscussionTurn, finishCasePlanProposal,
+    finishCaseDiscussionTurn, abandonCaseDiscussionTurn, finishCasePlanProposal, checkpointCasePlanProposal,
     generatedData, generatedDataCatalog, executeGeneratedData, editGeneratedData,
     dataReviewTurns, confirmGeneratedData });
 }

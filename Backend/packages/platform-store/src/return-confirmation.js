@@ -1,3 +1,4 @@
+import {applyConfirmedHolding} from './transaction-holding.js';
 import {assertTaAccountActive} from './ta-reset.js';
 import { parseReturnFiles } from '../../platform-protocol/src/return-parsing.js';
 import { checkExchangeOrder, recordExchangeEvent } from './exchange-order.js';
@@ -191,8 +192,23 @@ export function createReturnConfirmationRepository({ transaction }) {
           continue;
         }
         const source = json(app.record_json);
+        let packagedOpening;
+        if (app.file_type === '03' && !source.TAAccountID?.trim()) {
+          const [[opening]] = await db.execute(`SELECT o.record_json,s.ta_account_id
+            FROM applications o JOIN batch_applications ba ON ba.workspace_id=o.workspace_id
+              AND ba.chat_id=o.chat_id AND ba.application_id=o.id
+            LEFT JOIN sales_return_confirmations c ON c.workspace_id=o.workspace_id
+              AND c.application_id=o.id AND c.outcome='CONFIRMED'
+            LEFT JOIN sales_confirmed_accounts s ON s.workspace_id=o.workspace_id
+              AND s.channel_id=o.channel_id AND s.source_confirmation_id=c.id
+            WHERE o.workspace_id=? AND o.chat_id=? AND o.case_id=? AND o.channel_id=?
+              AND ba.batch_id=? AND o.file_type='01' AND o.business_code='001' AND o.app_no=? FOR UPDATE`,
+          [...keys,parsed.channel_id,parsed.batch_id,source.OriginalAppSheetNo ?? '']);
+          if (!opening) throw error('RETURN_CONFIRMATION_MISMATCH','交易原申请没有对应的同包开户申请');
+          packagedOpening = {record:json(opening.record_json),confirmedTaAccountId:opening.ta_account_id ?? null};
+        }
         const applied = await runGraph({ expectedType: parsed.expected_type,
-          application: { fileType: app.file_type, businessCode: app.business_code, status: app.status, record: source },
+          application: { fileType: app.file_type, businessCode: app.business_code, status: app.status, record: source, packagedOpening },
           record, channel: { taCode: parsed.ta_code, distributorCode: parsed.distributor_code, protocolVersion: parsed.protocol_version },
           apply: async effect => {
             const returnRecordId = await inboundRecord(db, keys, parsed.channel_id, input.parseId, file, localIndex, record, app);
@@ -228,15 +244,7 @@ export function createReturnConfirmationRepository({ transaction }) {
                 VALUES (?,?,?,?,?,?,?,?,?,?,?)`, [keys[0], parsed.channel_id, account.id, saved.insertId, app.business_code,
                 effect.transactionEffect.fundCode, effect.transactionEffect.shareClass, effect.transactionEffect.confirmedAmount, effect.transactionEffect.confirmedVolume, effect.transactionEffect.nav,
                 effect.transactionEffect.confirmationDate]);
-              await db.execute(`INSERT INTO sales_confirmed_holdings
-                (workspace_id,channel_id,account_id,fund_code,share_class,total_volume) VALUES (?,?,?,?,?,?)
-                ON DUPLICATE KEY UPDATE
-                  total_volume=total_volume+IF(snapshot_date IS NULL OR snapshot_date<STR_TO_DATE(?,'%Y%m%d'),?,0),
-                  available_volume=IF(snapshot_date IS NULL OR snapshot_date<STR_TO_DATE(?,'%Y%m%d'),NULL,available_volume),
-                  frozen_volume=IF(snapshot_date IS NULL OR snapshot_date<STR_TO_DATE(?,'%Y%m%d'),NULL,frozen_volume)`, [keys[0], parsed.channel_id, account.id,
-                effect.holdingEffect.fundCode, effect.holdingEffect.shareClass, effect.holdingEffect.volumeDelta,
-                effect.transactionEffect.confirmationDate.replaceAll('-',''), effect.holdingEffect.volumeDelta,
-                effect.transactionEffect.confirmationDate.replaceAll('-',''), effect.transactionEffect.confirmationDate.replaceAll('-','')]);
+              await applyConfirmedHolding(db,{keys,channelId:parsed.channel_id,accountId:account.id,effect});
             }
             await db.execute(`UPDATE applications SET status=? WHERE workspace_id=? AND id=?`, [effect.outcome, keys[0], app.id]);
             return { applicationPublicId: app.public_id, outcome: effect.outcome, duplicate: false };

@@ -1,5 +1,5 @@
 import React, {useMemo,useState} from 'react';
-import {X} from 'lucide-react';
+import {X} from './ui-icons.jsx';
 import './workflow-database-browser.css';
 
 const tables=[

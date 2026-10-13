@@ -1,0 +1,31 @@
+const {chromium}=await import(process.env.PLAYWRIGHT_MODULE||'playwright');
+const base=process.env.EMPTY_GUIDANCE_TEST_URL||'http://127.0.0.1:5231';
+import {mkdir} from 'node:fs/promises';
+await mkdir('../.context/empty-guidance',{recursive:true});
+import assert from 'node:assert/strict';
+const browser=await chromium.launch({channel:'chrome',headless:true});
+const page=await browser.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
+for(const palette of ['liquid','neutral','warm','contrast'])for(const [width,height] of [[1440,900],[390,844],[844,320]]){
+ await page.setViewportSize({width,height});
+ await page.goto(`${base}/test/assistant-ui.html?palette=${palette}&caseId=empty`);
+ const welcome=page.locator('.cw-empty-guidance');await welcome.waitFor();
+ assert.ok(await page.locator('.cw-empty-robot').evaluate(e=>e.complete&&e.naturalWidth>0));
+ assert.match(await welcome.innerText(),/想测试什么业务或规则/);
+ await page.locator('.cw-composer textarea').fill('先写下测试目标，还未发送');assert.equal(await welcome.count(),1);
+ const rect=await welcome.boundingBox();const view=await page.locator('.cw-conversation').boundingBox();
+ assert.ok(rect.x>=view.x&&rect.x+rect.width<=view.x+view.width+1);
+ assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+ if(width===1440)await page.screenshot({path:`../.context/empty-guidance/${palette}.png`});
+ console.log('PASS empty Case, robot, unsent draft',palette,width,height);
+}
+await page.setViewportSize({width:1440,height:900});
+await page.goto(`${base}/test/assistant-ui.html?caseId=unknown`);
+const dialog=page.getByRole('dialog');await dialog.waitFor();
+await page.getByRole('textbox',{name:'Case名称',exact:true}).fill('新建空白验收');
+await dialog.getByRole('button',{name:'创建Case',exact:true}).click();await dialog.waitFor({state:'hidden'});
+await page.locator('.cw-empty-guidance').waitFor();assert.ok(new URL(page.url()).searchParams.get('caseId').startsWith('new-fixture'));
+await page.locator('.cw-composer textarea').fill('合成输入');await page.getByRole('button',{name:'发送消息',exact:true}).click();
+await page.locator('.cw-empty-guidance').waitFor({state:'hidden'});await page.locator('.aui-md').waitFor();assert.equal(await page.locator('.cw-empty-guidance').count(),0);
+await page.reload();await page.locator('.cw-empty-guidance').waitFor();
+await page.goto(`${base}/test/assistant-ui.html?caseId=comparison`);await page.locator('.aui-md').first().waitFor();assert.equal(await page.locator('.cw-empty-guidance').count(),0);
+assert.deepEqual(errors,[]);await browser.close();console.log('PASS new Case / sent message / existing history');

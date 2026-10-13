@@ -1,12 +1,27 @@
+import {initializeObservability,shutdownObservability} from '../../case-agent/src/observability.js';
+import {initializeBackendMetrics,shutdownBackendMetrics,createMeasuredTransaction} from './backend-metrics.js';
+import {createModelRuntime} from './model-runtime.js';
+import {loadFundMarketDefaults,withFundMarketDefaults} from '../../case-agent/src/fund-market-defaults.js';
+import {createAccountModelQuotas} from '../../platform-store/src/account-model-quotas.js';
+import {modelBudgetConfig,createModelConsumptionRepository} from '../../platform-store/src/model-consumption.js';
+import {createBusinessAdmission} from '../../case-agent/src/business-admission.js';
+import {createAdmissionRepository} from '../../platform-store/src/business-admission.js';
+import {createGlobalDataCatalog} from '../../platform-store/src/global-data-catalog.js';
+import {createGlobalFileCatalog} from '../../platform-store/src/global-file-catalog.js';
+import {createProjectExchangeService} from './project-exchange.js';
+import {createAccountAuth} from './account-auth.js';
+import {localWorkspaceInitializer} from './local-workspace-profile.js';
+import {dataExchangeRequirementIssues} from '../../platform-protocol/src/data-exchange-requirements.js';
 import {createTaResetRepository} from '../../platform-store/src/ta-reset.js';
 import {createChatLifecycleRepository} from '../../platform-store/src/chat-lifecycle.js';
 import { createDurableWorkflowRepository } from '../../platform-store/src/durable-workflow.js';
+import {createDiscussionContextReader} from '../../platform-store/src/discussion-context.js';
 import mysql from 'mysql2/promise';
 import { createCaseRepository } from '../../platform-store/src/index.js';
 import { createExchangeRepository } from '../../platform-store/src/exchange.js';
 import { createApplicationPreparationRepository } from '../../platform-store/src/application-preparation.js';
 import { migrationConfig } from '../../platform-store/src/migrate.js';
-import { createPersistedDiscussionService, createSophnetCompletion,
+import { createPersistedDiscussionService,
   createPlanConfirmationGraph, decidePlan, deriveDataSpecification,
   createDataGenerationGraph, deriveDataReview, deriveApplicationPreparation } from '../../case-agent/src/index.js';
 import { createCaseHttpServer } from './http.js';
@@ -27,22 +42,13 @@ import { createCaseResultService } from './case-result.js';
 
 const allowedOrigin = process.env.CASE_PUBLIC_ORIGIN;
 if (!allowedOrigin) throw new Error('CASE_PUBLIC_ORIGIN is required');
+initializeObservability();
+initializeBackendMetrics();
 const pool = mysql.createPool({ ...migrationConfig(), connectionLimit: 8 });
-const transaction = async action => {
-  const connection = await pool.getConnection();
-  try {
-    await connection.beginTransaction();
-    const result = await action(connection);
-    await connection.commit();
-    return result;
-  } catch (error) {
-    try { await connection.rollback(); }
-    catch (rollbackError) {
-      console.error('数据库回滚失败', rollbackError.code ?? 'UNKNOWN');
-    }
-    throw error;
-  } finally { connection.release(); }
-};
+const transaction = createMeasuredTransaction(pool);
+const accountModelQuotas=createAccountModelQuotas({transaction,defaultDaily:modelBudgetConfig().userDaily});
+const modelRuntime=createModelRuntime({repository:createModelConsumptionRepository({transaction}),maxCalls:Number(process.env.MODEL_RUN_MAX_CALLS||8),maxInput:Number(process.env.MODEL_MAX_INPUT_TOKENS||600000),maxOutput:Number(process.env.MODEL_MAX_OUTPUT_TOKENS||20000)});
+const accountAuth=createAccountAuth({transaction,initializeWorkspace:localWorkspaceInitializer(migrationConfig()),allowDemo:Boolean(localWorkspaceInitializer(migrationConfig()))});
 const taReset=createTaResetRepository({transaction});
 const chatLifecycle=createChatLifecycleRepository({transaction});
 const durableWorkflow = createDurableWorkflowRepository({pool});
@@ -54,15 +60,18 @@ const taReceipts = createTaReceiptsRepository({transaction});
 const holdingsReturn = createHoldingsReturnRepository({transaction});
 const exchangeRepository = createExchangeRepository({ transaction });
 const preparations = createApplicationPreparationRepository({ transaction });
+const admit=createBusinessAdmission({repository:createAdmissionRepository({transaction}),complete:modelRuntime.completion({model:process.env.SOPHNET_ADMISSION_MODEL||'DeepSeek-V4-Flash-0731'})});
+const complete = modelRuntime.completion();
+const completePlanning=withFundMarketDefaults(complete,loadFundMarketDefaults());
 const discussionService = createPersistedDiscussionService({ repository,
-  complete: createSophnetCompletion() });
-const complete = createSophnetCompletion();
+  readContext:createDiscussionContextReader({transaction}),
+  routeComplete:complete,complete: completePlanning,readChannels:exchangeRepository.listChannels,visionComplete:modelRuntime.completion({model:process.env.SOPHNET_VISION_MODEL||'qwen3-vl-plus'}),admit });
 const caseResult = createCaseResultService({repository:createCaseResultRepository({transaction}),complete});
 const completeData = async input => {
-  try { return await complete(input); }
+  try { return await completePlanning(input); }
   catch (error) {
     if (error.code !== 'MODEL_EMPTY_OUTPUT') throw error;
-    return complete(input);
+    return completePlanning(input);
   }
 };
 const executeData = async ({ token, chatPublicId, casePublicId, versionNumber, specification }) => {
@@ -71,12 +80,15 @@ const executeData = async ({ token, chatPublicId, casePublicId, versionNumber, s
     const error = new Error('须先确认对应版本的 Plan');
     error.code = 'PLAN_NOT_CONFIRMED'; error.status = 409; throw error;
   }
+  const issues=dataExchangeRequirementIssues(plan.proposal);
+  if(issues.length)throw Object.assign(new Error(issues.join('；')),{code:'DATA_EXCHANGE_REQUIRED',status:409});
   const existing = await repository.generatedData(token, chatPublicId, casePublicId);
-  if (existing.status === 'VALIDATED') return { ...existing, replayed: true };
   specification ??= plan.proposal.contract?.dataSpecification ?? await deriveDataSpecification(completeData, plan.proposal);
-  return repository.executeGeneratedData(token, chatPublicId, casePublicId,
+  const data=existing.status==='VALIDATED'?{...existing,replayed:true}:await repository.executeGeneratedData(token, chatPublicId, casePublicId,
     versionNumber, specification, (db, scope, data) =>
       createDataGenerationGraph({ db, scope, specification: data }).invoke({}));
+  if(plan.dataApprovalMode==='PLAN_CONFIRMED')return repository.confirmGeneratedData(token,chatPublicId,casePublicId,data.revision,{planVersionNumber:versionNumber});
+  return data;
 };
 const confirmPlan = createConfirmPlanWithData({ repository,
   confirm: ({ token, chatPublicId, casePublicId, versionNumber, section }) =>
@@ -98,6 +110,7 @@ const reviseData = async ({ token, chatPublicId, casePublicId, revision, userInp
     const error = new Error('数据已更新，请刷新后重试');
     error.code = 'DATA_EDIT_CONFLICT'; error.status = 409; throw error;
   }
+  await admit({token,chatPublicId,casePublicId,text:userInput,purpose:'DATA_REVIEW'});
   const suggestion = await deriveDataReview(completeData,
     { plan: plan.proposal, data, turns: history.turns, userInput });
   const updated = await repository.editGeneratedData(token, chatPublicId, casePublicId,
@@ -105,9 +118,21 @@ const reviseData = async ({ token, chatPublicId, casePublicId, revision, userInp
   return { reply: suggestion.reply, data: updated };
 };
 const applicationPreparation = createApplicationPreparationService({ repository, preparations,
-  exchangeRepository, confirmedSales: returnConfirmation, derive: context => deriveApplicationPreparation(completeData, context) });
+  exchangeRepository, confirmedSales: returnConfirmation, admit,derive: context=>deriveApplicationPreparation(completeData,context) });
+const projectExchange=createProjectExchangeService({repository,preparations,exchangeRepository,applicationPreparation,returnParsing,returnConfirmation,
+  applyAtomically:(token,jobs)=>transaction(async db=>{
+    const service=createReturnConfirmationService({repository:createReturnConfirmationRepository({transaction:action=>action(db)})});
+    const results=[];
+    for(const job of jobs)results.push({casePublicId:job.casePublicId,...await service.apply(token,job)});
+    return {businessApplied:true,projectResults:results};
+  })});
+const projectPreparation={read:projectExchange.readPreparation,prepare:projectExchange.prepare};
+const projectParsing={...returnParsing,parse:projectExchange.parse};
+const projectConfirmation={...returnConfirmation,read:projectExchange.readConfirmation,apply:projectExchange.apply};
 const confirmData = ({ token, chatPublicId, casePublicId, revision }) =>
   repository.confirmGeneratedData(token, chatPublicId, casePublicId, revision);
-const server = createCaseHttpServer({ repository, discussionService, confirmPlan,
-  executeData, reviseData, exchangeRepository, applicationPreparation, confirmData, returnParsing, returnConfirmation, holdingsReturn, taReceipts, caseResult, exchangePlanSupplement, chatLifecycle, durableWorkflow, taReset, allowedOrigin });
+const server = createCaseHttpServer({accountModelQuotas,modelRuntime,globalDataCatalog:createGlobalDataCatalog({transaction}),globalFileCatalog:createGlobalFileCatalog({transaction}),admit,planContentComplete:completePlanning, repository, discussionService, confirmPlan,
+  executeData, reviseData, exchangeRepository, applicationPreparation:projectPreparation, confirmData, returnParsing:projectParsing, returnConfirmation:projectConfirmation, holdingsReturn, taReceipts, caseResult, exchangePlanSupplement, chatLifecycle, durableWorkflow, taReset, accountAuth, secureCookie:process.env.NODE_ENV==='production', allowedOrigin });
 server.listen(Number(process.env.CASE_API_PORT ?? 3100), '127.0.0.1');
+
+for(const signal of ['SIGINT','SIGTERM'])process.once(signal,()=>server.close(async()=>{await Promise.allSettled([shutdownObservability(),shutdownBackendMetrics()]);await pool.end();process.exit(0);}));

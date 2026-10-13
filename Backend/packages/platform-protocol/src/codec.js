@@ -103,7 +103,7 @@ export function indexFileName({ creator, receiver, date, fileType, streamId, ind
   return `${prefix}_${creator}_${receiver}_${date}.TXT`;
 }
 
-export function buildDataFile({ creator, receiver, date, summaryNo = 1, fileType, sender = 'SYSTEM', recipient = 'SYSTEM', records, version = '22' }) {
+export function buildDataFile({ creator, receiver, date, summaryNo = 1, fileType, sender = 'SYSTEM', recipient = 'SYSTEM', records, version = '22', fieldNamesCase = 'upper', trailingCrlf = false }) {
   const profile = profileForVersion(version);
   const fields = fieldsForFile(version, fileType);
   const widths = profile.dataHeaderWidths;
@@ -111,11 +111,11 @@ export function buildDataFile({ creator, receiver, date, summaryNo = 1, fileType
     line('OFDCFDAT', widths[0]), line(profile.version, widths[1]), line(creator, widths[2]), line(receiver, widths[3]),
     line(date, widths[4]), line(summaryNo, widths[5], true), line(fileType, widths[6]), line(sender, widths[7]),
     line(recipient, widths[8]), line(fields.length, widths[9], true),
-    ...fields.map((field) => bytes(field.name.toUpperCase())),
+    ...fields.map((field) => bytes(fieldNamesCase === 'canonical' ? field.name : field.name.toUpperCase())),
     line(records.length, profile.recordCountWidth, true), ...records.map((record) => Buffer.concat(fields.map((field) => encodeField(field, record[field.name])))),
     line('OFDCFEND', 8)
   ];
-  return Buffer.concat(lines.flatMap((item, i) => i === lines.length - 1 ? [item] : [item, CRLF]));
+  return Buffer.concat(lines.flatMap((item, i) => i === lines.length - 1 && !trailingCrlf ? [item] : [item, CRLF]));
 }
 
 export function buildIndexFile({ creator, receiver, date, fileNames, version = '22' }) {

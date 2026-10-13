@@ -1,0 +1,67 @@
+/* Independent color studies; activated only by the preview URL. */
+html[data-palette=neutral] {
+  --preview-sidebar:linear-gradient(160deg,#f0f1f3,#e9ebee);
+  --preview-canvas:#fafafa;--preview-ink:#27272a;--preview-muted:#62666d;
+  --preview-accent:#25677d;--preview-tint:#e4edf1;--preview-bubble:#edf1f4;
+  --preview-line:#d9dde2;--preview-card:#ffffff;
+}
+html[data-palette=warm] {
+  --preview-sidebar:linear-gradient(160deg,#eeece7,#e5e2da);
+  --preview-canvas:#faf9f6;--preview-ink:#302e2b;--preview-muted:#68635b;
+  --preview-accent:#35685d;--preview-tint:#e2ece5;--preview-bubble:#eeede7;
+  --preview-line:#dcd8cf;--preview-card:#fffefa;
+}
+html[data-palette=contrast] {
+  --preview-sidebar:linear-gradient(160deg,#30363d,#242a30);
+  --preview-canvas:#fafbfc;--preview-ink:#252a30;--preview-muted:#606974;
+  --preview-accent:#345fa0;--preview-tint:#e6edf8;--preview-bubble:#edf0f5;
+  --preview-line:#d9dfe7;--preview-card:#ffffff;
+}
+html[data-theme=liquid][data-palette],
+html[data-theme=liquid][data-palette] .cw-shell.cw-liquid-home {
+  --study-ink:var(--preview-ink);--study-muted:var(--preview-muted);
+  --study-accent:var(--preview-accent);--study-accent-deep:var(--preview-accent);
+  --study-icon:var(--preview-accent);--study-focus:var(--preview-accent);
+  --study-surface:var(--preview-canvas);--study-canvas:var(--preview-canvas);
+  --study-sidebar:var(--preview-sidebar);--study-line:var(--preview-line);
+  --study-hover:var(--preview-bubble);--study-selected:var(--preview-tint);
+  --study-on-selected:var(--preview-accent);--study-bubble:var(--preview-bubble);
+  --study-document:var(--preview-card);--study-document-icon:var(--preview-tint);
+  --study-modal:var(--preview-card);--study-table:var(--preview-card);
+  --study-table-head:var(--preview-bubble);--study-disabled:var(--preview-bubble);
+  --study-project-bar:var(--preview-card);--study-selection:var(--preview-tint);
+  --study-scrollbar:#a5a9ad;
+  background:var(--preview-canvas);color:var(--preview-ink);
+}
+html[data-theme=liquid][data-palette] .cw-shell .cw-sidebar {
+  background:var(--preview-sidebar);box-shadow:inset -1px 0 var(--preview-line);
+}
+html[data-theme=liquid][data-palette] .cw-shell .aui-user-message-content {
+  background:var(--preview-bubble);color:var(--preview-ink);border-color:var(--preview-line);
+}
+html[data-theme=liquid][data-palette] .cw-shell .cw-result {
+  background:linear-gradient(135deg,var(--preview-card),var(--preview-canvas))!important;
+  border-color:var(--preview-line)!important;box-shadow:inset 0 1px #fff,0 6px 20px rgb(25 30 35 / 5%);
+}
+html[data-theme=liquid][data-palette] .cw-shell .cw-result-title {color:var(--preview-ink);}
+html[data-theme=liquid][data-palette] .cw-shell .cw-result-icon {background:var(--preview-tint);color:var(--preview-accent);}
+html[data-theme=liquid][data-palette] .cw-shell .cw-composer-frame {
+  background:linear-gradient(150deg,rgb(255 255 255 / 94%),var(--preview-canvas)) padding-box,linear-gradient(135deg,#fff,var(--preview-line),#fff) border-box;
+  box-shadow:inset 0 2px #fff,0 12px 36px rgb(25 30 35 / 9%);
+}
+html[data-theme=liquid][data-palette] .cw-shell .cw-composer-frame:focus-within {border-color:var(--preview-accent);box-shadow:0 0 0 2px var(--preview-tint),0 12px 36px rgb(25 30 35 / 9%);}
+html[data-theme=liquid][data-palette] .cw-shell .cw-send:not(:disabled) {background:var(--preview-accent)!important;color:#fff!important;}
+html[data-theme=liquid][data-palette] .cw-shell .aui-detail {background:var(--preview-canvas);}
+html[data-theme=liquid][data-palette=contrast] .cw-shell .cw-sidebar {
+  --cw-ink:#e5e8ed;--study-ink:#e5e8ed;--cw-muted:#b7c0ca;--study-muted:#b7c0ca;
+  --study-icon:#b7c0ca;--cw-hover:#3b434c;--study-hover:#3b434c;
+  --study-selected:#414d5d;--cw-selected:#414d5d;--study-on-selected:#fff;--cw-selected-ink:#fff;
+  --study-accent:#a6c8ff;--study-line:#48515c;--cw-line:#48515c;
+  --study-selected-shadow:inset 0 1px rgb(255 255 255 / 8%);
+  color:var(--cw-ink);
+}
+html[data-theme=liquid][data-palette=contrast] .cw-appearance-panel {
+  --study-ink:var(--preview-ink);--study-muted:var(--preview-muted);
+  --study-hover:var(--preview-bubble);--study-focus:var(--preview-accent);
+  color:var(--preview-ink);
+}

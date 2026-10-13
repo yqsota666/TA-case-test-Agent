@@ -1,4 +1,6 @@
-import { hasNumericFieldExpectation, hasLiteralExpectation, numericQuoteBindings, preciseDecimal } from './numeric-expectations.js';
+import {waitsForReceipt,operationChainIssues, supportedOperation} from './operation-chain.js';
+import {fieldsForFile} from './profiles.js';
+import { hasNumericFieldExpectation, hasLiteralExpectation, numericQuoteBindings, numericQuoteBindingSpans, literalExpectationSpans, preciseDecimal } from './numeric-expectations.js';
 import { validDate } from './exchange-plan.js';
 const exact = (v, keys) => v && typeof v === 'object' && !Array.isArray(v) &&
   Object.keys(v).length === keys.length && keys.every(k => Object.hasOwn(v, k));
@@ -14,10 +16,57 @@ export const RESULT_FIELDS = Object.freeze({
   CURRENT_FORMAL_HOLDING: ['totalVolume','availableVolume','frozenVolume','snapshotDate'],
 });
 export function validPlanContract(c, plan) {
-  if (!exact(c, ['version','protocolVersion','dataSpecification','assumptions','expectations','applications','missing']) || c.version !== 1 || c.protocolVersion!=='22' || !Array.isArray(plan?.scenarios) || !plan.scenarios.length ||
+  const keys=['version','protocolVersion','dataSpecification','assumptions','expectations','applications','missing'];
+  if(c?.version>=2)keys.push('businessExpectations');
+  if (!exact(c, keys) || ![1,2,3,4].includes(c.version) || c.protocolVersion!=='22' || !Array.isArray(plan?.scenarios) || !plan.scenarios.length ||
       !list(c.assumptions,50,v=>text(v)) || !list(c.missing,50,v=>text(v))) return false;
   const d=c.dataSpecification;
-  return validDataSpecification(d) && validApplications(c,d,plan) && validExpectations(c,d,plan);
+  return validDataSpecification(d) && validApplications(c,d,plan) && (c.version<3 || operationChainIssues(c,plan).length===0) && validBusinessExpectations(c,plan) && validExpectations(c,d,plan);
+}
+
+export function planContractValidationIssues(c,plan) {
+  if(!c || !c.dataSpecification)return ['准备数据结构缺失'];
+  if(!Array.isArray(c.applications)||!Array.isArray(c.expectations))return ['申请或预期结构不是数组'];
+  if(!validDataSpecification(c.dataSpecification))return ['准备数据格式或索引无效'];
+  const owned=new Set(['AppSheetSerialNo','TransactionAccountID','DistributorCode','BusinessCode','BranchCode','InvestorName','IndividualOrInstitution','TAAccountID','FundCode','ShareClass','TransactionDate']);
+  const forbidden=c.applications.flatMap(a=>{
+    const step=plan.exchangePlan?.steps.find(s=>s.stepId===a.stepId);
+    if(!step || !a.fields || typeof a.fields!=='object')return [];
+    const allowed=new Set(fieldsForFile(c.protocolVersion,step.fileType).map(f=>f.name));
+    return Object.keys(a.fields).filter(k=>owned.has(k)||!allowed.has(k)).map(k=>`${a.key} fields.${k}属于系统字段或不属于${step.fileType}协议，必须由系统填充或移出该申请`);
+  });
+  const bindings=c.expectations.flatMap((a,i)=>{
+    if(!a || typeof a.expectedQuote!=='string' || typeof a.expectedValue!=='string')return [`expectations[${i}]缺少原文或预期值`];
+    if(!plan.scenarios?.[a.scenarioIndex]?.expected?.includes(a.expectedQuote))return [`expectations[${i}].expectedQuote必须是对应scenarios[${a.scenarioIndex}].expected中的原文片段，不能引用evidence、setup、其他场景或自行改写。没有原文依据的额外协议断言应移除，原有业务预期由系统保留。`];
+    const numeric=['confirmedAmount','confirmedVolume','totalVolume','availableVolume','frozenVolume'].includes(a.field);
+    const bound=numeric?hasNumericFieldExpectation(a.field,a.expectedValue,a.expectedQuote,a.operator):hasLiteralExpectation(a.expectedValue,a.expectedQuote,a.field);
+    return bound?[]:[`expectations[${i}].expectedQuote未明确支持${a.field}=${a.expectedValue}。按原Plan重新绑定对应结果字段；申请输入不能当作回传确认值，业务预期应完整保留而非伪造协议断言。`];
+  });
+  return [...forbidden,...bindings,
+    !validApplications(c,c.dataSpecification,plan)&&'申请字段、发送步骤或账户基金引用无效',
+    ...(c.version>=3?operationChainIssues(c,plan):[]),
+    !validExpectations(c,c.dataSpecification,plan)&&'预期原文、字段值或证据绑定无效'].filter(Boolean);
+}
+
+function validBusinessExpectations(c,plan) {
+  if(c.version===1)return true;
+  return list(c.businessExpectations,100,a=>exact(a,['scenarioIndex','expectedQuote']) &&
+    index(a.scenarioIndex) && text(a.expectedQuote) && plan.scenarios[a.scenarioIndex]?.expected===a.expectedQuote) &&
+    new Set(c.businessExpectations.map(a=>a.scenarioIndex)).size===c.businessExpectations.length;
+}
+
+export function businessExpectationsFor(plan,expectations) {
+  return plan.scenarios.flatMap((scenario,scenarioIndex)=>{
+    let remainder=scenario.expected;
+    for(const a of expectations.filter(a=>a.scenarioIndex===scenarioIndex)) {
+      const spans=[...numericQuoteBindingSpans(a.expectedQuote).filter(b=>b.field===a.field && b.operator===a.operator && preciseDecimal(b.value)===preciseDecimal(a.expectedValue)),...literalExpectationSpans(a.expectedValue,a.expectedQuote,a.field)];
+      let unbound=a.expectedQuote;
+      for(const span of spans.sort((a,b)=>b.start-a.start))unbound=unbound.slice(0,span.start)+unbound.slice(span.end);
+      // A broad evidence quote must not consume business rules outside its bound field.
+      if(!unbound.replace(/[\s；;，,。:：()（）]/g,''))remainder=remainder.replace(a.expectedQuote,'');
+    }
+    return remainder.replace(/[\s；;，,。:：()（）]/g,'') ? [{scenarioIndex,expectedQuote:scenario.expected}] : [];
+  });
 }
 
 function validDataSpecification(d) {
@@ -33,7 +82,7 @@ function validDataSpecification(d) {
 
 function validApplications(c,d,plan) {
   if (!list(c.applications,80,a=>{
-    if (!exact(a,['key','stepId','businessCode','accountIndex','transactionAccountId','fundIndex','fields']) ||
+    if (!exact(a,['key','stepId','businessCode','accountIndex','transactionAccountId','fundIndex','fields',...(c.version>=3?['dependsOn']:[])]) ||
         typeof a.key!=='string' || !/^[a-zA-Z0-9_-]{1,40}$/.test(a.key) || typeof a.stepId!=='string' ||
         !((index(a.accountIndex) && a.accountIndex<d.accounts.length && a.transactionAccountId===null) ||
           (a.accountIndex===null && typeof a.transactionAccountId==='string' && /^\d{1,17}$/.test(a.transactionAccountId))) ||
@@ -42,20 +91,21 @@ function validApplications(c,d,plan) {
         !Object.entries(a.fields).every(([k,v])=>/^[A-Za-z][A-Za-z0-9]{0,49}$/.test(k) && typeof v==='string' && v.length<=500)) return false;
     const step=plan.exchangePlan?.steps.find(s=>s.stepId===a.stepId);
     if(!step || step.direction!=='SEND' || step.businessTime.kind!=='DATE' ||
-       !((step.fileType==='01' && a.businessCode==='001' && a.fundIndex===null) ||
-         (step.fileType==='03' && a.businessCode==='022' && a.fundIndex!==null))) return false;
-    if(step.fileType==='03' && !money(a.fields.ApplicationAmount))return false;
+       !(c.version>=3 ? supportedOperation(step.fileType,a.businessCode) && (step.fileType==='01'?a.fundIndex===null:a.fundIndex!==null) :
+         ((step.fileType==='01' && a.businessCode==='001' && a.fundIndex===null) || (step.fileType==='03' && a.businessCode==='022' && a.fundIndex!==null)))) return false;
+    if(step.fileType==='03' && (c.version<3 || a.businessCode==='022') && !money(a.fields.ApplicationAmount))return false;
     const owned=['AppSheetSerialNo','TransactionAccountID','DistributorCode','BusinessCode','BranchCode','InvestorName','IndividualOrInstitution','TAAccountID','FundCode','ShareClass','TransactionDate'];
-    return !Object.keys(a.fields).some(k=>owned.includes(k));
+    const allowed=new Set(fieldsForFile(c.protocolVersion,step.fileType).map(field=>field.name));
+    return !Object.keys(a.fields).some(k=>owned.includes(k)||!allowed.has(k));
   }) || new Set(c.applications.map(a=>a.key)).size!==c.applications.length) return false;
   for(const a of c.applications){
     const step=plan.exchangePlan.steps.find(s=>s.stepId===a.stepId);
-    if(step.fileType==='01' && a.transactionAccountId!==null)return false;
+    if(step.fileType==='01' && (c.version<3 || a.businessCode==='001') && a.transactionAccountId!==null)return false;
     if(step.fileType==='03' && a.accountIndex!==null){
       const opening=c.applications.find(o=>o.businessCode==='001' && o.accountIndex===a.accountIndex);
       const openStep=opening && plan.exchangePlan.steps.find(s=>s.stepId===opening.stepId);
       const receipt=openStep && plan.exchangePlan.steps.find(s=>s.fileType==='02' && s.roundId===openStep.roundId);
-      if(!receipt || !step.dependsOn.some(d=>d.stepId===receipt.stepId && d.condition==='CONFIRMED'))return false;
+      if(c.version!==4 && (!receipt || !(c.version>=3?waitsForReceipt(plan.exchangePlan,step,receipt.stepId):step.dependsOn.some(d=>d.stepId===receipt.stepId && d.condition==='CONFIRMED'))))return false;
     }
   }
   if (!c.missing.length && plan.exchangePlan?.steps.some(s=>s.direction==='SEND' && !c.applications.some(a=>a.stepId===s.stepId))) return false;
@@ -69,19 +119,20 @@ function validExpectations(c,d,plan) {
         !plan.scenarios[a.scenarioIndex].expected.includes(a.expectedQuote) ||
         !Object.hasOwn(RESULT_FIELDS,a.source) || !RESULT_FIELDS[a.source].includes(a.field) || !['eq','gte','lte'].includes(a.operator) || !text(a.expectedValue,100)) return false;
     const s=a.selector;
-    if (!exact(s,['accountIndex','transactionAccountId','channelId','fundCode','shareClass','fileType','businessDate']) ||
+    if (!exact(s,['accountIndex','transactionAccountId','channelId','fundCode','shareClass','fileType','businessDate',...(c.version>=3?['applicationKey']:[])]) ||
         !((index(s.accountIndex) && s.accountIndex<d.accounts.length && s.transactionAccountId===null) ||
           (s.accountIndex===null && typeof s.transactionAccountId==='string' && /^\d{1,17}$/.test(s.transactionAccountId))) ||
         !(s.channelId===null || (typeof s.channelId==='string' && /^[1-9]\d{0,18}$/.test(s.channelId))) ||
         !(s.fundCode===null || code(s.fundCode)) || !(s.shareClass===null || (typeof s.shareClass==='string' && /^[A-Z0-9]$/.test(s.shareClass))) ||
         !(s.fileType===null || ['01','03'].includes(s.fileType)) || !(s.businessDate===null || validDate(s.businessDate))) return false;
+    if(c.version>=3 && (a.source==='APPLICATION_CONFIRMATION' ? !c.applications.some(app=>app.key===s.applicationKey) : s.applicationKey!==null))return false;
     if (a.source==='CURRENT_FORMAL_HOLDING' && (!s.fundCode || !s.shareClass || s.fileType!==null || s.businessDate!==null)) return false;
     if (a.source==='FORMAL_ACCOUNT' && [s.fundCode,s.shareClass,s.fileType,s.businessDate].some(v=>v!==null))return false;
     if (a.source==='APPLICATION_CONFIRMATION') {
       if (!s.fileType || !s.businessDate || !c.applications.some(application=>{
         const step=plan.exchangePlan.steps.find(step=>step.stepId===application.stepId);
         const fund=application.fundIndex===null?null:d.funds[application.fundIndex];
-        return step.fileType===s.fileType && step.businessTime.value===s.businessDate &&
+        return !!step && (c.version<3 || application.key===s.applicationKey) && step.fileType===s.fileType && step.businessTime.value===s.businessDate &&
           application.accountIndex===s.accountIndex && application.transactionAccountId===s.transactionAccountId &&
           (s.fundCode===null || fund?.fundCode===s.fundCode) && (s.shareClass===null || fund?.shareClass===s.shareClass);
       })) return false;
@@ -95,7 +146,7 @@ function validExpectations(c,d,plan) {
   })) return false;
   return c.missing.length>0 || plan.scenarios.every((scenario,i)=>{
     const assertions=c.expectations.filter(a=>a.scenarioIndex===i);
-    return assertions.length>0 && numericQuoteBindings(scenario.expected).every(binding=>assertions.some(a=>
+    return (assertions.length>0 || c.version>=2 && c.businessExpectations.some(a=>a.scenarioIndex===i)) && numericQuoteBindings(scenario.expected).every(binding=>assertions.some(a=>
       a.field===binding.field && a.operator===binding.operator && preciseDecimal(a.expectedValue)===preciseDecimal(binding.value)));
   });
 }

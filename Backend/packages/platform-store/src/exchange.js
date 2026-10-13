@@ -1,6 +1,11 @@
+import {isPersonalName} from '../../case-agent/src/simulated-customer-policy.js';
+import {channelDeliveryProfile} from './delivery-profile.js';
+import {buildDeliveryPackage, deliveryDataFileName, normalizeDeliveryProfile} from '../../platform-protocol/src/delivery-package.js';
+import {readOperationFacts} from './operation-facts.js';
+import {reconcileOperations} from '../../case-agent/src/operation-chain-graph.js';
 import {assertTaAccountActive} from './ta-reset.js';
 import crypto from 'node:crypto';
-import { buildDataFile, dataFileName, encodeRecord, FIELD_REQUIREMENTS, parseDataFile } from '../../platform-protocol/src/index.js';
+import { buildDataFile, encodeRecord, FIELD_REQUIREMENTS, parseDataFile } from '../../platform-protocol/src/index.js';
 import { authenticateSession, storeError } from './index.js';
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -25,7 +30,7 @@ function validDate(value) {
   return `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6)}`;
 }
 
-function validSnapshot(fileType, record, version, channel, businessDate) {
+function validSnapshot(fileType, record, version, channel, businessDate, unassignedTaAccount=false) {
   if (!['01', '03'].includes(fileType) || !record || typeof record !== 'object' || Array.isArray(record)) {
     throw storeError('INVALID_APPLICATION', 400, '申请格式无效');
   }
@@ -34,12 +39,19 @@ function validSnapshot(fileType, record, version, channel, businessDate) {
     || String(record.DistributorCode || '') !== String(channel.distributor_code)) {
     throw storeError('INVALID_APPLICATION', 400, '申请号、业务代码或销售机构不一致');
   }
+  if ((record.BranchCode && record.BranchCode !== channel.distributor_code) ||
+      (record.TargetBranchCode && record.TargetBranchCode !== (record.TargetDistributorCode || channel.distributor_code))) {
+    throw storeError('INVALID_APPLICATION',400,'销售商级网点代码必须等于对应销售商代码');
+  }
+  if (fileType === '01' && String(record.IndividualOrInstitution) === '1' && !isPersonalName(record.InvestorName)) {
+    throw storeError('INVALID_APPLICATION',400,'模拟个人姓名必须是正常的三个汉字姓名');
+  }
   const requirements = FIELD_REQUIREMENTS[fileType];
   const byBusiness = requirements.requiredByBusiness[record.BusinessCode];
   if (fileType === '01' ? !/^00[1-9]$/.test(record.BusinessCode) : !byBusiness) {
     throw storeError('INVALID_APPLICATION', 400, '不支持的申请业务代码');
   }
-  const missing = [...requirements.required, ...(byBusiness || [])].filter(name =>
+  const missing = [...requirements.required, ...(byBusiness || [])].filter(name => !(unassignedTaAccount && name==='TAAccountID')).filter(name =>
     record[name] === null || record[name] === undefined || String(record[name]).trim() === '');
   if (missing.length) throw storeError('MISSING_APPLICATION_FIELD', 400, `申请缺少必填字段：${missing.join(', ')}`);
   if (record.TransactionDate !== businessDate) {
@@ -133,7 +145,7 @@ export function createExchangeRepository({ transaction }) {
       [auth.workspace_id, chatPublicId, casePublicId]);
       if (!owner) throw storeError('APPLICATION_SCOPE', 409, 'Case、SOP 或通道不可用于申请');
       const [[scope]] = await db.execute(`SELECT c.id AS chat_id,k.id AS case_id,s.id AS sop_id,
-        h.id AS channel_id,h.distributor_code,h.protocol_version
+        h.id AS channel_id,h.distributor_code,h.protocol_version,s.plan_json
         FROM case_chats c
         JOIN cases k ON k.workspace_id=c.workspace_id AND k.chat_id=c.id
         JOIN case_sop_versions s ON s.workspace_id=k.workspace_id AND s.chat_id=k.chat_id
@@ -146,7 +158,17 @@ export function createExchangeRepository({ transaction }) {
           AND s.id=? AND h.id=? FOR UPDATE`,
       [auth.workspace_id, chatPublicId, casePublicId, sopVersionId, channelId]);
       if (!scope) throw storeError('APPLICATION_SCOPE', 409, 'Case、SOP 或通道不可用于申请');
-      const { snapshot, hash } = validSnapshot(fileType, record, scope.protocol_version, scope, businessDate);
+      const plan=typeof scope.plan_json==='string'?JSON.parse(scope.plan_json):scope.plan_json;
+      const planned=plan?.contract?.version===4 && plan.contract.applications.find(t=>record.AppSheetSerialNo===('AI'+crypto.createHash('sha256').update(`${casePublicId}:${channelId}:${t.key}`).digest('hex').slice(0,22)));
+      const opening=planned && plan.contract.applications.find(o=>o.businessCode==='001' && o.accountIndex===planned.accountIndex && planned.dependsOn.some(d=>d.applicationKey===o.key && d.condition==='ORDERED'));
+      const unassignedTaAccount=Boolean(planned && planned.accountIndex!==null && fileType==='03' && !record.TAAccountID && opening);
+      if (unassignedTaAccount) {
+        const openingDate=plan.exchangePlan.steps.find(s=>s.stepId===opening.stepId)?.businessTime.value;
+        const openingSerial='AI'+crypto.createHash('sha256').update(`${casePublicId}:${channelId}:${opening.key}`).digest('hex').slice(0,22);
+        if (openingDate!==businessDate || record.OriginalAppDate!==openingDate || record.OriginalAppSheetNo!==openingSerial)
+          throw storeError('APPLICATION_DATA_MISMATCH',409,'新账户交易必须引用同包开户的原申请日期和申请单号');
+      }
+      const { snapshot, hash } = validSnapshot(fileType, record, scope.protocol_version, scope, businessDate,unassignedTaAccount);
       let [[sourceAccount]] = await db.execute(`SELECT a.id,a.branch_code,c.name,c.investor_type
         FROM case_generated_accounts a JOIN case_generated_customers c
           ON c.workspace_id=a.workspace_id AND c.chat_id=a.chat_id
@@ -160,7 +182,7 @@ export function createExchangeRepository({ transaction }) {
           WHERE r.workspace_id=? AND r.chat_id=? AND r.case_id=? AND r.channel_id=? AND sc.transaction_account_id=? FOR UPDATE`,
         [auth.workspace_id,scope.chat_id,scope.case_id,scope.channel_id,record.TransactionAccountID]);
       }
-      if (!sourceAccount || (record.BranchCode && sourceAccount.branch_code !== record.BranchCode) ||
+      if (!sourceAccount || (record.BranchCode && scope.distributor_code !== record.BranchCode) ||
           (record.IndividualOrInstitution &&
             sourceAccount.investor_type !== record.IndividualOrInstitution) ||
           (fileType === '01' && (sourceAccount.name !== record.InvestorName ||
@@ -183,7 +205,7 @@ export function createExchangeRepository({ transaction }) {
         [auth.workspace_id, scope.chat_id, scope.case_id, record.CodeOfTargetFund, record.TargetShareType]);
         if (!targetFund) throw storeError('APPLICATION_DATA_MISMATCH', 409, '转入基金与已确认数据不一致');
       }
-      if (fileType === '03' || record.BusinessCode !== '001') {
+      if (!unassignedTaAccount && (fileType === '03' || record.BusinessCode !== '001')) {
         const [[binding]] = await db.execute(`SELECT b.id,sc.id AS account_id FROM ta_account_bindings b JOIN sales_confirmed_accounts sc
           ON sc.workspace_id=b.workspace_id AND sc.channel_id=b.channel_id
             AND sc.transaction_account_id=b.transaction_account_id AND sc.ta_account_id=b.ta_account_id
@@ -202,6 +224,18 @@ export function createExchangeRepository({ transaction }) {
           throw storeError('APPLICATION_NUMBER_CONFLICT', 409, '申请号已经对应另一份申请');
         }
         return { publicId: prior.public_id, snapshotHash: hash, replayed: true };
+      }
+      if(plan?.contract?.version>=3){
+        const facts=await readOperationFacts(db,token,{chatPublicId,casePublicId},true);
+        const schedule=reconcileOperations({plan,...facts,casePublicId,channelId});
+        const task=schedule.tasks.find(t=>t.key && record.AppSheetSerialNo===('AI'+crypto.createHash('sha256').update(`${casePublicId}:${channelId}:${t.key}`).digest('hex').slice(0,22)));
+        if(!task || task.state!=='READY')throw storeError('OPERATION_NOT_READY',409,'操作不属于已确认任务单或前置条件尚未满足');
+        if(task.fileType!==fileType || task.businessCode!==record.BusinessCode || task.businessDate!==businessDate || Object.entries(task.fields).some(([key,value])=>record[key]!==value) || (task.fundIndex!==null && (plan.contract.dataSpecification.funds[task.fundIndex].fundCode!==record.FundCode || plan.contract.dataSpecification.funds[task.fundIndex].shareClass!==record.ShareClass)))throw storeError('OPERATION_MISMATCH',409,'申请与任务单不一致');
+      }
+      if(plan?.contract?.version>=3){
+        const [prepared]=await db.execute(`SELECT account_no FROM case_generated_accounts WHERE workspace_id=? AND chat_id=? AND case_id=? ORDER BY id LIMIT 101 FOR UPDATE`,[auth.workspace_id,scope.chat_id,scope.case_id]);
+        const task=plan.contract.applications.find(t=>record.AppSheetSerialNo===('AI'+crypto.createHash('sha256').update(`${casePublicId}:${channelId}:${t.key}`).digest('hex').slice(0,22)));
+        if(record.TransactionAccountID!==(task.transactionAccountId??prepared[task.accountIndex]?.account_no))throw storeError('OPERATION_MISMATCH',409,'申请账户与任务单不一致');
       }
       const publicId = crypto.randomUUID();
       await db.execute(`INSERT INTO applications
@@ -352,12 +386,13 @@ export function createExchangeRepository({ transaction }) {
     validUuid(chatPublicId); validUuid(batchPublicId);
     return transaction(async db => {
       const auth = await authenticateSession(db, token);
-      const [[batch]] = await db.execute(`SELECT b.id,b.status,b.channel_id,
+      const [[batch]] = await db.execute(`SELECT b.id,b.status,b.channel_id,b.chat_id,
         DATE_FORMAT(b.business_date,'%Y%m%d') AS business_date,
-        h.ta_code,h.distributor_code,h.protocol_version
+        h.ta_code,h.distributor_code,h.protocol_version,p.profile_json AS delivery_profile
         FROM exchange_batches b
         JOIN case_chats c ON c.workspace_id=b.workspace_id AND c.id=b.chat_id
         JOIN exchange_channels h ON h.workspace_id=b.workspace_id AND h.id=b.channel_id
+        LEFT JOIN exchange_delivery_profiles p ON p.workspace_id=h.workspace_id AND p.channel_id=h.id
         WHERE b.workspace_id=? AND c.public_id=? AND b.public_id=?
           AND c.status='ACTIVE' FOR UPDATE`, [auth.workspace_id, chatPublicId, batchPublicId]);
       if (!batch) throw storeError('BATCH_NOT_FOUND', 404, '批次不存在');
@@ -380,6 +415,10 @@ export function createExchangeRepository({ transaction }) {
       if (!apps.length || apps.some(app => app.status !== 'BATCHED')) {
         throw storeError('BATCH_INCOMPLETE', 409, '批次申请不完整');
       }
+      let deliveryProfile;
+      try { deliveryProfile = channelDeliveryProfile(batch, batch.delivery_profile); }
+      catch (error) { throw storeError('INVALID_DELIVERY_PROFILE', 422, error.message); }
+      const originals = [];
       const files = [];
       for (const fileType of ['01', '03']) {
         const selected = apps.filter(app => app.file_type === fileType);
@@ -395,14 +434,16 @@ export function createExchangeRepository({ transaction }) {
         let sequence = 1;
         let fileName;
         do {
-          fileName = dataFileName({ creator: batch.distributor_code,
-            receiver: batch.ta_code, date: batch.business_date, fileType, sequence });
+          fileName = deliveryDataFileName({ creator: batch.distributor_code,
+            receiver: batch.ta_code, date: batch.business_date, fileType }, deliveryProfile, sequence);
           sequence += 1;
-        } while (used.has(fileName) && sequence <= (batch.protocol_version === '21' ? 999 : 1000));
-        if (used.has(fileName)) throw storeError('FILE_SEQUENCE_EXHAUSTED', 409, '当日文件序号已用尽');
+        } while (deliveryProfile.dataSequence && used.has(fileName) && sequence <= (batch.protocol_version === '21' ? 999 : 1000));
+        if (used.has(fileName)) throw storeError('FILE_SEQUENCE_EXHAUSTED', 409, deliveryProfile.dataSequence ? '当日文件序号已用尽' : '通道要求当日同类申请合并为一个文件；已有同名文件，请合批或使用其他业务日期');
         const raw = buildDataFile({ creator: batch.distributor_code, receiver: batch.ta_code,
-          date: batch.business_date, summaryNo: sequence - 1, fileType, records,
-          version: batch.protocol_version });
+          date: batch.business_date, summaryNo: deliveryProfile.summaryNo ?? sequence - 1, fileType, records,
+          version: batch.protocol_version, sender: deliveryProfile.sender, recipient: deliveryProfile.recipient,
+          fieldNamesCase: deliveryProfile.fieldNamesCase, trailingCrlf: deliveryProfile.trailingCrlf });
+        originals.push({fileName, rawBytes: raw});
         const digest = crypto.createHash('sha256').update(raw).digest('hex');
         const [saved] = await db.execute(`INSERT INTO exchange_files
           (workspace_id,channel_id,chat_id,batch_id,direction,file_type,file_name,
@@ -414,6 +455,14 @@ export function createExchangeRepository({ transaction }) {
         files.push(fileSummary({ id: saved.insertId, file_name: fileName,
           file_type: fileType, content_sha256: digest, record_count: selected.length }));
       }
+      let delivery;
+      try { delivery = buildDeliveryPackage(originals, deliveryProfile); }
+      catch (error) { throw storeError('DELIVERY_PACKAGE_INCOMPLETE', 422, error.message); }
+      await db.execute(`INSERT INTO exchange_delivery_packages
+        (workspace_id,chat_id,batch_id,file_name,profile_json,manifest_json,content_sha256,raw_bytes)
+        VALUES (?,?,?,?,?,?,?,?)`, [auth.workspace_id,batch.chat_id,batch.id,delivery.fileName,
+        JSON.stringify(delivery.profile),JSON.stringify(delivery.manifest),
+        crypto.createHash('sha256').update(delivery.rawBytes).digest('hex'),delivery.rawBytes]);
       await db.execute(`UPDATE applications a JOIN batch_applications ba
         ON ba.workspace_id=a.workspace_id AND ba.chat_id=a.chat_id AND ba.application_id=a.id
         SET a.status='GENERATED' WHERE ba.workspace_id=? AND ba.batch_id=? AND a.status='BATCHED'`,
@@ -421,6 +470,55 @@ export function createExchangeRepository({ transaction }) {
       await db.execute(`UPDATE exchange_batches SET status='GENERATED'
         WHERE workspace_id=? AND id=? AND status='DRAFT'`, [auth.workspace_id, batch.id]);
       return { batchPublicId, files, replayed: false };
+    });
+  }
+
+  async function readDeliveryProfile(token, {channelId}) {
+    validId(channelId);
+    return transaction(async db => {
+      const auth = await authenticateSession(db, token);
+      const [[channel]] = await db.execute(`SELECT h.ta_code,h.distributor_code,h.protocol_version,p.profile_json
+        FROM exchange_channels h LEFT JOIN exchange_delivery_profiles p
+          ON p.workspace_id=h.workspace_id AND p.channel_id=h.id
+        WHERE h.workspace_id=? AND h.id=?`, [auth.workspace_id,channelId]);
+      if (!channel) throw storeError('CHANNEL_NOT_FOUND',404,'通道不存在');
+      return {channelId:String(channelId),profile:channelDeliveryProfile(channel,channel.profile_json)};
+    });
+  }
+
+  async function setDeliveryProfile(token, {channelId, profile}) {
+    validId(channelId);
+    return transaction(async db => {
+      const auth = await authenticateSession(db, token);
+      const [[channel]] = await db.execute(`SELECT ta_code,distributor_code,protocol_version
+        FROM exchange_channels WHERE workspace_id=? AND id=? FOR UPDATE`, [auth.workspace_id,channelId]);
+      if (!channel) throw storeError('CHANNEL_NOT_FOUND',404,'通道不存在');
+      let normalized;
+      try { normalized = normalizeDeliveryProfile(profile, channel.protocol_version); }
+      catch (error) { throw storeError('INVALID_DELIVERY_PROFILE',422,error.message); }
+      await db.execute(`INSERT INTO exchange_delivery_profiles (workspace_id,channel_id,profile_json)
+        VALUES (?,?,?) ON DUPLICATE KEY UPDATE profile_json=VALUES(profile_json)`,
+        [auth.workspace_id,channelId,JSON.stringify(normalized)]);
+      return {channelId:String(channelId),profile:normalized};
+    });
+  }
+
+  async function readDeliveryPackage(token, {chatPublicId, batchPublicId}) {
+    validUuid(chatPublicId); validUuid(batchPublicId);
+    return transaction(async db => {
+      const auth = await authenticateSession(db, token);
+      const [[saved]] = await db.execute(`SELECT p.file_name,p.content_sha256,p.raw_bytes,p.manifest_json
+        FROM exchange_delivery_packages p
+        JOIN exchange_batches b ON b.workspace_id=p.workspace_id AND b.chat_id=p.chat_id AND b.id=p.batch_id
+        JOIN case_chats c ON c.workspace_id=b.workspace_id AND c.id=b.chat_id
+        WHERE p.workspace_id=? AND c.public_id=? AND b.public_id=?`,
+        [auth.workspace_id,chatPublicId,batchPublicId]);
+      if (!saved) return null;
+      if (!Buffer.isBuffer(saved.raw_bytes) || crypto.createHash('sha256').update(saved.raw_bytes).digest('hex') !== saved.content_sha256) {
+        throw storeError('FILE_INTEGRITY_ERROR',409,'申请包原件校验失败');
+      }
+      return {fileName:saved.file_name,rawBytes:saved.raw_bytes,
+        manifest:typeof saved.manifest_json==='string'?JSON.parse(saved.manifest_json):saved.manifest_json};
     });
   }
 
@@ -462,7 +560,7 @@ export function createExchangeRepository({ transaction }) {
     });
   }
 
-  return Object.freeze({ listChannels, listCaseApplications, listCaseBindings, stageApplication,
+  return Object.freeze({ readOperationFacts:(token,input)=>transaction(db=>readOperationFacts(db,token,input)), listChannels, readDeliveryProfile, setDeliveryProfile, readDeliveryPackage, listCaseApplications, listCaseBindings, stageApplication,
     createOutboundBatch, generateOutboundFiles,
     listOutboundFiles, readOutboundFile, saveInboundFile, matchReturnRecord });
 }

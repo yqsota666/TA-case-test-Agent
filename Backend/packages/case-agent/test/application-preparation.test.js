@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { compileApplicationIntents, deriveApplicationPreparation } from '../src/application-preparation.js';
 
-const data = { customers: [{ id: '1', name: '测试客户', investor_type: '1' }],
+const data = { customers: [{ id: '1', name: '陈思远', investor_type: '1' }],
   accounts: [{ id: '2', customer_id: '1', account_no: 'TESTACCOUNT1', branch_code: '306' }],
   funds: [{ id: '3', fund_code: '000001', share_class: 'A' }], holdings: [] };
 const channel = { id: '7', distributorCode: '306', taCode: '27', protocolVersion: '22' };
@@ -17,7 +17,7 @@ const compile = (intents, bindings = []) => compileApplicationIntents({ intents,
 test('intent compilation owns source identity and deterministic application numbers', () => {
   const first = compile([opening]);
   const record = first.records[0].record;
-  assert.equal(record.InvestorName, '测试客户'); assert.equal(record.TransactionAccountID, 'TESTACCOUNT1');
+  assert.equal(record.InvestorName, '陈思远'); assert.equal(record.TransactionAccountID, 'TESTACCOUNT1');
   assert.equal(record.IndividualOrInstitution, '1');
   assert.equal(record.AppSheetSerialNo.length, 24);
   assert.deepEqual(compile([opening]), first);

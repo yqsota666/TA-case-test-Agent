@@ -1,4 +1,6 @@
+import {isPersonalName} from './simulated-customer-policy.js';
 import crypto from 'node:crypto';
+import {APPLICATION_SYSTEM_FIELDS} from '../../platform-protocol/src/operation-chain.js';
 import { z } from 'zod';
 import { FIELD_REQUIREMENTS, TRANSACTION_BUSINESSES, TRANSACTION_FIELD_INPUTS,
   fieldsForFile, encodeRecord } from '../../platform-protocol/src/index.js';
@@ -14,9 +16,7 @@ const Intent = z.object({
 const Reply = z.object({ reply: z.string().trim().min(1).max(4000),
   intents: z.array(Intent).max(80), questions: z.array(z.string().trim().min(1).max(500)).max(20),
 }).strict();
-const owned = new Set(['AppSheetSerialNo', 'TransactionAccountID', 'DistributorCode',
-  'BusinessCode', 'BranchCode', 'InvestorName', 'IndividualOrInstitution', 'TAAccountID', 'TargetTAAccountID',
-  'TargetTransactionAccountID', 'TargetBranchCode', 'TargetDistributorCode', 'FundCode', 'ShareClass', 'CodeOfTargetFund', 'TargetShareType', 'TransactionDate']);
+const owned = new Set(APPLICATION_SYSTEM_FIELDS);
 const meanings = { CertificateType: '证件类型', CertificateNo: '模拟证件号',
   TransactionDate: '业务日期', TransactionTime: '申请时间', CurrencyType: '币种',
   ApplicationAmount: '申请金额', ApplicationVol: '申请份额', ChargeType: '收费方式',
@@ -45,6 +45,11 @@ export function preparationCatalog(version) {
   };
 }
 
+export function editablePreparationFields(version) {
+  const catalog=preparationCatalog(version);
+  return Object.fromEntries(Object.entries(catalog.fields).map(([type,fields])=>[type,fields.filter(field=>!owned.has(field.name))]));
+}
+
 export async function deriveApplicationPreparation(complete, context) {
   const text = await complete({ system: APPLICATION_PREPARATION_PROMPT, user: JSON.stringify(context) });
   let json;
@@ -57,7 +62,7 @@ export async function deriveApplicationPreparation(complete, context) {
   return parsed.data;
 }
 
-export function compileApplicationIntents({ intents, data, channel, bindings, casePublicId }) {
+export function compileApplicationIntents({ intents, data, channel, bindings, casePublicId, unassignedTaAccounts=new Set() }) {
   const records = [], questions = [], waiting = [];
   for (const intent of intents) {
     const fail = message => { throw Object.assign(new Error(message),
@@ -79,7 +84,7 @@ export function compileApplicationIntents({ intents, data, channel, bindings, ca
     const record = { ...intent.fields, AppSheetSerialNo: 'AI' + crypto.createHash('sha256')
       .update(`${casePublicId}:${channel.id}:${intent.key}`).digest('hex').slice(0,22),
     BusinessCode: intent.businessCode, DistributorCode: channel.distributorCode,
-    TransactionAccountID: account.account_no, BranchCode: account.branch_code,
+    TransactionAccountID: account.account_no, BranchCode: channel.distributorCode,
     TransactionDate: intent.businessDate ?? '', IndividualOrInstitution: customer.investor_type };
     if (intent.fileType === '01') record.InvestorName = customer.name;
     if (intent.targetAccountId != null) {
@@ -88,7 +93,7 @@ export function compileApplicationIntents({ intents, data, channel, bindings, ca
         fail('申请引用了当前 Case 之外的目标账户');
       }
       for (const [field, value] of [['TargetTransactionAccountID', target.account_no],
-        ['TargetBranchCode', target.branch_code], ['TargetDistributorCode', channel.distributorCode]]) {
+        ['TargetBranchCode', channel.distributorCode], ['TargetDistributorCode', channel.distributorCode]]) {
         if (allowed.has(field)) record[field] = value;
       }
     }
@@ -100,17 +105,29 @@ export function compileApplicationIntents({ intents, data, channel, bindings, ca
       record[codeField] = fund.fund_code; record[classField] = fund.share_class;
     }
     const needsBinding = intent.fileType === '03' || intent.businessCode !== '001';
+    const packagedOpening=intent.fileType==='03' && unassignedTaAccounts.has(intent.accountId);
     const binding = bindings.find(row => row.channelId === channel.id &&
       row.transactionAccountId === account.account_no);
     if (needsBinding && binding) record.TAAccountID = binding.taAccountId;
+    if (packagedOpening && !binding) {
+      const opening = intents.find(o => o.fileType === '01' && o.businessCode === '001' && o.accountId === intent.accountId);
+      if (!opening || opening.businessDate !== intent.businessDate) fail('新账户交易必须引用同包同日期的开户申请');
+      const references = { OriginalAppDate: opening.businessDate, OriginalAppSheetNo: 'AI' + crypto.createHash('sha256')
+        .update(`${casePublicId}:${channel.id}:${opening.key}`).digest('hex').slice(0,22) };
+      for (const [field,value] of Object.entries(references)) {
+        if (record[field] && record[field] !== value) fail('新账户交易的原申请引用与同包开户不一致');
+        record[field] = value;
+      }
+    }
     const missing = [...new Set([...requirements.required,
       ...(requirements.requiredByBusiness[intent.businessCode] ?? [])])]
       .filter(name => name !== 'TAAccountID' && (record[name] == null || String(record[name]).trim() === ''));
     if (!intent.businessDate) missing.push('TransactionDate');
-    if (missing.length) questions.push(`${customer.name}（网点 ${account.branch_code}）还缺：${[...new Set(missing)].map(name =>
+    if (missing.length) questions.push(`${customer.name}（网点 ${channel.distributorCode}）还缺：${[...new Set(missing)].map(name =>
       meanings[name] ?? TRANSACTION_FIELD_INPUTS[name]?.label ?? name).join('、')}`);
-    if (needsBinding && !binding) waiting.push(intent.key);
+    if (needsBinding && !binding && !packagedOpening) waiting.push(intent.key);
     const invalid = [];
+    if (intent.fileType === '01' && String(customer.investor_type) === '1' && !isPersonalName(customer.name)) invalid.push('模拟个人姓名必须是正常的三个汉字姓名，请修改准备数据');
     if (intent.businessDate && (!/^\d{8}$/.test(intent.businessDate) || !Number.isFinite(Date.parse(
       `${intent.businessDate.slice(0,4)}-${intent.businessDate.slice(4,6)}-${intent.businessDate.slice(6)}T00:00:00Z`)) ||
       new Date(`${intent.businessDate.slice(0,4)}-${intent.businessDate.slice(4,6)}-${intent.businessDate.slice(6)}T00:00:00Z`)
@@ -121,9 +138,12 @@ export function compileApplicationIntents({ intents, data, channel, bindings, ca
       }
     }
     try { encodeRecord(intent.fileType, record, channel.protocolVersion); }
-    catch { invalid.push('已提供的申请字段格式不符合协议，请核对长度和数值格式'); }
-    if (invalid.length) questions.push(`${customer.name}（网点 ${account.branch_code}）：${invalid.join('；')}`);
-    if (missing.length || invalid.length || (needsBinding && !binding)) continue;
+    catch(error) {
+      const field=fieldsForFile(channel.protocolVersion,intent.fileType).find(f=>error.message.startsWith(f.name+' '));
+      invalid.push(field?`${meanings[field.name]??TRANSACTION_FIELD_INPUTS[field.name]?.label??field.name}的长度或数值格式不符合协议（最多${field.length}${field.type==='N'?'位数字':'字节'}${field.type==='N'?`，小数${field.scale}位`:''}）`:'已提供的申请字段格式不符合协议，请核对长度和数值格式');
+    }
+    if (invalid.length) questions.push(`${customer.name}（网点 ${channel.distributorCode}）：${invalid.join('；')}`);
+    if (missing.length || invalid.length || (needsBinding && !binding && !packagedOpening)) continue;
     records.push({ key: intent.key, fileType: intent.fileType,
       businessDate: intent.businessDate, record });
   }

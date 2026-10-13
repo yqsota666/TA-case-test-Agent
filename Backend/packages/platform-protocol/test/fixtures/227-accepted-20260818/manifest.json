@@ -1,0 +1,61 @@
+{
+  "source": "/Users/apple/Downloads/TA_227/20260818.zip",
+  "acceptance": "用户2026-10-12确认此包走通全流程；本地自动验收只验证结构与模拟链路",
+  "sanitization": "仅移除数据记录，记录数置零，保留独立原件头/字段列表/索引/文件尾",
+  "files": [
+    {
+      "fileName": "OFI_227_27_20260818.TXT",
+      "sourceRecordCount": null,
+      "sourceSha256": "cb4094ab05783927151b86a9909546c621b8f8bff4919619bccb6f01b9dcc43c",
+      "fixtureSha256": "cb4094ab05783927151b86a9909546c621b8f8bff4919619bccb6f01b9dcc43c"
+    },
+    {
+      "fileName": "OFX_227_27_20260818.TXT",
+      "sourceRecordCount": null,
+      "sourceSha256": "33bccf86f2c8a0e90697051b58ad710e77cc4f4722f0ab149ee2d7e563a1b1c8",
+      "fixtureSha256": "33bccf86f2c8a0e90697051b58ad710e77cc4f4722f0ab149ee2d7e563a1b1c8"
+    },
+    {
+      "fileName": "OFD_227_27_20260818_01.TXT",
+      "sourceRecordCount": 10,
+      "sourceSha256": "590c84c821130da5b93465273d94b128f56d5451363783e144dfd1ac6333702f",
+      "fixtureSha256": "ef0f8b945ab04bf65fea172d3efce69181b41484257852a6b08d6a77c3da2853"
+    },
+    {
+      "fileName": "OFD_227_27_20260818_03.TXT",
+      "sourceRecordCount": 10,
+      "sourceSha256": "64763eef13a2707f1dab4dddd10b01eb1ee9e9127410705b8e05d0d5ba6b08c8",
+      "fixtureSha256": "7f0f8576f5a51818483a9257105636c9be56664324d5e42f8fbb14e7417a7814"
+    },
+    {
+      "fileName": "OFD_227_27_20260818_R1.TXT",
+      "sourceRecordCount": 0,
+      "sourceSha256": "eba1f155bb6fab3ab2c8c3535559f4eeaaf2ed70e0d9bbc90946d0b25fca2c73",
+      "fixtureSha256": "eba1f155bb6fab3ab2c8c3535559f4eeaaf2ed70e0d9bbc90946d0b25fca2c73"
+    },
+    {
+      "fileName": "OFD_227_27_20260818_X1.TXT",
+      "sourceRecordCount": 10,
+      "sourceSha256": "2d4d2b1c69262dec136eda63aa3785e08a9ba751c87d4028411cf1746a5fe7fb",
+      "fixtureSha256": "ee6c853b31b05c01b8971e7eebca83fbc7aaab8fabe9afccb8437afd09b5ea24"
+    },
+    {
+      "fileName": "OFD_227_27_20260818_X3.TXT",
+      "sourceRecordCount": 0,
+      "sourceSha256": "c8a9f63874e8195b489dd4ecd88e41a9172c5283fdb786e933c8956ad58b4eea",
+      "fixtureSha256": "c8a9f63874e8195b489dd4ecd88e41a9172c5283fdb786e933c8956ad58b4eea"
+    },
+    {
+      "fileName": "OFD_227_27_20260818_43.TXT",
+      "sourceRecordCount": 0,
+      "sourceSha256": "4cce545244bc9919f0a3319abad0161d263dc51e3df4416a56e953443d7a7122",
+      "fixtureSha256": "4cce545244bc9919f0a3319abad0161d263dc51e3df4416a56e953443d7a7122"
+    },
+    {
+      "fileName": "OFG_227_27_20260818.TXT",
+      "sourceRecordCount": null,
+      "sourceSha256": "1102daec8fde1e9d5b4a18557bbab26405bfcf8a2fead1b428bce6cfd229d843",
+      "fixtureSha256": "1102daec8fde1e9d5b4a18557bbab26405bfcf8a2fead1b428bce6cfd229d843"
+    }
+  ]
+}
